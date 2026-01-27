@@ -2,3 +2,4 @@
 directory = libassmod
 url = https://github.com/amanosatosi/libassmod.git
 revision = master
+diff_files = libassmod/0001-disable-override.patch

@@ -1,0 +1,13 @@
+diff --git a/meson.build b/meson.build
+index 2e9f3ab..7e1c21d 100644
+--- a/meson.build
++++ b/meson.build
+@@ -409,7 +409,7 @@ pkg.generate(
+     libass,
+     name: 'libass',
+     description: 'libass is an SSA/ASS subtitles rendering library',
+ )
+-# `libass_dep` comes from subdir('libass')
+-meson.override_dependency('libass', libass_dep)
++# `libass_dep` comes from subdir('libass')
++# override_dependency disabled when embedding in Aegisub to avoid conflicts
