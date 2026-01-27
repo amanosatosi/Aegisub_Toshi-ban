@@ -52,6 +52,7 @@
 #include "project.h"
 #include "subs_controller.h"
 #include "subtitles_provider_libass.h"
+#include "subtitles_provider_libassmod.h"
 #include "utils.h"
 #include "value_event.h"
 #include "version.h"
@@ -288,6 +289,7 @@ bool AegisubApp::OnInit() {
 		// Load plugins
 		Automation4::ScriptFactory::Register(agi::make_unique<Automation4::LuaScriptFactory>());
 		libass::CacheFonts();
+		libassmod::CacheFonts();
 
 		// Load Automation scripts
 		StartupLog("Load global Automation scripts");
