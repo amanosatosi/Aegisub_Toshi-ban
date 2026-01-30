@@ -37,6 +37,17 @@ This project is open source for transparency, and tested by actually using it.
 
 ---
 
+## Update 1.1
+
+### Changes
+- Fixed an issue where applying themes caused unused audio parts to appear
+  over-darkened instead of dimmed.
+- Fixed a bug where scrolling in the grid view appeared jittery.
+- Added **libassmod** as an additional subtitle provider, supporting many
+  VSFilterMod's tags.
+
+---
+
 ## Notable features & changes
 
 ### Subtitle editing
