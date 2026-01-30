@@ -25,6 +25,7 @@
 #include "options.h"
 #include "subtitles_provider_csri.h"
 #include "subtitles_provider_libass.h"
+#include "subtitles_provider_libassmod.h"
 
 namespace {
 	struct factory {
@@ -42,6 +43,7 @@ namespace {
 			factories.push_back(factory{"CSRI/" + subtype, subtype, csri::Create, false});
 #endif
 		factories.push_back(factory{"libass", "", libass::Create, false});
+		factories.push_back(factory{"libassmod", "", libassmod::Create, false});
 		return factories;
 	}
 }

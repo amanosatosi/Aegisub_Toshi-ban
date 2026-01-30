@@ -5,6 +5,7 @@ project('Aegisub', ['c', 'cpp'],
         version: '3.2.2')
 
 cmake = import('cmake')
+py = import('python').find_installation()
 
 if host_machine.system() == 'windows'
     add_project_arguments('-DNOMINMAX', language: 'cpp')
@@ -100,6 +101,24 @@ deps += iconv_dep
 
 deps += dependency('libass', version: '>=0.9.7',
                    fallback: ['libass', 'libass_dep'])
+
+libassmod_sp = subproject('libassmod', default_options: ['default_library=shared'])
+libassmod_lib = libassmod_sp.get_variable('libass')
+if host_machine.system() == 'windows'
+    libassmod_output = 'ass.dll'
+elif host_machine.system() == 'darwin'
+    libassmod_output = 'libass.dylib'
+else
+    libassmod_output = 'libass.so'
+endif
+libassmod_copy = custom_target('libassmod_copy',
+    input: libassmod_lib,
+    output: libassmod_output,
+    command: [py, '-c', 'import shutil,sys; shutil.copy2(sys.argv[1], sys.argv[2])', '@INPUT@', '@OUTPUT@'],
+    build_by_default: true,
+    install: true,
+    install_dir: bindir,
+)
 
 boost_modules = ['chrono', 'filesystem', 'thread', 'locale', 'regex']
 if not get_option('local_boost')
