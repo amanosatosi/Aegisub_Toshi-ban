@@ -57,7 +57,41 @@ typedef struct csri_asa_inst {
 #include <csri/stream.h>
 #include <subhelp.h>
 
+#define CSRI_EXT_LIBASSMOD_TAG_IMAGE_RGBA (csri_ext_id)"libassmod.tag-image.rgba"
+
+struct csri_libass_tag_image_ext {
+	int (*clear)(csri_inst *inst);
+	int (*set_rgba)(csri_inst *inst, const char *path, int format,
+		int width, int height, int stride, const uint8_t *rgba);
+};
+
 static struct csri_libass_rend csri_libass = { NULL };
+
+#ifdef LIBASSMOD_FEATURE_TAG_IMAGE
+static int libass_clear_tag_images_csri(csri_inst *inst)
+{
+	if (!inst || !inst->ass_renderer)
+		return -1;
+
+	ass_clear_tag_images(inst->ass_renderer);
+	return 0;
+}
+
+static int libass_set_tag_image_rgba_csri(csri_inst *inst, const char *path,
+	int format, int width, int height, int stride, const uint8_t *rgba)
+{
+	if (!inst || !inst->ass_renderer)
+		return -1;
+
+	return ass_set_tag_image_rgba(inst->ass_renderer, path,
+		(ASS_TagImageFormat)format, width, height, stride, rgba);
+}
+
+static struct csri_libass_tag_image_ext tag_image_ext = {
+	libass_clear_tag_images_csri,
+	libass_set_tag_image_rgba_csri
+};
+#endif
 
 csri_inst *csri_open_file(csri_rend *renderer,
 	const char *filename, struct csri_openflag *flags)
@@ -215,6 +249,10 @@ void *csri_query_ext(csri_rend *rend, csri_ext_id extname)
 		return NULL;
 	if (!strcmp(extname, CSRI_EXT_STREAM_ASS))
 		return &streamext;
+#ifdef LIBASSMOD_FEATURE_TAG_IMAGE
+	if (!strcmp(extname, CSRI_EXT_LIBASSMOD_TAG_IMAGE_RGBA))
+		return &tag_image_ext;
+#endif
 	return NULL;
 }
 

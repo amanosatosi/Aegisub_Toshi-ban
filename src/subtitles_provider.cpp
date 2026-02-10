@@ -71,6 +71,7 @@ std::unique_ptr<SubtitlesProvider> SubtitlesProviderFactory::GetProvider(agi::Ba
 }
 
 void SubtitlesProvider::LoadSubtitles(AssFile *subs, int time) {
+	PrepareSubtitles(subs, time);
 	buffer.clear();
 
 	auto push_header = [&](const char *str) {

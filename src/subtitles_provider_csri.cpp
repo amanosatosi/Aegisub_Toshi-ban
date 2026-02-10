@@ -35,18 +35,30 @@
 #ifdef WITH_CSRI
 #include "subtitles_provider_csri.h"
 
+#include "ass_attachment.h"
+#include "ass_file.h"
 #include "include/aegisub/subtitles_provider.h"
 #include "subtitle_format_ass.h"
 #include "video_frame.h"
 
+#include <libaegisub/ass/uuencode.h>
 #include <libaegisub/make_unique.h>
 
+#include <algorithm>
+#include <cctype>
 #include <mutex>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+
+#include <wx/image.h>
+#include <wx/mstream.h>
 
 #ifdef WIN32
 #define CSRIAPI
 #endif
 
+#include <ass/ass.h>
 #include <csri/csri.h>
 
 namespace {
@@ -58,13 +70,275 @@ struct closer {
 	void operator()(csri_inst *inst) { if (inst) csri_close(inst); }
 };
 
+constexpr const char *CSRI_EXT_LIBASSMOD_TAG_IMAGE_RGBA = "libassmod.tag-image.rgba";
+
+struct csri_libass_tag_image_ext {
+	int (*clear)(csri_inst *inst);
+	int (*set_rgba)(csri_inst *inst, const char *path, int format,
+		int width, int height, int stride, const unsigned char *rgba);
+};
+
+#ifdef LIBASSMOD_FEATURE_TAG_IMAGE
+struct TagImage {
+	std::string key;
+	std::string basename_lower;
+	ASS_TagImageFormat format = ASS_TAG_IMAGE_FORMAT_PNG;
+	int width = 0;
+	int height = 0;
+	int stride = 0;
+	std::vector<unsigned char> rgba;
+};
+
+std::string trim_copy(std::string str) {
+	auto not_space = [](unsigned char c) { return !std::isspace(c); };
+	auto begin = std::find_if(str.begin(), str.end(), not_space);
+	if (begin == str.end())
+		return {};
+	auto end = std::find_if(str.rbegin(), str.rend(), not_space).base();
+	return std::string(begin, end);
+}
+
+std::string to_lower_copy(std::string str) {
+	std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) {
+		return static_cast<char>(std::tolower(c));
+	});
+	return str;
+}
+
+std::string path_basename(std::string const& path) {
+	size_t cut = path.find_last_of("/\\");
+	if (cut == std::string::npos)
+		return path;
+	return path.substr(cut + 1);
+}
+
+bool parse_tag_image_format(std::string const& path, ASS_TagImageFormat *format) {
+	std::string lower = to_lower_copy(path);
+	if (lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".png") == 0) {
+		*format = ASS_TAG_IMAGE_FORMAT_PNG;
+		return true;
+	}
+	if (lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".jpg") == 0) {
+		*format = ASS_TAG_IMAGE_FORMAT_JPEG;
+		return true;
+	}
+	if (lower.size() >= 5 && lower.compare(lower.size() - 5, 5, ".jpeg") == 0) {
+		*format = ASS_TAG_IMAGE_FORMAT_JPEG;
+		return true;
+	}
+	if (lower.size() >= 5 && lower.compare(lower.size() - 5, 5, ".webp") == 0) {
+		*format = ASS_TAG_IMAGE_FORMAT_WEBP;
+		return true;
+	}
+	return false;
+}
+
+bool decode_image_to_rgba(wxImage &image, TagImage *out) {
+	if (!image.IsOk())
+		return false;
+
+	int width = image.GetWidth();
+	int height = image.GetHeight();
+	if (width <= 0 || height <= 0)
+		return false;
+
+	unsigned char *rgb = image.GetData();
+	unsigned char *alpha = image.HasAlpha() ? image.GetAlpha() : nullptr;
+	if (!rgb)
+		return false;
+
+	out->width = width;
+	out->height = height;
+	out->stride = width * 4;
+	out->rgba.resize(static_cast<size_t>(out->stride) * static_cast<size_t>(height));
+
+	for (int i = 0; i < width * height; ++i) {
+		out->rgba[i * 4 + 0] = rgb[i * 3 + 0];
+		out->rgba[i * 4 + 1] = rgb[i * 3 + 1];
+		out->rgba[i * 4 + 2] = rgb[i * 3 + 2];
+		out->rgba[i * 4 + 3] = alpha ? alpha[i] : 255;
+	}
+
+	return true;
+}
+
+bool decode_attachment_image(AssAttachment const& attachment, TagImage *out) {
+	std::string const& entry = attachment.GetEntryData();
+	size_t header_end = entry.find('\n');
+	if (header_end == std::string::npos)
+		return false;
+
+	std::string header = trim_copy(entry.substr(0, header_end));
+	if (header.compare(0, 9, "filename:") != 0)
+		return false;
+
+	std::string filename = trim_copy(header.substr(9));
+	if (filename.empty())
+		return false;
+	if (!parse_tag_image_format(filename, &out->format))
+		return false;
+
+	auto decoded = agi::ass::UUDecode(entry.c_str() + header_end + 1,
+		entry.c_str() + entry.size());
+	if (decoded.empty())
+		return false;
+
+	wxMemoryInputStream stream(decoded.data(), decoded.size());
+	wxImage image;
+	if (!image.LoadFile(stream, wxBITMAP_TYPE_ANY))
+		return false;
+	if (!decode_image_to_rgba(image, out))
+		return false;
+
+	out->key = filename;
+	out->basename_lower = to_lower_copy(path_basename(filename));
+	return true;
+}
+
+bool decode_file_image(std::string const& path, TagImage *out) {
+	if (!parse_tag_image_format(path, &out->format))
+		return false;
+
+	wxString wxpath = wxString::FromUTF8(path.c_str());
+	if (wxpath.empty())
+		return false;
+
+	wxImage image;
+	if (!image.LoadFile(wxpath, wxBITMAP_TYPE_ANY))
+		return false;
+	if (!decode_image_to_rgba(image, out))
+		return false;
+
+	out->key = path;
+	out->basename_lower = to_lower_copy(path_basename(path));
+	return true;
+}
+
+std::vector<std::string> collect_img_paths(const char *data, size_t len) {
+	std::vector<std::string> paths;
+	for (size_t i = 0; i + 4 < len; ++i) {
+		if (data[i] != '\\')
+			continue;
+
+		size_t j = i + 1;
+		if (j < len && data[j] >= '1' && data[j] <= '4')
+			++j;
+		if (j + 2 >= len)
+			continue;
+		if (data[j] != 'i' || data[j + 1] != 'm' || data[j + 2] != 'g')
+			continue;
+
+		j += 3;
+		while (j < len && (data[j] == ' ' || data[j] == '\t'))
+			++j;
+		if (j >= len || data[j] != '(')
+			continue;
+
+		++j;
+		while (j < len && (data[j] == ' ' || data[j] == '\t'))
+			++j;
+
+		size_t start = j;
+		while (j < len && data[j] != ',' && data[j] != ')')
+			++j;
+		if (j <= start)
+			continue;
+
+		std::string path(data + start, data + j);
+		path = trim_copy(path);
+		if (path.size() >= 2) {
+			bool quoted = (path.front() == '"' && path.back() == '"')
+				|| (path.front() == '\'' && path.back() == '\'');
+			if (quoted)
+				path = path.substr(1, path.size() - 2);
+		}
+		path = trim_copy(path);
+		if (!path.empty())
+			paths.push_back(path);
+	}
+	return paths;
+}
+#endif
+
 class CSRISubtitlesProvider final : public SubtitlesProvider {
 	std::unique_ptr<csri_inst, closer> instance;
 	csri_rend *renderer = nullptr;
 
+#ifdef LIBASSMOD_FEATURE_TAG_IMAGE
+	std::vector<TagImage> attachment_tag_images;
+
+	void PrepareSubtitles(AssFile *subs, int) override {
+		attachment_tag_images.clear();
+		for (auto const& attachment : subs->Attachments) {
+			if (attachment.Group() != AssEntryGroup::GRAPHIC)
+				continue;
+
+			TagImage image;
+			if (decode_attachment_image(attachment, &image))
+				attachment_tag_images.push_back(std::move(image));
+		}
+	}
+
+	void RegisterTagImages(const char *data, size_t len) {
+		if (!instance)
+			return;
+
+		auto *ext = static_cast<csri_libass_tag_image_ext *>(
+			csri_query_ext(renderer, CSRI_EXT_LIBASSMOD_TAG_IMAGE_RGBA));
+		if (!ext || !ext->clear || !ext->set_rgba)
+			return;
+
+		ext->clear(instance.get());
+
+		std::unordered_set<std::string> registered_paths;
+		std::unordered_map<std::string, const TagImage *> attachment_by_name;
+		for (auto const& image : attachment_tag_images) {
+			attachment_by_name.emplace(image.basename_lower, &image);
+			if (ext->set_rgba(instance.get(), image.key.c_str(), image.format,
+				image.width, image.height, image.stride, image.rgba.data()) >= 0) {
+				registered_paths.insert(image.key);
+			}
+		}
+
+		for (auto const& raw_path : collect_img_paths(data, len)) {
+			if (registered_paths.find(raw_path) != registered_paths.end())
+				continue;
+
+			ASS_TagImageFormat format;
+			if (!parse_tag_image_format(raw_path, &format))
+				continue;
+
+			std::string base = to_lower_copy(path_basename(raw_path));
+			auto attachment_it = attachment_by_name.find(base);
+			if (attachment_it != attachment_by_name.end()) {
+				auto const& image = *attachment_it->second;
+				if (image.format != format)
+					continue;
+				if (ext->set_rgba(instance.get(), raw_path.c_str(), image.format,
+					image.width, image.height, image.stride, image.rgba.data()) >= 0) {
+					registered_paths.insert(raw_path);
+				}
+				continue;
+			}
+
+			TagImage file_image;
+			if (!decode_file_image(raw_path, &file_image))
+				continue;
+			if (ext->set_rgba(instance.get(), raw_path.c_str(), file_image.format,
+				file_image.width, file_image.height, file_image.stride,
+				file_image.rgba.data()) >= 0) {
+				registered_paths.insert(raw_path);
+			}
+		}
+	}
+#endif
+
 	void LoadSubtitles(const char *data, size_t len) override {
 		std::lock_guard<std::mutex> lock(csri_mutex);
 		instance.reset(csri_open_mem(renderer, data, len, nullptr));
+#ifdef LIBASSMOD_FEATURE_TAG_IMAGE
+		RegisterTagImages(data, len);
+#endif
 	}
 
 public:
