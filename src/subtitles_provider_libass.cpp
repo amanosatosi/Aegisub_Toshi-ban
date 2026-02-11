@@ -60,12 +60,6 @@
 
 #include <wx/image.h>
 #include <wx/imagpng.h>
-#if wxUSE_LIBJPEG
-#include <wx/imagjpeg.h>
-#endif
-#if wxUSE_WEBP
-#include <wx/imagwebp.h>
-#endif
 #include <wx/intl.h>
 #include <wx/mstream.h>
 #include <wx/thread.h>
@@ -153,14 +147,6 @@ void ensure_image_handlers() {
 	std::call_once(handlers_once, [] {
 		if (!wxImage::FindHandler(wxBITMAP_TYPE_PNG))
 			wxImage::AddHandler(new wxPNGHandler);
-#if wxUSE_LIBJPEG
-		if (!wxImage::FindHandler(wxBITMAP_TYPE_JPEG))
-			wxImage::AddHandler(new wxJPEGHandler);
-#endif
-#if wxUSE_WEBP
-		if (!wxImage::FindHandler(wxBITMAP_TYPE_WEBP))
-			wxImage::AddHandler(new wxWEBPHandler);
-#endif
 	});
 }
 
