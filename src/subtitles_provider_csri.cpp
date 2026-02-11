@@ -52,6 +52,13 @@
 #include <utility>
 
 #include <wx/image.h>
+#include <wx/imagpng.h>
+#if wxUSE_LIBJPEG
+#include <wx/imagjpeg.h>
+#endif
+#if wxUSE_WEBP
+#include <wx/imagwebp.h>
+#endif
 #include <wx/mstream.h>
 
 #ifdef WIN32
@@ -133,6 +140,22 @@ bool parse_tag_image_format(std::string const& path, ASS_TagImageFormat *format)
 	return false;
 }
 
+void ensure_image_handlers() {
+	static std::once_flag handlers_once;
+	std::call_once(handlers_once, [] {
+		if (!wxImage::FindHandler(wxBITMAP_TYPE_PNG))
+			wxImage::AddHandler(new wxPNGHandler);
+#if wxUSE_LIBJPEG
+		if (!wxImage::FindHandler(wxBITMAP_TYPE_JPEG))
+			wxImage::AddHandler(new wxJPEGHandler);
+#endif
+#if wxUSE_WEBP
+		if (!wxImage::FindHandler(wxBITMAP_TYPE_WEBP))
+			wxImage::AddHandler(new wxWEBPHandler);
+#endif
+	});
+}
+
 bool decode_image_to_rgba(wxImage &image, TagImage *out) {
 	if (!image.IsOk())
 		return false;
@@ -169,7 +192,7 @@ bool decode_attachment_image(AssAttachment const& attachment, TagImage *out) {
 		return false;
 
 	std::string header = trim_copy(entry.substr(0, header_end));
-	if (header.compare(0, 9, "filename:") != 0)
+	if (header.size() < 9 || to_lower_copy(header.substr(0, 9)) != "filename:")
 		return false;
 
 	std::string filename = trim_copy(header.substr(9));
@@ -183,6 +206,7 @@ bool decode_attachment_image(AssAttachment const& attachment, TagImage *out) {
 	if (decoded.empty())
 		return false;
 
+	ensure_image_handlers();
 	wxMemoryInputStream stream(decoded.data(), decoded.size());
 	wxImage image;
 	if (!image.LoadFile(stream, wxBITMAP_TYPE_ANY))
@@ -203,6 +227,7 @@ bool decode_file_image(std::string const& path, TagImage *out) {
 	if (wxpath.empty())
 		return false;
 
+	ensure_image_handlers();
 	wxImage image;
 	if (!image.LoadFile(wxpath, wxBITMAP_TYPE_ANY))
 		return false;
