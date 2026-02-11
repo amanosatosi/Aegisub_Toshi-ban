@@ -97,6 +97,8 @@ public:
 	std::vector<AssAttachment> Attachments;
 	std::vector<ExtradataEntry> Extradata;
 	ProjectProperties Properties;
+	/// Path of the currently loaded subtitle file, if any.
+	agi::fs::path Filename;
 
 	uint32_t next_extradata_id = 0;
 
