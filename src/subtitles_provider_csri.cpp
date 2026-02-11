@@ -102,8 +102,10 @@ std::string trim_copy(std::string str) {
 }
 
 std::string to_lower_copy(std::string str) {
-	std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) {
-		return static_cast<char>(std::tolower(c));
+	std::transform(str.begin(), str.end(), str.begin(), [](char c) {
+		if (c >= 'A' && c <= 'Z')
+			return static_cast<char>(c - 'A' + 'a');
+		return c;
 	});
 	return str;
 }
@@ -135,25 +137,36 @@ std::string add_double_quotes(std::string const& path) {
 	return quoted;
 }
 
+void append_unique_candidate(std::vector<wxString> *candidates, wxString const& path) {
+	if (path.empty())
+		return;
+	if (std::find(candidates->begin(), candidates->end(), path) == candidates->end())
+		candidates->push_back(path);
+}
+
+std::string wx_to_utf8_copy(wxString const& value) {
+	return std::string(value.utf8_str());
+}
+
 std::vector<wxString> file_image_candidates(std::string const& path, wxString const& script_dir) {
+	std::vector<wxString> bases;
+	append_unique_candidate(&bases, wxString::FromUTF8(path.c_str()));
+	if (!path.empty())
+		append_unique_candidate(&bases, wxString::FromUTF8Unchecked(path.c_str()));
+	if (!path.empty())
+		append_unique_candidate(&bases, wxString(path.c_str(), wxConvLocal));
+
 	std::vector<wxString> candidates;
-	wxString wxpath = wxString::FromUTF8(path.c_str());
-	if (wxpath.empty() && !path.empty())
-		wxpath = wxString(path.c_str(), wxConvLocal);
-	if (wxpath.empty())
-		return candidates;
-
-	candidates.push_back(wxpath);
-
-	wxFileName fname(wxpath);
-	if (!fname.IsAbsolute() && !script_dir.empty()) {
-		wxFileName resolved(fname);
-		resolved.MakeAbsolute(script_dir);
-		wxString absolute = resolved.GetFullPath();
-		if (!absolute.empty() && absolute != wxpath)
-			candidates.push_back(absolute);
+	for (auto const& base : bases) {
+		wxFileName fname(base);
+		// Prefer subtitle-relative absolute path first to avoid noisy failed opens on raw relative names.
+		if (!fname.IsAbsolute() && !script_dir.empty()) {
+			wxFileName resolved(fname);
+			resolved.MakeAbsolute(script_dir);
+			append_unique_candidate(&candidates, resolved.GetFullPath());
+		}
+		append_unique_candidate(&candidates, base);
 	}
-
 	return candidates;
 }
 
@@ -249,12 +262,18 @@ bool decode_attachment_image(AssAttachment const& attachment, TagImage *out) {
 	return true;
 }
 
-bool decode_file_image(std::string const& path, wxString const& script_dir, TagImage *out) {
+bool decode_file_image(std::string const& path, wxString const& script_dir,
+	TagImage *out, std::string *resolved_path) {
 	if (!parse_tag_image_format(path, &out->format))
 		return false;
+	if (resolved_path)
+		resolved_path->clear();
 
 	ensure_image_handlers();
 	for (auto const& candidate : file_image_candidates(path, script_dir)) {
+		if (!wxFileName::FileExists(candidate))
+			continue;
+
 		wxImage image;
 		if (!image.LoadFile(candidate, wxBITMAP_TYPE_ANY))
 			continue;
@@ -263,6 +282,8 @@ bool decode_file_image(std::string const& path, wxString const& script_dir, TagI
 
 		out->key = path;
 		out->basename_lower = to_lower_copy(path_basename(path));
+		if (resolved_path)
+			*resolved_path = wx_to_utf8_copy(candidate);
 		return true;
 	}
 
@@ -406,9 +427,13 @@ class CSRISubtitlesProvider final : public SubtitlesProvider {
 			}
 
 			TagImage file_image;
-			if (!decode_file_image(path, tag_image_script_dir, &file_image))
+			std::string resolved_file_path;
+			if (!decode_file_image(path, tag_image_script_dir, &file_image, &resolved_file_path))
 				continue;
 			register_path_variants(path, file_image.format,
+				file_image.width, file_image.height, file_image.stride,
+				file_image.rgba.data());
+			register_path_variants(resolved_file_path, file_image.format,
 				file_image.width, file_image.height, file_image.stride,
 				file_image.rgba.data());
 		}
