@@ -121,6 +121,26 @@ std::string path_basename(std::string const& path) {
 	return path.substr(cut + 1);
 }
 
+std::string strip_matching_quotes(std::string path) {
+	path = trim_copy(std::move(path));
+	if (path.size() >= 2) {
+		bool quoted = (path.front() == '"' && path.back() == '"')
+			|| (path.front() == '\'' && path.back() == '\'');
+		if (quoted)
+			path = path.substr(1, path.size() - 2);
+	}
+	return trim_copy(std::move(path));
+}
+
+std::string add_double_quotes(std::string const& path) {
+	std::string quoted;
+	quoted.reserve(path.size() + 2);
+	quoted.push_back('"');
+	quoted += path;
+	quoted.push_back('"');
+	return quoted;
+}
+
 bool parse_tag_image_format(std::string const& path, ASS_TagImageFormat *format) {
 	std::string lower = to_lower_copy(path);
 	if (lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".png") == 0) {
@@ -257,21 +277,27 @@ std::vector<std::string> collect_img_paths(const char *data, size_t len) {
 		while (j < len && (data[j] == ' ' || data[j] == '\t'))
 			++j;
 
-		size_t start = j;
-		while (j < len && data[j] != ',' && data[j] != ')')
-			++j;
-		if (j <= start)
+		if (j >= len)
 			continue;
 
-		std::string path(data + start, data + j);
-		path = trim_copy(path);
-		if (path.size() >= 2) {
-			bool quoted = (path.front() == '"' && path.back() == '"')
-				|| (path.front() == '\'' && path.back() == '\'');
-			if (quoted)
-				path = path.substr(1, path.size() - 2);
+		size_t start = j;
+		size_t end = j;
+		if (data[j] == '"' || data[j] == '\'') {
+			char quote = data[j++];
+			start = j;
+			while (j < len && data[j] != quote)
+				++j;
+			end = j;
+		} else {
+			while (j < len && data[j] != ',' && data[j] != ')')
+				++j;
+			end = j;
 		}
-		path = trim_copy(path);
+		if (end <= start)
+			continue;
+
+		std::string path(data + start, data + end);
+		path = strip_matching_quotes(path);
 		if (!path.empty())
 			paths.push_back(path);
 	}
@@ -320,44 +346,59 @@ class LibassSubtitlesProvider final : public SubtitlesProvider {
 		ass_clear_tag_images(ass_renderer);
 
 		std::unordered_set<std::string> registered_paths;
+		auto register_key = [&](std::string const& key, ASS_TagImageFormat format,
+			int width, int height, int stride, const unsigned char *rgba) {
+			if (key.empty())
+				return;
+			if (registered_paths.find(key) != registered_paths.end())
+				return;
+			if (ass_set_tag_image_rgba(ass_renderer, key.c_str(), format,
+				width, height, stride, rgba) >= 0) {
+				registered_paths.insert(key);
+			}
+		};
+		auto register_path_variants = [&](std::string const& key, ASS_TagImageFormat format,
+			int width, int height, int stride, const unsigned char *rgba) {
+			std::string clean = strip_matching_quotes(key);
+			if (clean.empty())
+				return;
+			register_key(clean, format, width, height, stride, rgba);
+			register_key(add_double_quotes(clean), format, width, height, stride, rgba);
+		};
+
 		std::unordered_map<std::string, const TagImage *> attachment_by_name;
 		for (auto const& image : attachment_tag_images) {
 			attachment_by_name.emplace(image.basename_lower, &image);
-			if (ass_set_tag_image_rgba(ass_renderer, image.key.c_str(), image.format,
-				image.width, image.height, image.stride, image.rgba.data()) >= 0) {
-				registered_paths.insert(image.key);
-			}
+			register_path_variants(image.key, image.format,
+				image.width, image.height, image.stride, image.rgba.data());
 		}
 
 		for (auto const& raw_path : tag_image_paths) {
-			if (registered_paths.find(raw_path) != registered_paths.end())
+			std::string path = strip_matching_quotes(raw_path);
+			if (path.empty())
 				continue;
 
 			ASS_TagImageFormat format;
-			if (!parse_tag_image_format(raw_path, &format))
+			if (!parse_tag_image_format(path, &format))
 				continue;
 
-			std::string base = to_lower_copy(path_basename(raw_path));
+			std::string base = to_lower_copy(path_basename(path));
 			auto attachment_it = attachment_by_name.find(base);
 			if (attachment_it != attachment_by_name.end()) {
 				auto const& image = *attachment_it->second;
 				if (image.format != format)
 					continue;
-				if (ass_set_tag_image_rgba(ass_renderer, raw_path.c_str(), image.format,
-					image.width, image.height, image.stride, image.rgba.data()) >= 0) {
-					registered_paths.insert(raw_path);
-				}
+				register_path_variants(path, image.format,
+					image.width, image.height, image.stride, image.rgba.data());
 				continue;
 			}
 
 			TagImage file_image;
-			if (!decode_file_image(raw_path, &file_image))
+			if (!decode_file_image(path, &file_image))
 				continue;
-			if (ass_set_tag_image_rgba(ass_renderer, raw_path.c_str(), file_image.format,
+			register_path_variants(path, file_image.format,
 				file_image.width, file_image.height, file_image.stride,
-				file_image.rgba.data()) >= 0) {
-				registered_paths.insert(raw_path);
-			}
+				file_image.rgba.data());
 		}
 
 		tag_images_dirty = false;
