@@ -53,12 +53,6 @@
 
 #include <wx/image.h>
 #include <wx/imagpng.h>
-#if wxUSE_LIBJPEG
-#include <wx/imagjpeg.h>
-#endif
-#if wxUSE_WEBP
-#include <wx/imagwebp.h>
-#endif
 #include <wx/mstream.h>
 
 #ifdef WIN32
@@ -145,14 +139,6 @@ void ensure_image_handlers() {
 	std::call_once(handlers_once, [] {
 		if (!wxImage::FindHandler(wxBITMAP_TYPE_PNG))
 			wxImage::AddHandler(new wxPNGHandler);
-#if wxUSE_LIBJPEG
-		if (!wxImage::FindHandler(wxBITMAP_TYPE_JPEG))
-			wxImage::AddHandler(new wxJPEGHandler);
-#endif
-#if wxUSE_WEBP
-		if (!wxImage::FindHandler(wxBITMAP_TYPE_WEBP))
-			wxImage::AddHandler(new wxWEBPHandler);
-#endif
 	});
 }
 
@@ -399,7 +385,11 @@ void CSRISubtitlesProvider::DrawSubtitles(VideoFrame &dst, double time) {
 	}
 	frame.pixfmt = CSRI_F_BGR_;
 
-	csri_fmt format = { frame.pixfmt, dst.width, dst.height };
+	csri_fmt format = {
+		frame.pixfmt,
+		static_cast<unsigned>(dst.width),
+		static_cast<unsigned>(dst.height)
+	};
 
 	std::lock_guard<std::mutex> lock(csri_mutex);
 	if (!csri_request_fmt(instance.get(), &format))
