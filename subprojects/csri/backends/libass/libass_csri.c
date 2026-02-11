@@ -55,8 +55,7 @@ typedef struct csri_asa_inst {
 
 #include <csri/csri.h>
 #include <csri/stream.h>
-#include <subhelp.h>
-
+#include <subhelp
 #define CSRI_EXT_LIBASSMOD_TAG_IMAGE_RGBA (csri_ext_id)"libassmod.tag-image.rgba"
 
 struct csri_libass_tag_image_ext {
