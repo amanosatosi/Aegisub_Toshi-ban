@@ -304,6 +304,7 @@ bool SubsController::CanSave() const {
 
 void SubsController::SetFileName(agi::fs::path const& path) {
 	filename = path;
+	context->ass->Filename = path;
 	context->path->SetToken("?script", path.parent_path());
 	config::mru->Add("Subtitle", path);
 	OPT_SET("Path/Last/Subtitles")->SetString(filename.parent_path().string());

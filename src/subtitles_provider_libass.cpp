@@ -59,9 +59,11 @@
 #include <utility>
 
 #include <wx/image.h>
+#include <wx/filename.h>
 #include <wx/imagpng.h>
 #include <wx/intl.h>
 #include <wx/mstream.h>
+#include <wx/strconv.h>
 #include <wx/thread.h>
 
 extern "C" {
@@ -139,6 +141,28 @@ std::string add_double_quotes(std::string const& path) {
 	quoted += path;
 	quoted.push_back('"');
 	return quoted;
+}
+
+std::vector<wxString> file_image_candidates(std::string const& path, wxString const& script_dir) {
+	std::vector<wxString> candidates;
+	wxString wxpath = wxString::FromUTF8(path.c_str());
+	if (wxpath.empty() && !path.empty())
+		wxpath = wxString(path.c_str(), wxConvLocal);
+	if (wxpath.empty())
+		return candidates;
+
+	candidates.push_back(wxpath);
+
+	wxFileName fname(wxpath);
+	if (!fname.IsAbsolute() && !script_dir.empty()) {
+		wxFileName resolved(fname);
+		resolved.MakeAbsolute(script_dir);
+		wxString absolute = resolved.GetFullPath();
+		if (!absolute.empty() && absolute != wxpath)
+			candidates.push_back(absolute);
+	}
+
+	return candidates;
 }
 
 bool parse_tag_image_format(std::string const& path, ASS_TagImageFormat *format) {
@@ -233,24 +257,24 @@ bool decode_attachment_image(AssAttachment const& attachment, TagImage *out) {
 	return true;
 }
 
-bool decode_file_image(std::string const& path, TagImage *out) {
+bool decode_file_image(std::string const& path, wxString const& script_dir, TagImage *out) {
 	if (!parse_tag_image_format(path, &out->format))
 		return false;
 
-	wxString wxpath = wxString::FromUTF8(path.c_str());
-	if (wxpath.empty())
-		return false;
-
 	ensure_image_handlers();
-	wxImage image;
-	if (!image.LoadFile(wxpath, wxBITMAP_TYPE_ANY))
-		return false;
-	if (!decode_image_to_rgba(image, out))
-		return false;
+	for (auto const& candidate : file_image_candidates(path, script_dir)) {
+		wxImage image;
+		if (!image.LoadFile(candidate, wxBITMAP_TYPE_ANY))
+			continue;
+		if (!decode_image_to_rgba(image, out))
+			return false;
 
-	out->key = path;
-	out->basename_lower = to_lower_copy(path_basename(path));
-	return true;
+		out->key = path;
+		out->basename_lower = to_lower_copy(path_basename(path));
+		return true;
+	}
+
+	return false;
 }
 
 std::vector<std::string> collect_img_paths(const char *data, size_t len) {
@@ -321,9 +345,15 @@ class LibassSubtitlesProvider final : public SubtitlesProvider {
 #ifdef LIBASSMOD_FEATURE_TAG_IMAGE
 	std::vector<TagImage> attachment_tag_images;
 	std::vector<std::string> tag_image_paths;
+	wxString tag_image_script_dir;
 	bool tag_images_dirty = false;
 
 	void PrepareSubtitles(AssFile *subs, int) override {
+		if (!subs->Filename.empty())
+			tag_image_script_dir = wxString(subs->Filename.parent_path().wstring().c_str());
+		else
+			tag_image_script_dir.clear();
+
 		attachment_tag_images.clear();
 		for (auto const& attachment : subs->Attachments) {
 			if (attachment.Group() != AssEntryGroup::GRAPHIC)
@@ -394,7 +424,7 @@ class LibassSubtitlesProvider final : public SubtitlesProvider {
 			}
 
 			TagImage file_image;
-			if (!decode_file_image(path, &file_image))
+			if (!decode_file_image(path, tag_image_script_dir, &file_image))
 				continue;
 			register_path_variants(path, file_image.format,
 				file_image.width, file_image.height, file_image.stride,
