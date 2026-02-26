@@ -99,7 +99,7 @@ else
 endif
 deps += iconv_dep
 
-deps += dependency('libass', version: '>=0.9.7',
+deps += dependency('libass', version: '>=0.17.4',
                    fallback: ['libass', 'libass_dep'])
 
 libassmod_sp = subproject('libassmod', default_options: ['default_library=shared'])
