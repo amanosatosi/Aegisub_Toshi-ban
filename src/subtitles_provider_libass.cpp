@@ -693,17 +693,17 @@ void LibassSubtitlesProvider::DrawSubtitles(VideoFrame &frame,double time) {
 	// Note: this relies on Aegisub always rendering at video storage res
 	ass_set_storage_size(ass_renderer, frame.width, frame.height);
 
-	int detect_change = 0;
-	ASS_RenderResult render_result = ass_render_frame_auto(ass_renderer, ass_track, int(time * 1000), &detect_change);
-
-	// libass now returns either premultiplied RGBA images or the legacy alpha-masked monochrome list.
-	// Blend whichever list is preferred by the renderer into the frame.
-
 	using namespace boost::gil;
 	auto dst = interleaved_view(frame.width, frame.height, (bgra8_pixel_t*)frame.data.data(), frame.width * 4);
 	if (frame.flipped)
 		dst = flipped_up_down_view(dst);
 
+#ifdef LIBASSMOD_FEATURE_RGBA
+	int detect_change = 0;
+	ASS_RenderResult render_result = ass_render_frame_auto(ass_renderer, ass_track, int(time * 1000), &detect_change);
+
+	// libass may return either premultiplied RGBA images or the legacy alpha-masked monochrome list.
+	// Blend whichever list is preferred by the renderer into the frame.
 	if (render_result.use_rgba && render_result.imgs_rgba) {
 		for (ASS_ImageRGBA *img = render_result.imgs_rgba; img; img = img->next) {
 			auto srcview = interleaved_view(img->w, img->h, (rgba8_pixel_t*)img->rgba, img->stride);
@@ -748,6 +748,32 @@ void LibassSubtitlesProvider::DrawSubtitles(VideoFrame &frame,double time) {
 
 	if (render_result.imgs_rgba)
 		ass_free_images_rgba(render_result.imgs_rgba);
+#else
+	ASS_Image* img = ass_render_frame(ass_renderer, ass_track, int(time * 1000), nullptr);
+
+	// Older libass returns only alpha-masked monochrome images.
+	for (; img; img = img->next) {
+		unsigned int opacity = 255 - ((unsigned int)_a(img->color));
+		unsigned int r = (unsigned int)_r(img->color);
+		unsigned int g = (unsigned int)_g(img->color);
+		unsigned int b = (unsigned int)_b(img->color);
+
+		auto srcview = interleaved_view(img->w, img->h, (gray8_pixel_t*)img->bitmap, img->stride);
+		auto dstview = subimage_view(dst, img->dst_x, img->dst_y, img->w, img->h);
+
+		transform_pixels(dstview, srcview, dstview, [=](const bgra8_pixel_t frame_px, const gray8_pixel_t src_px) -> bgra8_pixel_t {
+			unsigned int k = ((unsigned)src_px) * opacity / 255;
+			unsigned int ck = 255 - k;
+
+			bgra8_pixel_t ret;
+			ret[0] = (k * b + ck * frame_px[0]) / 255;
+			ret[1] = (k * g + ck * frame_px[1]) / 255;
+			ret[2] = (k * r + ck * frame_px[2]) / 255;
+			ret[3] = 0;
+			return ret;
+		});
+	}
+#endif
 }
 }
 
