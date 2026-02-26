@@ -955,6 +955,20 @@ std::unique_ptr<SubtitlesProvider> Create(std::string const&, agi::BackgroundRun
 	return agi::make_unique<LibassModSubtitlesProvider>(br);
 }
 
+bool IsAvailable(std::string *error) {
+	return EnsureLibassMod(error);
+}
+
+std::string PrimaryLibraryName() {
+#ifdef _WIN32
+	return "libassmod.dll";
+#elif defined(__APPLE__)
+	return "libassmod.dylib";
+#else
+	return "libassmod.so";
+#endif
+}
+
 void CacheFonts() {
 	std::string error;
 	if (!EnsureLibassMod(&error)) {
