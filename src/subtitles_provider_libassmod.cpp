@@ -68,6 +68,15 @@ extern "C" {
 #include <ass/ass.h>
 }
 
+#ifndef LIBASSMOD_FEATURE_TAG_IMAGE
+#define LIBASSMOD_FEATURE_TAG_IMAGE 1
+typedef enum {
+	ASS_TAG_IMAGE_FORMAT_PNG = 1,
+	ASS_TAG_IMAGE_FORMAT_JPEG = 2,
+	ASS_TAG_IMAGE_FORMAT_WEBP = 3,
+} ASS_TagImageFormat;
+#endif
+
 #ifndef LIBASSMOD_FEATURE_RGBA
 typedef struct ass_image_rgba {
 	int w, h;
@@ -707,6 +716,11 @@ class LibassModSubtitlesProvider final : public SubtitlesProvider {
 		if (!ass_renderer)
 			return;
 		if (!api.ass_clear_tag_images || !api.ass_set_tag_image_rgba) {
+			static std::once_flag missing_tag_api_once;
+			std::call_once(missing_tag_api_once, [] {
+				LOG_W("subtitle/provider/libassmod")
+					<< "libassmod tag-image API not available (missing ass_clear_tag_images/ass_set_tag_image_rgba)";
+			});
 			tag_images_dirty = false;
 			return;
 		}
