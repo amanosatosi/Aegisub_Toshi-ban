@@ -651,6 +651,7 @@
 		},
 		"Visual" : {
 			"Perspective": {
+				"Mode": 256,
 				"Outer": false,
 				"Outer Locked": false,
 				"Grid": false,

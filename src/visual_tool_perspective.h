@@ -21,6 +21,7 @@
 
 #include "visual_feature.h"
 #include "visual_tool.h"
+#include "mangetsu_distort.h"
 #include "options.h"
 
 class wxToolBar;
@@ -35,6 +36,9 @@ enum VisualToolPerspectiveSetting {
 	PERSP_ORGMODE_NOFAX = 1 << 4,     // Picks a position for \org where \fax = 0, when possible
 	PERSP_ORGMODE_KEEP = 2 << 4,      // Takes the previous \org position as \org
     PERSP_ORGMODE = PERSP_ORGMODE_CENTER | PERSP_ORGMODE_NOFAX | PERSP_ORGMODE_KEEP,
+	PERSP_MODE_DISTORT = 1 << 8,
+	PERSP_MODE_ARCH1T3CHT = 1 << 9,
+	PERSP_MODE = PERSP_MODE_DISTORT | PERSP_MODE_ARCH1T3CHT,
 };
 
 class VisualToolPerspective;
@@ -58,6 +62,7 @@ class VisualToolPerspective final : public VisualTool<VisualToolPerspectiveDragg
 	agi::OptionValue* optOuterLocked;
 	agi::OptionValue* optGrid;
 	agi::OptionValue* optOrgMode;
+	agi::OptionValue* optMode;
 
 	// All current transform coefficients. Used for drawing the grid.
 	float angle_x = 0.f;
@@ -92,6 +97,8 @@ class VisualToolPerspective final : public VisualTool<VisualToolPerspectiveDragg
 
 	std::vector<Feature *> inner_corners;
 	std::vector<Feature *> outer_corners;
+	std::vector<Vector2D> distort_base_quad;
+	MangetsuDistortState distort_state;
 
 	inline float screenZ() const;
 
@@ -100,6 +107,9 @@ class VisualToolPerspective final : public VisualTool<VisualToolPerspectiveDragg
     void UpdateOuter();
     void TextToPersp();
     bool InnerToText();
+	void TextToDistort();
+	bool DistortToText(Feature* feature);
+	std::pair<Vector2D, Vector2D> GetFirstDistortUnitExtents();
 
     void WrapSetOverride(AssDialogue* line, std::string const& tag, float value, int precision, float defaultval=0);
 
@@ -114,7 +124,7 @@ class VisualToolPerspective final : public VisualTool<VisualToolPerspectiveDragg
 	void SaveFeaturePositions();
 	void SaveOuterToLines();
 
-	void AddTool(std::string command_name, VisualToolPerspectiveSetting mode);
+	void AddTool(std::string command_name, int mode);
 
 public:
 	bool ctrl_down = false;
@@ -128,6 +138,7 @@ public:
 
 	bool HasOuter();
 	bool OuterLocked();
+	bool IsDistortMode() const;
 	int GetOrgMode();
 	bool HasOrgf();
 

@@ -302,6 +302,10 @@ static void load_protos() {
 	proto[i].name = "\\distort";
 	for (int parameter = 0; parameter < 6; ++parameter)
 		proto[i].AddParam(VariableDataType::FLOAT);
+	// Mangetsu's extended form stores P0 as the final pair while retaining the
+	// original six-parameter P1/P2/P3 form for compatibility.
+	proto[i].AddParam(VariableDataType::FLOAT, AssParameterClass::NORMAL, OPTIONAL_7 | OPTIONAL_8);
+	proto[i].AddParam(VariableDataType::FLOAT, AssParameterClass::NORMAL, OPTIONAL_8);
 	++i;
 	proto[i++].Set("\\ortho", VariableDataType::BOOL);
 	proto[i++].Set("\\z", VariableDataType::FLOAT, AssParameterClass::ABSOLUTE_SIZE_Y);

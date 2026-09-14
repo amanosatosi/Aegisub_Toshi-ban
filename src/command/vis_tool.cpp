@@ -81,7 +81,8 @@ namespace {
 		CMD_TYPE(COMMAND_VALIDATE | COMMAND_TOGGLE)
 
 		bool Validate(const agi::Context *c) override {
-			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective));
+			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)) &&
+				(c->videoDisplay->GetSubTool() & PERSP_MODE) == PERSP_MODE_ARCH1T3CHT;
 		}
 
 		virtual const bool CheckActive(int subtool) {
@@ -100,6 +101,25 @@ namespace {
 			if (!c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)))
 				c->videoDisplay->SetTool(agi::make_unique<VisualToolPerspective>(c->videoDisplay, c));
 			c->videoDisplay->SetSubTool(UpdateSubTool(c->videoDisplay->GetSubTool()));
+		}
+	};
+
+	template<VisualToolPerspectiveSetting M>
+	struct visual_tool_persp_mode : public Command {
+		CMD_TYPE(COMMAND_VALIDATE | COMMAND_RADIO)
+
+		bool Validate(const agi::Context *c) override {
+			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective));
+		}
+
+		bool IsActive(const agi::Context *c) override {
+			return Validate(c) && (c->videoDisplay->GetSubTool() & PERSP_MODE) == M;
+		}
+
+		void operator()(agi::Context *c) override {
+			if (!c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)))
+				c->videoDisplay->SetTool(agi::make_unique<VisualToolPerspective>(c->videoDisplay, c));
+			c->videoDisplay->SetSubTool((c->videoDisplay->GetSubTool() & ~PERSP_MODE) | M);
 		}
 	};
 
@@ -138,9 +158,9 @@ namespace {
 	struct visual_mode_perspective final : public visual_tool_command<VisualToolPerspective> {
 		CMD_NAME("video/tool/perspective")
 		CMD_ICON(visual_perspective)
-		STR_MENU("Apply 3D Perspective")
-		STR_DISP("Apply 3D Perspective")
-		STR_HELP("Rotate and shear subtitles to make them fit a given quad's perspective")
+		STR_MENU("Perspective / Distort")
+		STR_DISP("Perspective / Distort")
+		STR_HELP("Edit Mangetsu distortion or use arch1t3cht's ASS perspective tool")
 	};
 
 	struct visual_mode_scale final : public visual_tool_command<VisualToolScale> {
@@ -190,6 +210,22 @@ namespace {
 		}
 	};
 
+	struct visual_mode_perspective_distort final : public visual_tool_persp_mode<PERSP_MODE_DISTORT> {
+		CMD_NAME("video/tool/perspective/distort")
+		CMD_ICON(visual_vector_clip)
+		STR_MENU("Mangetsu Distort")
+		STR_DISP("Mangetsu Distort")
+		STR_HELP("Edit Mangetsu \\distort with four normalized quad handles")
+	};
+
+	struct visual_mode_perspective_arch1t3cht final : public visual_tool_persp_mode<PERSP_MODE_ARCH1T3CHT> {
+		CMD_NAME("video/tool/perspective/arch1t3cht")
+		CMD_ICON(visual_perspective)
+		STR_MENU("Perspective (arch1t3cht)")
+		STR_DISP("Perspective (arch1t3cht)")
+		STR_HELP("Use the existing perspective quad based on ASS rotation, shear, scale and position tags")
+	};
+
 	// Perspective settings
 	struct visual_mode_perspective_plane final : public visual_tool_persp_setting<PERSP_OUTER> {
 		CMD_NAME("video/tool/perspective/plane")
@@ -208,7 +244,9 @@ namespace {
 		STR_HELP("When the surrounding plane is also visible, switches which quad is locked. If inactive, the inner quad can only be resized without changing the perspective plane. If active, this holds for the outer quad instead.")
 
 		bool Validate(const agi::Context *c) override {
-			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)) && c->videoDisplay->GetSubTool() & PERSP_OUTER;
+			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)) &&
+				(c->videoDisplay->GetSubTool() & PERSP_MODE) == PERSP_MODE_ARCH1T3CHT &&
+				(c->videoDisplay->GetSubTool() & PERSP_OUTER);
 		}
 	};
 
@@ -370,6 +408,8 @@ namespace cmd {
 		reg(agi::make_unique<visual_mode_vector_clip>());
 		reg(agi::make_unique<visual_motion_track>());
 
+		reg(agi::make_unique<visual_mode_perspective_distort>());
+		reg(agi::make_unique<visual_mode_perspective_arch1t3cht>());
 		reg(agi::make_unique<visual_mode_perspective_plane>());
 		reg(agi::make_unique<visual_mode_perspective_lock_inner>());
 		reg(agi::make_unique<visual_mode_perspective_grid>());
