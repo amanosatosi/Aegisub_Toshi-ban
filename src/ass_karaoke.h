@@ -61,10 +61,19 @@ private:
 	int line_end_time = 0;
 	bool has_karaoke_tags = false;
 
+	/// Source-preserving Mangetsu furigana layout. When present, syllable text
+	/// contains only the logical timing text (the ruby side of <base|ruby>),
+	/// while these fields map logical byte boundaries back into the ASS source.
+	bool has_mangetsu_furigana = false;
+	std::string mangetsu_source;
+	std::string mangetsu_logical_text;
+	std::vector<size_t> mangetsu_source_offsets;
+
 	bool no_announce = false;
 
 	agi::signal::Signal<> AnnounceSyllablesChanged;
 	void ParseSyllables(const AssDialogue *line, Syllable &syl);
+	std::string GetMangetsuText(bool k_tags) const;
 
 public:
 	/// Constructor

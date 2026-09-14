@@ -52,6 +52,7 @@ all_test_sources += [
     'tests/iconv.cpp',
     'tests/ifind.cpp',
     'tests/ass_karaoke_preserve_split.cpp',
+    'tests/ass_karaoke_mangetsu.cpp',
     'tests/ass_font_tag_selection.cpp',
     'tests/resolution_resampler_classification.cpp',
     'tests/resolution_resampler.cpp',

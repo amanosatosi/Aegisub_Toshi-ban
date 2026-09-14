@@ -26,6 +26,7 @@
 #include <boost/locale/boundary.hpp>
 #include <algorithm>
 #include <cctype>
+#include <utility>
 
 namespace {
 uint32_t utf8_codepoint(std::string const& chr) {
@@ -220,6 +221,241 @@ bool attaches_in_song_sane_mode(std::string const& previous, uint32_t current) {
 	       (current == 0x3046 && (is_hiragana_o_row(last) || is_small_kana_modifier(last))) ||
 	       (current == 0x30A6 && (is_katakana_o_row(last) || is_small_kana_modifier(last)));
 }
+
+struct DialogueBlockSpan {
+	size_t begin;
+	size_t end;
+	AssBlockType type;
+};
+
+struct MangetsuFuriganaGroup {
+	size_t begin;
+	size_t ruby_begin;
+	size_t end;
+};
+
+struct MangetsuKaraokeSource {
+	std::string logical_ass;
+	std::string source_without_karaoke;
+	std::string logical_text;
+	std::vector<size_t> source_offsets;
+	bool has_furigana = false;
+};
+
+std::vector<DialogueBlockSpan> get_dialogue_block_spans(AssDialogue const& line) {
+	std::vector<DialogueBlockSpan> spans;
+	auto blocks = line.ParseTags();
+	auto const& source = line.Text.get();
+	size_t pos = 0;
+	spans.reserve(blocks.size());
+
+	for (auto const& block : blocks) {
+		size_t end = source.size();
+		if (pos < source.size() && source[pos] == '{') {
+			auto close = source.find('}', pos);
+			if (close != std::string::npos)
+				end = close + 1;
+			else {
+				auto next = source.find('{', pos + 1);
+				end = next == std::string::npos ? source.size() : next;
+			}
+		}
+		else {
+			auto next = source.find('{', pos + 1);
+			end = next == std::string::npos ? source.size() : next;
+		}
+
+		spans.push_back({pos, end, block->GetType()});
+		pos = end;
+	}
+
+	return spans;
+}
+
+std::vector<MangetsuFuriganaGroup> find_mangetsu_furigana(
+	std::string const& source, std::vector<DialogueBlockSpan> const& blocks)
+{
+	std::vector<bool> plain(source.size(), false);
+	for (auto const& block : blocks) {
+		if (block.type == AssBlockType::PLAIN)
+			std::fill(plain.begin() + block.begin, plain.begin() + block.end, true);
+	}
+
+	std::vector<MangetsuFuriganaGroup> groups;
+	for (size_t begin = 0; begin < source.size(); ++begin) {
+		if (!plain[begin] || source[begin] != '<')
+			continue;
+
+		size_t pipe = std::string::npos;
+		size_t end = std::string::npos;
+		size_t nested = std::string::npos;
+		bool extra_pipe = false;
+		for (size_t pos = begin + 1; pos < source.size(); ++pos) {
+			if (!plain[pos])
+				continue;
+			if (source[pos] == '<') {
+				nested = pos;
+				break;
+			}
+			if (source[pos] == '|') {
+				if (pipe == std::string::npos)
+					pipe = pos;
+				else
+					extra_pipe = true;
+				continue;
+			}
+			if (source[pos] == '>') {
+				end = pos;
+				break;
+			}
+		}
+
+		if (nested != std::string::npos) {
+			// Treat the whole ambiguous angle-bracket run as ordinary text rather
+			// than recognizing a valid-looking suffix inside a malformed group.
+			for (size_t pos = nested + 1; pos < source.size(); ++pos) {
+				if (plain[pos] && source[pos] == '>') {
+					begin = pos;
+					break;
+				}
+			}
+			continue;
+		}
+
+		if (extra_pipe || pipe == std::string::npos || end == std::string::npos)
+			continue;
+
+		bool base_has_text = false;
+		bool ruby_has_text = false;
+		for (size_t pos = begin + 1; pos < pipe; ++pos)
+			base_has_text = base_has_text || plain[pos];
+		for (size_t pos = pipe + 1; pos < end; ++pos)
+			ruby_has_text = ruby_has_text || plain[pos];
+
+		if (!base_has_text || !ruby_has_text)
+			continue;
+
+		groups.push_back({begin, pipe + 1, end});
+		begin = end;
+	}
+	return groups;
+}
+
+bool is_karaoke_tag(AssOverrideTag const& tag) {
+	return tag.IsValid() && boost::istarts_with(tag.Name, "\\k");
+}
+
+// Remove top-level karaoke tags while keeping every other byte in the override
+// block intact. Nested tags (for example in a transform) are intentionally opaque,
+// matching AssDialogueBlockOverride::ParseTags.
+std::string strip_karaoke_tags(std::string const& block) {
+	if (block.size() < 2 || block.front() != '{' || block.back() != '}')
+		return block;
+
+	std::string const inner = block.substr(1, block.size() - 2);
+	std::vector<std::pair<size_t, size_t>> tags;
+	int depth = 0;
+	size_t start = 0;
+	for (size_t pos = 1; pos < inner.size(); ++pos) {
+		if (depth > 0) {
+			if (inner[pos] == ')')
+				--depth;
+		}
+		else if (inner[pos] == '\\') {
+			tags.emplace_back(start, pos);
+			start = pos;
+		}
+		else if (inner[pos] == '(')
+			++depth;
+	}
+	if (!inner.empty())
+		tags.emplace_back(start, inner.size());
+
+	bool removed = false;
+	std::string kept;
+	for (auto const& range : tags) {
+		std::string text = inner.substr(range.first, range.second - range.first);
+		AssOverrideTag tag(text);
+		if (is_karaoke_tag(tag))
+			removed = true;
+		else
+			kept += text;
+	}
+
+	if (!removed)
+		return block;
+	if (kept.empty())
+		return "";
+	return "{" + kept + "}";
+}
+
+MangetsuKaraokeSource build_mangetsu_karaoke_source(AssDialogue const& line) {
+	MangetsuKaraokeSource result;
+	auto const& source = line.Text.get();
+	auto blocks = get_dialogue_block_spans(line);
+	auto groups = find_mangetsu_furigana(source, blocks);
+	if (groups.empty())
+		return result;
+
+	result.has_furigana = true;
+	size_t copied = 0;
+	for (auto const& group : groups) {
+		result.logical_ass += source.substr(copied, group.begin - copied);
+		result.logical_ass += source.substr(group.ruby_begin, group.end - group.ruby_begin);
+		copied = group.end + 1;
+	}
+	result.logical_ass += source.substr(copied);
+
+	result.source_offsets.push_back(0);
+	size_t block_idx = 0;
+	size_t group_idx = 0;
+	size_t pos = 0;
+	while (pos < source.size()) {
+		while (block_idx < blocks.size() && blocks[block_idx].end <= pos)
+			++block_idx;
+
+		if (group_idx < groups.size() && pos == groups[group_idx].begin) {
+			auto const& group = groups[group_idx];
+			result.source_without_karaoke += source.substr(pos, group.ruby_begin - pos);
+			result.source_offsets.back() = result.source_without_karaoke.size();
+			pos = group.ruby_begin;
+			continue;
+		}
+
+		if (group_idx < groups.size() && pos == groups[group_idx].end) {
+			result.source_without_karaoke += source[pos++];
+			result.source_offsets.back() = result.source_without_karaoke.size();
+			++group_idx;
+			continue;
+		}
+
+		if (block_idx >= blocks.size())
+			break;
+
+		auto const& block = blocks[block_idx];
+		if (pos == block.begin && block.type != AssBlockType::PLAIN) {
+			std::string text = source.substr(block.begin, block.end - block.begin);
+			if (block.type == AssBlockType::OVERRIDE)
+				text = strip_karaoke_tags(text);
+			result.source_without_karaoke += text;
+			pos = block.end;
+			continue;
+		}
+
+		// Drawing bytes are never timing text, even when a structural jump left
+		// us in the middle of their block.
+		if (block.type != AssBlockType::PLAIN) {
+			result.source_without_karaoke += source[pos++];
+			continue;
+		}
+
+		result.source_without_karaoke += source[pos];
+		result.logical_text += source[pos++];
+		result.source_offsets.push_back(result.source_without_karaoke.size());
+	}
+
+	return result;
+}
 } // namespace
 
 std::string AssKaraoke::Syllable::GetText(bool k_tag) const {
@@ -245,6 +481,10 @@ AssKaraoke::AssKaraoke(const AssDialogue *line, bool auto_split, bool normalize)
 void AssKaraoke::SetLine(const AssDialogue *line, bool auto_split, bool normalize) {
 	syls.clear();
 	has_karaoke_tags = false;
+	has_mangetsu_furigana = false;
+	mangetsu_source.clear();
+	mangetsu_logical_text.clear();
+	mangetsu_source_offsets.clear();
 	line_start_time = line->Start;
 	line_end_time = line->End;
 	Syllable syl;
@@ -252,7 +492,18 @@ void AssKaraoke::SetLine(const AssDialogue *line, bool auto_split, bool normaliz
 	syl.duration = 0;
 	syl.tag_type = "\\k";
 
-	ParseSyllables(line, syl);
+	auto mangetsu = build_mangetsu_karaoke_source(*line);
+	if (mangetsu.has_furigana) {
+		AssDialogue logical_line(*line);
+		logical_line.Text = mangetsu.logical_ass;
+		ParseSyllables(&logical_line, syl);
+		has_mangetsu_furigana = true;
+		mangetsu_source = std::move(mangetsu.source_without_karaoke);
+		mangetsu_logical_text = std::move(mangetsu.logical_text);
+		mangetsu_source_offsets = std::move(mangetsu.source_offsets);
+	}
+	else
+		ParseSyllables(line, syl);
 
 	if (normalize) {
 		// Normalize the syllables so that the total duration is equal to the line length
@@ -351,6 +602,9 @@ void AssKaraoke::ParseSyllables(const AssDialogue *line, Syllable &syl) {
 }
 
 std::string AssKaraoke::GetText(bool k_tags) const {
+	if (has_mangetsu_furigana)
+		return GetMangetsuText(k_tags);
+
 	std::string text;
 	text.reserve(size() * 10);
 
@@ -358,6 +612,51 @@ std::string AssKaraoke::GetText(bool k_tags) const {
 		text += syl.GetText(k_tags);
 
 	return text;
+}
+
+std::string AssKaraoke::GetMangetsuText(bool k_tags) const {
+	if (!k_tags)
+		return mangetsu_source;
+
+	std::string logical_text;
+	for (auto const& syl : syls)
+		logical_text += syl.text;
+
+	// All editing operations used by K-Timing preserve the logical text. If a
+	// future operation changes it, failing closed is safer than placing timing
+	// tags into the base side or damaging a furigana delimiter.
+	if (logical_text != mangetsu_logical_text ||
+		mangetsu_source_offsets.size() != mangetsu_logical_text.size() + 1)
+		return mangetsu_source;
+
+	struct Insertion {
+		size_t source_pos;
+		std::string tag;
+	};
+	std::vector<Insertion> insertions;
+	insertions.reserve(syls.size());
+
+	size_t logical_pos = 0;
+	for (auto const& syl : syls) {
+		insertions.push_back({
+			mangetsu_source_offsets[logical_pos],
+			agi::format("{%s%d}", syl.tag_type, ((syl.duration + 5) / 10))
+		});
+		logical_pos += syl.text.size();
+	}
+
+	std::string result;
+	result.reserve(mangetsu_source.size() + insertions.size() * 8);
+	size_t source_pos = 0;
+	for (auto const& insertion : insertions) {
+		if (insertion.source_pos < source_pos || insertion.source_pos > mangetsu_source.size())
+			return mangetsu_source;
+		result += mangetsu_source.substr(source_pos, insertion.source_pos - source_pos);
+		result += insertion.tag;
+		source_pos = insertion.source_pos;
+	}
+	result += mangetsu_source.substr(source_pos);
+	return result;
 }
 
 std::string AssKaraoke::GetTagType() const {
