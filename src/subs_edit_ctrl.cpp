@@ -37,6 +37,7 @@
 #include "include/aegisub/context.h"
 #include "include/aegisub/spellchecker.h"
 #include "selection_controller.h"
+#include "subs_edit_box.h"
 #include "text_selection_controller.h"
 #include "thesaurus.h"
 #include "utils.h"
@@ -132,6 +133,8 @@ enum {
 	EDIT_MENU_COPY,
 	EDIT_MENU_PASTE,
 	EDIT_MENU_SELECT_ALL,
+	EDIT_MENU_TOGGLE_MOTION_TRACKING,
+	EDIT_MENU_COPY_MOTION_TRACKING,
 	EDIT_MENU_ADD_TO_DICT,
 	EDIT_MENU_REMOVE_FROM_DICT,
 	EDIT_MENU_SUGGESTION,
@@ -179,6 +182,15 @@ SubsTextEditCtrl::SubsTextEditCtrl(wxWindow* parent, wxSize wsize, long style, a
 	Bind(wxEVT_MENU, bind(&SubsTextEditCtrl::Copy, this), EDIT_MENU_COPY);
 	Bind(wxEVT_MENU, bind(&SubsTextEditCtrl::Paste, this), EDIT_MENU_PASTE);
 	Bind(wxEVT_MENU, bind(&SubsTextEditCtrl::SelectAll, this), EDIT_MENU_SELECT_ALL);
+	Bind(wxEVT_MENU, [=](wxCommandEvent&) {
+		if (context && context->subsEditBox)
+			context->subsEditBox->ToggleMotionTrackingBlockAtDisplayPosition(context_motion_tracking_pos);
+	}, EDIT_MENU_TOGGLE_MOTION_TRACKING);
+	Bind(wxEVT_MENU, [=](wxCommandEvent&) {
+		if (!context_motion_tracking_block.empty())
+			SetClipboard(context_motion_tracking_block);
+		SetFocus();
+	}, EDIT_MENU_COPY_MOTION_TRACKING);
 
 	if (context) {
 		Bind(wxEVT_MENU, bind(&cmd::call, "edit/line/split/preserve", context), EDIT_MENU_SPLIT_PRESERVE);
@@ -482,6 +494,12 @@ void SubsTextEditCtrl::OnContextMenu(wxContextMenuEvent &event) {
 
 	currentWordPos = GetBoundsOfWordAtPosition(activePos);
 	currentWord = line_text.substr(currentWordPos.first, currentWordPos.second);
+	context_motion_tracking_pos = activePos;
+	context_motion_tracking_block.clear();
+	bool motion_tracking_expanded = false;
+	bool on_motion_tracking = context && context->subsEditBox &&
+		context->subsEditBox->GetMotionTrackingBlockAtDisplayPosition(
+			activePos, context_motion_tracking_block, motion_tracking_expanded);
 
 	wxMenu menu;
 	if (spellchecker) {
@@ -496,6 +514,12 @@ void SubsTextEditCtrl::OnContextMenu(wxContextMenuEvent &event) {
 	}
 
 	AddThesaurusEntries(menu);
+	if (on_motion_tracking) {
+		menu.AppendSeparator();
+		menu.Append(EDIT_MENU_TOGGLE_MOTION_TRACKING,
+			motion_tracking_expanded ? _("Collapse motion tracking") : _("Show full motion tracking"));
+		menu.Append(EDIT_MENU_COPY_MOTION_TRACKING, _("Copy motion tracking tags"));
+	}
 
 	// Standard actions
 	menu.Append(EDIT_MENU_CUT,_("Cu&t"))->Enable(GetSelectionStart()-GetSelectionEnd() != 0);

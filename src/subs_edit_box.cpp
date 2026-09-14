@@ -315,7 +315,7 @@ SubsEditBox::SubsEditBox(wxWindow *parent, agi::Context *context)
 	better_view_enabled_ = OPT_GET("Subtitle/Better View")->GetBool();
 
 	better_view_box = new wxCheckBox(this, -1, _("Better View"));
-	better_view_box->SetToolTip(_("Display \\N as real line breaks inside the edit box."));
+	better_view_box->SetToolTip(_("Display visual line breaks and compact helper data inside the edit box."));
 	better_view_box->Bind(wxEVT_CHECKBOX, &SubsEditBox::OnBetterView, this);
 	middle_right_sizer->Add(better_view_box, wxSizerFlags().Expand());
 	better_view_box->SetValue(better_view_enabled_);
@@ -616,6 +616,8 @@ void SubsEditBox::OnCommit(int type) {
 	wxEventBlocker blocker(this);
 
 	initial_times.clear();
+	if (type & AssFile::COMMIT_DIAG_TEXT)
+		expanded_motion_blocks_.clear();
 
 	if (type == AssFile::COMMIT_NEW || type & AssFile::COMMIT_STYLES) {
 		wxString style = style_box->GetValue();
@@ -656,8 +658,7 @@ void SubsEditBox::UpdateFields(int type, bool repopulate_lists) {
 			edit_ctrl->SetTextTo(display_text);
 		}
 		else {
-			display_to_raw_.clear();
-			display_to_raw_raw_text_.clear();
+			better_view_conversion_ = agi::BuildBetterViewConversion(raw_utf8, false);
 			edit_ctrl->SetTextTo(raw_utf8);
 		}
 		// Satoshi: \N visual newline support (end)
@@ -1187,6 +1188,7 @@ void SubsEditBox::OnActiveLineChanged(AssDialogue *new_line) {
 	wxEventBlocker blocker(this);
 	line = new_line;
 	commit_id = -1;
+	expanded_motion_blocks_.clear();
 
 	UpdateFields(AssFile::COMMIT_DIAG_FULL, false);
 	actor_should_autofill_ = false;
@@ -1240,22 +1242,53 @@ void SubsEditBox::OnChange(wxStyledTextEvent &event) {
 	// Satoshi: \N visual newline support
 	std::string normalized_text;
 	if (better_view_enabled_) {
-		wxString display_text = to_wx(control_text);
-		wxString ass_text = MakeAssText(display_text);
-		normalized_text = from_wx(ass_text);
-		RebuildDisplayMapping(normalized_text);
+		if (better_view_conversion_.raw_text != line->Text.get())
+			RebuildDisplayMapping(line->Text.get());
+
+		auto edit = agi::ApplyBetterViewEdit(better_view_conversion_, control_text);
+		normalized_text = std::move(edit.raw_text);
+
+		std::vector<size_t> shifted_expansions;
+		shifted_expansions.reserve(expanded_motion_blocks_.size());
+		long long delta = static_cast<long long>(normalized_text.size()) - static_cast<long long>(better_view_conversion_.raw_text.size());
+		for (size_t start : expanded_motion_blocks_) {
+			if (edit.replaced_raw_end <= start) {
+				long long shifted = static_cast<long long>(start) + delta;
+				if (shifted >= 0)
+					shifted_expansions.push_back(static_cast<size_t>(shifted));
+			}
+			else if (edit.replaced_raw_begin > start)
+				shifted_expansions.push_back(start);
+			else
+				shifted_expansions.push_back(edit.replaced_raw_begin);
+		}
+
+		auto conversion = agi::BuildBetterViewConversion(normalized_text, true, shifted_expansions);
+		expanded_motion_blocks_.clear();
+		for (auto const& block : conversion.motion_blocks) {
+			if (!block.collapsed)
+				expanded_motion_blocks_.push_back(block.raw_begin);
+		}
+
+		if (conversion.display_text != control_text) {
+			int raw_caret = static_cast<int>(edit.replaced_raw_begin + edit.inserted_raw_size);
+			int display_caret = conversion.MapRawToDisplay(raw_caret);
+			edit_ctrl->SetTextTo(conversion.display_text);
+			edit_ctrl->SetSelection(display_caret, display_caret);
+			edit_ctrl->GotoPos(display_caret);
+		}
+		better_view_conversion_ = std::move(conversion);
 	}
 	else {
 		normalized_text = control_text;
-		display_to_raw_.clear();
-		display_to_raw_raw_text_.clear();
+		better_view_conversion_ = agi::BuildBetterViewConversion(normalized_text, false);
 	}
 	// Satoshi: \N visual newline support (end)
 
 	if (normalized_text != line->Text.get()) {
 		if (event.GetModificationType() & wxSTC_STARTACTION)
 			commit_id = -1;
-		CommitText(_("modify text"));
+		CommitText(_("modify text"), normalized_text);
 		UpdateCharacterCount(line->Text);
 	}
 }
@@ -1288,19 +1321,7 @@ void SubsEditBox::SetSelectedRows(T AssDialogueBase::*field, wxString const& val
 	SetSelectedRows([&](AssDialogue *d) { d->*field = conv_value; }, desc, type, amend);
 }
 
-void SubsEditBox::CommitText(wxString const& desc) {
-	auto data = edit_ctrl->GetTextRaw();
-	std::string control_text(data.data(), data.length());
-	// Satoshi: \N visual newline support
-	std::string normalized_text;
-	if (better_view_enabled_) {
-		wxString ass_text = MakeAssText(to_wx(control_text));
-		normalized_text = from_wx(ass_text);
-	}
-	else {
-		normalized_text = control_text;
-	}
-	// Satoshi: \N visual newline support (end)
+void SubsEditBox::CommitText(wxString const& desc, std::string const& normalized_text) {
 	SetSelectedRows(&AssDialogue::Text, boost::flyweight<std::string>(normalized_text), desc, AssFile::COMMIT_DIAG_TEXT, true);
 }
 
@@ -1411,65 +1432,31 @@ void SubsEditBox::OnSplit(wxCommandEvent&) {
 	OPT_SET("Subtitle/Show Original")->SetBool(show_original);
 }
 
-struct BetterViewConversion {
-	std::string display_utf8;
-	std::vector<int> disp_to_raw;
-};
-
-static BetterViewConversion BuildBetterViewConversion(std::string const& raw_utf8) {
-	BetterViewConversion result;
-	result.display_utf8.reserve(raw_utf8.size());
-	result.disp_to_raw.reserve(raw_utf8.size() + 1);
-
-	size_t raw_pos = 0;
-	while (raw_pos < raw_utf8.size()) {
-		if (raw_pos + 1 < raw_utf8.size() && raw_utf8[raw_pos] == '\\' && raw_utf8[raw_pos + 1] == 'N') {
-			result.display_utf8.push_back('\n');
-			result.disp_to_raw.push_back(static_cast<int>(raw_pos));
-			raw_pos += 2;
-			continue;
-		}
-
-		result.display_utf8.push_back(raw_utf8[raw_pos]);
-		result.disp_to_raw.push_back(static_cast<int>(raw_pos));
-		++raw_pos;
-	}
-
-	result.disp_to_raw.push_back(static_cast<int>(raw_utf8.size()));
-	return result;
-}
-
 static wxString ConvertAssVisualBreaks(wxString const& src) {
-	auto conversion = BuildBetterViewConversion(from_wx(src));
-	return wxString::FromUTF8(conversion.display_utf8.c_str());
+	auto conversion = agi::BuildBetterViewConversion(from_wx(src), true);
+	return wxString::FromUTF8(conversion.display_text.c_str());
 }
 
 std::string SubsEditBox::BuildDisplayTextWithMapping(std::string const& raw_utf8) {
 	if (!better_view_enabled_) {
-		display_to_raw_.clear();
-		display_to_raw_raw_text_.clear();
+		better_view_conversion_ = agi::BuildBetterViewConversion(raw_utf8, false);
 		return raw_utf8;
 	}
 
-	auto conversion = BuildBetterViewConversion(raw_utf8);
-	display_to_raw_ = std::move(conversion.disp_to_raw);
-	display_to_raw_raw_text_ = raw_utf8;
-	return std::move(conversion.display_utf8);
+	better_view_conversion_ = agi::BuildBetterViewConversion(raw_utf8, true, expanded_motion_blocks_);
+	return better_view_conversion_.display_text;
 }
 
 void SubsEditBox::RebuildDisplayMapping(std::string const& raw_utf8) {
 	if (!better_view_enabled_) {
-		display_to_raw_.clear();
-		display_to_raw_raw_text_.clear();
+		better_view_conversion_ = agi::BuildBetterViewConversion(raw_utf8, false);
 		return;
 	}
 
-	if (display_to_raw_raw_text_ == raw_utf8 && !display_to_raw_.empty())
+	if (better_view_conversion_.raw_text == raw_utf8 && !better_view_conversion_.display_to_raw.empty())
 		return;
 
-	auto conversion = BuildBetterViewConversion(raw_utf8);
-	display_to_raw_ = std::move(conversion.disp_to_raw);
-	display_to_raw_raw_text_ = raw_utf8;
+	better_view_conversion_ = agi::BuildBetterViewConversion(raw_utf8, true, expanded_motion_blocks_);
 }
 
 bool SubsEditBox::MapDisplayRangeToRaw(int disp_start, int disp_end, std::string const& raw_utf8, int& raw_start, int& raw_end) {
@@ -1480,18 +1467,7 @@ bool SubsEditBox::MapDisplayRangeToRaw(int disp_start, int disp_end, std::string
 	}
 
 	RebuildDisplayMapping(raw_utf8);
-	if (display_to_raw_.empty()) {
-		raw_start = disp_start;
-		raw_end = disp_end;
-		return false;
-	}
-
-	const int max_disp = static_cast<int>(display_to_raw_.size()) - 1;
-	disp_start = std::clamp(disp_start, 0, max_disp);
-	disp_end = std::clamp(disp_end, 0, max_disp);
-	raw_start = display_to_raw_[disp_start];
-	raw_end = display_to_raw_[disp_end];
-	return true;
+	return better_view_conversion_.MapDisplayRangeToRaw(disp_start, disp_end, raw_start, raw_end);
 }
 
 int SubsEditBox::MapRawToDisplay(int raw_offset, std::string const& raw_utf8) {
@@ -1499,19 +1475,48 @@ int SubsEditBox::MapRawToDisplay(int raw_offset, std::string const& raw_utf8) {
 		return std::clamp(raw_offset, 0, static_cast<int>(raw_utf8.size()));
 
 	RebuildDisplayMapping(raw_utf8);
-	if (display_to_raw_.empty())
-		return std::clamp(raw_offset, 0, static_cast<int>(raw_utf8.size()));
+	return better_view_conversion_.MapRawToDisplay(raw_offset);
+}
 
-	raw_offset = std::clamp(raw_offset, 0, static_cast<int>(raw_utf8.size()));
-	const int disp_len = static_cast<int>(display_to_raw_.size()) - 1;
-	for (int disp = 0; disp < disp_len; ++disp) {
-		const int next_raw = display_to_raw_[disp + 1];
-		if (raw_offset < next_raw)
-			return disp;
-		if (disp + 1 == disp_len)
-			return disp_len;
+bool SubsEditBox::GetMotionTrackingBlockAtDisplayPosition(int display_pos, std::string& raw_block, bool& expanded) {
+	if (!better_view_enabled_ || !line)
+		return false;
+	RebuildDisplayMapping(line->Text.get());
+	auto block = better_view_conversion_.MotionBlockAtDisplayPosition(display_pos);
+	if (!block)
+		return false;
+	raw_block = better_view_conversion_.MotionBlockText(*block);
+	expanded = !block->collapsed;
+	return true;
+}
+
+bool SubsEditBox::ToggleMotionTrackingBlockAtDisplayPosition(int display_pos) {
+	if (!better_view_enabled_ || !line)
+		return false;
+	RebuildDisplayMapping(line->Text.get());
+	auto block = better_view_conversion_.MotionBlockAtDisplayPosition(display_pos);
+	if (!block)
+		return false;
+
+	size_t raw_begin = block->raw_begin;
+	if (block->collapsed)
+		expanded_motion_blocks_.push_back(raw_begin);
+	else
+		expanded_motion_blocks_.erase(
+			std::remove(expanded_motion_blocks_.begin(), expanded_motion_blocks_.end(), raw_begin),
+			expanded_motion_blocks_.end());
+
+	std::string display = BuildDisplayTextWithMapping(line->Text.get());
+	edit_ctrl->SetTextTo(display);
+	auto updated = std::find_if(better_view_conversion_.motion_blocks.begin(), better_view_conversion_.motion_blocks.end(),
+		[=](agi::BetterViewMotionBlock const& candidate) { return candidate.raw_begin == raw_begin; });
+	if (updated != better_view_conversion_.motion_blocks.end()) {
+		int caret = static_cast<int>(updated->display_begin);
+		edit_ctrl->SetSelection(caret, caret);
+		edit_ctrl->GotoPos(caret);
 	}
-	return disp_len;
+	edit_ctrl->SetFocus();
+	return true;
 }
 
 void SubsEditBox::OnBetterView(wxCommandEvent&) {
@@ -1520,9 +1525,10 @@ void SubsEditBox::OnBetterView(wxCommandEvent&) {
 
 	auto buffer = edit_ctrl->GetTextRaw();
 	std::string current_text(buffer.data(), buffer.length());
-	wxString wx_text = to_wx(current_text);
-	std::string raw_utf8 = from_wx(EditorDisplayToAss(wx_text));
+	std::string raw_utf8 = better_view_enabled_ ?
+		agi::ApplyBetterViewEdit(better_view_conversion_, current_text).raw_text : current_text;
 
+	expanded_motion_blocks_.clear();
 	better_view_enabled_ = new_state;
 	OPT_SET("Subtitle/Better View")->SetBool(new_state);
 	if (better_view_enabled_) {
@@ -1530,8 +1536,7 @@ void SubsEditBox::OnBetterView(wxCommandEvent&) {
 		edit_ctrl->SetTextTo(display_text);
 	}
 	else {
-		display_to_raw_.clear();
-		display_to_raw_raw_text_.clear();
+		better_view_conversion_ = agi::BuildBetterViewConversion(raw_utf8, false);
 		edit_ctrl->SetTextTo(raw_utf8);
 	}
 
@@ -1563,12 +1568,6 @@ wxString SubsEditBox::MakeDisplayText(wxString const& raw) const {
 	if (!better_view_enabled_)
 		return raw;
 	return ConvertAssVisualBreaks(raw);
-}
-
-wxString SubsEditBox::MakeAssText(wxString const& display) const {
-	if (!better_view_enabled_)
-		return display;
-	return EditorDisplayToAss(display);
 }
 
 void SubsEditBox::OnStyleChange(wxCommandEvent &evt) {

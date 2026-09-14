@@ -38,6 +38,7 @@ aegisub_src = files(
     'auto4_lua_dialog.cpp',
     'auto4_lua_progresssink.cpp',
     'base_grid.cpp',
+    'better_view.cpp',
     'charset_detect.cpp',
     'colorspace.cpp',
     'colour_button.cpp',

@@ -56,6 +56,8 @@ class SubsTextEditCtrl final : public wxStyledTextCtrl {
 
 	/// The word right-clicked on, used for spellchecker replacing
 	std::string currentWord;
+	int context_motion_tracking_pos = -1;
+	std::string context_motion_tracking_block;
 
 	/// The beginning of the word right-clicked on, for spellchecker replacing
 	std::pair<int, int> currentWordPos;
