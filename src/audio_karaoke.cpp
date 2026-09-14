@@ -83,6 +83,7 @@ AudioKaraoke::AudioKaraoke(wxWindow *parent, agi::Context *c)
 	tag_type_choice->Append(wxS("\\K"));
 	tag_type_choice->Append(wxS("\\kf"));
 	tag_type_choice->Append(wxS("\\ko"));
+	tag_type_choice->Append(wxS("\\kO"));
 	tag_type_choice->SetSelection(0);
 	tag_type_choice->SetToolTip(_("Karaoke tag type used when committing Toshiki K-Timing"));
 	tag_type_choice->Bind(wxEVT_CHOICE, &AudioKaraoke::OnKTimingTagTypeChoice, this);
@@ -378,6 +379,7 @@ void AudioKaraoke::ShowKTimingTagMenu() {
 	add_commit_item("\\K");
 	add_commit_item("\\kf");
 	add_commit_item("\\ko");
+	add_commit_item("\\kO");
 
 	PopupMenu(&context_menu);
 }
@@ -396,6 +398,7 @@ void AudioKaraoke::OnContextMenu(wxContextMenuEvent&) {
 	AddMenuItem(context_menu, "\\k", _("Change karaoke tag to \\k"), type);
 	AddMenuItem(context_menu, "\\kf", _("Change karaoke tag to \\kf"), type);
 	AddMenuItem(context_menu, "\\ko", _("Change karaoke tag to \\ko"), type);
+	AddMenuItem(context_menu, "\\kO", _("Change karaoke tag to \\kO"), type);
 
 	PopupMenu(&context_menu);
 }

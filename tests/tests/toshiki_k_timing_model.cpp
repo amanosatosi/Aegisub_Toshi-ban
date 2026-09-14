@@ -76,6 +76,8 @@ TEST(AssKaraoke, ToshikiTiming_TagTypesAndSingleSegmentChanges) {
 	EXPECT_EQ("{\\kf10}a{\\kf10}b", kara.GetText());
 	kara.SetSyllableTagType(1, "\\ko", false);
 	EXPECT_EQ("{\\kf10}a{\\ko10}b", kara.GetText());
+	kara.SetTagType("\\kO", false);
+	EXPECT_EQ("{\\kO10}a{\\kO10}b", kara.GetText());
 }
 
 TEST(AssKaraoke, ToshikiTiming_ReopenCommittedLineWithoutDrift) {

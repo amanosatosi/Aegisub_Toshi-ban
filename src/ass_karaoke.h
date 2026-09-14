@@ -31,7 +31,8 @@ public:
 	enum class TagType {
 		k,
 		kf,
-		ko
+		ko,
+		kO
 	};
 
 	/// Parsed syllable data
@@ -52,6 +53,7 @@ public:
 		TagType GetTagType() const {
 			if (tag_type == "\\kf") return TagType::kf;
 			if (tag_type == "\\ko") return TagType::ko;
+			if (tag_type == "\\kO") return TagType::kO;
 			return TagType::k;
 		}
 	};
@@ -133,7 +135,7 @@ public:
 	std::string GetText(bool k_tags = true) const;
 
 	/// Get the karaoke tag type used, with leading slash
-	/// @returns "\k", "\kf", or "\ko"
+	/// @returns "\k", "\K", "\kf", "\ko", or "\kO"
 	std::string GetTagType() const;
 	/// Set the tag type for all karaoke tags in this line
 	void SetTagType(std::string const& new_type, bool announce = true);

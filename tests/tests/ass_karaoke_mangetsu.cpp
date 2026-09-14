@@ -154,6 +154,17 @@ TEST(AssKaraokeMangetsu, UppercaseKUsesExistingAegisubNormalization) {
 	EXPECT_EQ(std::string(u8"<病|{\\kf30}やまい>"), karaoke.GetText());
 }
 
+TEST(AssKaraokeMangetsu, CapitalOKaraokeTagParsesAndStaysInsideRuby) {
+	auto line = make_line(u8"<病|{\\kO30}や{\\kO26}ま{\\kO10}い>");
+	AssKaraoke karaoke(&line, false, false);
+
+	ASSERT_EQ(3u, karaoke.size());
+	EXPECT_EQ("\\kO", karaoke.begin()->tag_type);
+	EXPECT_EQ("\\kO", (karaoke.begin() + 1)->tag_type);
+	EXPECT_EQ("\\kO", (karaoke.begin() + 2)->tag_type);
+	EXPECT_EQ(line.Text.get(), karaoke.GetText());
+}
+
 TEST(AssKaraokeMangetsu, OrdinaryKaraokeSerializationIsUnchanged) {
 	auto line = make_line("{\\k20}ka{\\kf30}ra{\\ko40}oke", 900);
 	AssKaraoke karaoke(&line, false, false);
