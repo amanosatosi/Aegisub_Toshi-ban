@@ -252,6 +252,50 @@ int max_width(T AssDialogueBase::*field, EntryList<AssDialogue> const& lines, Wi
 	return w;
 }
 
+class GridColumnHideOverrides : public GridColumn {
+	const agi::OptionValue *override_mode;
+	wxString replace_char;
+
+	agi::signal::Connection replace_char_connection;
+
+protected:
+	GridColumnHideOverrides()
+	: override_mode(OPT_GET("Subtitle/Grid/Hide Overrides"))
+	, replace_char(to_wx(OPT_GET("Subtitle/Grid/Hide Overrides Char")->GetString()))
+	, replace_char_connection(OPT_SUB("Subtitle/Grid/Hide Overrides Char",
+		[this](agi::OptionValue const& v) { replace_char = to_wx(v.GetString()); }))
+	{
+	}
+
+	wxString HideOverrides(std::string const& text) const {
+		int mode = override_mode->GetInt();
+		if (mode == 0)
+			return to_wx(text);
+
+		wxString str;
+		str.reserve(text.size());
+		size_t start = 0, pos;
+		while ((pos = text.find('{', start)) != std::string::npos) {
+			str += to_wx(text.substr(start, pos - start));
+			if (mode == 1)
+				str += replace_char;
+			start = text.find('}', pos);
+			if (start != std::string::npos) ++start;
+		}
+		if (start != std::string::npos)
+			str += to_wx(text.substr(start));
+		return str;
+	}
+
+	template<typename T>
+	int MaxWidth(T AssDialogueBase::*field, EntryList<AssDialogue> const& lines, WidthHelper &helper) const {
+		int width = 0;
+		for (AssDialogue const& line : lines)
+			width = std::max(width, helper(HideOverrides((line.*field).get())));
+		return width;
+	}
+};
+
 struct GridColumnStyle final : GridColumn {
 	COLUMN_HEADER(_("Style"))
 	COLUMN_DESCRIPTION(_("Style"))
@@ -266,31 +310,31 @@ struct GridColumnStyle final : GridColumn {
 	}
 };
 
-struct GridColumnEffect final : GridColumn {
+struct GridColumnEffect final : GridColumnHideOverrides {
 	COLUMN_HEADER(_("Effect"))
 	COLUMN_DESCRIPTION(_("Effect"))
 	bool Centered() const override { return false; }
 
 	wxString Value(const AssDialogue *d, const agi::Context *) const override {
-		return to_wx(d->Effect);
+		return HideOverrides(d->Effect.get());
 	}
 
 	int Width(const agi::Context *c, WidthHelper &helper) const override {
-		return max_width(&AssDialogue::Effect, c->ass->Events, helper);
+		return MaxWidth(&AssDialogue::Effect, c->ass->Events, helper);
 	}
 };
 
-struct GridColumnActor final : GridColumn {
+struct GridColumnActor final : GridColumnHideOverrides {
 	COLUMN_HEADER(_("Actor"))
 	COLUMN_DESCRIPTION(_("Actor"))
 	bool Centered() const override { return false; }
 
 	wxString Value(const AssDialogue *d, const agi::Context *) const override {
-		return to_wx(d->Actor);
+		return HideOverrides(d->Actor.get());
 	}
 
 	int Width(const agi::Context *c, WidthHelper &helper) const override {
-		return max_width(&AssDialogue::Actor, c->ass->Events, helper);
+		return MaxWidth(&AssDialogue::Actor, c->ass->Events, helper);
 	}
 };
 
@@ -400,21 +444,8 @@ public:
 	}
 };
 
-class GridColumnText final : public GridColumn {
-	const agi::OptionValue *override_mode;
-	wxString replace_char;
-
-	agi::signal::Connection replace_char_connection;
-
+class GridColumnText final : public GridColumnHideOverrides {
 public:
-	GridColumnText()
-	: override_mode(OPT_GET("Subtitle/Grid/Hide Overrides"))
-	, replace_char(to_wx(OPT_GET("Subtitle/Grid/Hide Overrides Char")->GetString()))
-	, replace_char_connection(OPT_SUB("Subtitle/Grid/Hide Overrides Char",
-		[&](agi::OptionValue const& v) { replace_char = to_wx(v.GetString()); }))
-	{
-	}
-
 	COLUMN_HEADER(_("Text"))
 	COLUMN_DESCRIPTION(_("Text"))
 	bool Centered() const override { return false; }
@@ -422,27 +453,7 @@ public:
 	bool RefreshOnTextChange() const override { return true; }
 
 	wxString Value(const AssDialogue *d, const agi::Context *) const override {
-		wxString str;
-		int mode = override_mode->GetInt();
-
-		// Show overrides
-		if (mode == 0)
-			str = to_wx(d->Text);
-		// Hidden overrides
-		else {
-			auto const& text = d->Text.get();
-			str.reserve(text.size());
-			size_t start = 0, pos;
-			while ((pos = text.find('{', start)) != std::string::npos) {
-				str += to_wx(text.substr(start, pos - start));
-				if (mode == 1)
-					str += replace_char;
-				start = text.find('}', pos);
-				if (start != std::string::npos) ++start;
-			}
-			if (start != std::string::npos)
-				str += to_wx(text.substr(start));
-		}
+		wxString str = HideOverrides(d->Text.get());
 
 		// Cap length and set text
 		if (str.size() > 512)
