@@ -120,6 +120,7 @@ public:
 	virtual void TimingFocusLost(int ms) { }
 	virtual void Get39Overlay(std::vector<Timing39Overlay>&, int ms) const { }
 	virtual wxString Get39Status() const { return {}; }
+	virtual unsigned RhythmSerial() const { return 0; }
 
 	enum NextMode {
 		/// Advance to the next timing unit, whether it's a line or a sub-part

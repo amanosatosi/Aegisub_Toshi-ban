@@ -49,6 +49,7 @@ class AudioTimingController39 final : public AudioTimingController {
 	std::vector<AssDialogue*> targets;
 	int selected_lane=0,armed=0,pending_arm=3,last_position=0;
 	bool committing=false,refreshing=false;
+	unsigned rhythm_serial=0;
 	std::string notice;
 
 	LineReview* Current() {auto it=lines.find(active);return it==lines.end()?nullptr:&it->second;}
@@ -236,6 +237,7 @@ public:
 		delete panel;
 	}
 	bool Is39Mode() const override{return true;}
+	unsigned RhythmSerial() const override{return rhythm_serial;}
 	wxString GetWarningMessage() const override{return Get39Status();}
 	wxString Get39Status() const override {
 		auto line=Current();if(!line)return _("39 Mode — select a line");
@@ -278,6 +280,7 @@ public:
 			if((down&&(control||shift))||!armed||!c->audioController->IsPlaying())return false;
 			int lane=key=='F'||key=='J'?0:1;if(!(armed&(1<<lane)))return true;
 			bool changed=down?line->capture.lanes[lane].KeyDown(key,ms):line->capture.lanes[lane].KeyUp(key,ms);
+			if(changed && down)++rhythm_serial;
 			if(changed)Notify();return true;
 		}
 		if(!down)return false;

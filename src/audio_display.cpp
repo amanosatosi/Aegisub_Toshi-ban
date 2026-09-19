@@ -650,6 +650,7 @@ AudioDisplay::AudioDisplay(wxWindow *parent, AudioController *controller, agi::C
 	Bind(wxEVT_KEY_UP, &AudioDisplay::OnKeyUp, this);
 	scroll_timer.Bind(wxEVT_TIMER, &AudioDisplay::OnScrollTimer, this);
 	load_timer.Bind(wxEVT_TIMER, &AudioDisplay::OnLoadTimer, this);
+	timing39_effect_timer.Bind(wxEVT_TIMER, &AudioDisplay::On39Effects, this);
 }
 
 AudioDisplay::~AudioDisplay()
@@ -884,6 +885,13 @@ void AudioDisplay::OnPaint(wxPaintEvent&)
 
 		if (audio_bounds.Intersects(updrect))
 		{
+			if (auto timing = controller->GetTimingController()) {
+				if (timing->Is39Mode()) {
+					dc.SetBrush(wxBrush(wxColour(20,23,27)));
+					dc.SetPen(*wxTRANSPARENT_PEN);
+					dc.DrawRectangle(updrect.Intersect(audio_bounds));
+				}
+			}
 			TimeRange updtime(
 				std::max(0, TimeFromRelativeX(updrect.x - foot_size)),
 				std::max(0, TimeFromRelativeX(updrect.x + updrect.width + foot_size)));
@@ -1341,8 +1349,16 @@ bool AudioDisplay::ForwardMouseEvent(wxMouseEvent &event) {
 void AudioDisplay::OnKeyDown(wxKeyEvent& event)
 {
 	if (auto timing = controller->GetTimingController()) {
+		unsigned serial = timing->RhythmSerial();
 		if (HasFocus() && !event.AltDown() && timing->TimingKey(event.GetKeyCode(), true,
-			controller->GetPlaybackPosition(), event.ControlDown(), event.ShiftDown())) return;
+			controller->GetPlaybackPosition(), event.ControlDown(), event.ShiftDown())) {
+			if (timing->RhythmSerial() != serial) {
+				for (int i=0; i<6; ++i) timing39_particles.push_back({0,0,float(i-3)*1.4f,-float(2+i%3),0});
+				if (timing39_particles.size()>48) timing39_particles.erase(timing39_particles.begin(),timing39_particles.end()-48);
+				timing39_effect_timer.Start(20);
+			}
+			return;
+		}
 	}
 	hotkey::check("Audio", context, event);
 }
@@ -1380,9 +1396,22 @@ void AudioDisplay::Paint39Overlay(wxDC &dc)
 	dc.DrawText(timing->Get39Status(), 5, audio_top+2);
 	if (controller->IsPlaying()) {
 		int hit = RelativeXFromTime(controller->GetPlaybackPosition());
-		dc.SetPen(wxPen(wxColour(57,197,187), 2));
+		bool flash = std::any_of(timing39_particles.begin(),timing39_particles.end(),[](Timing39Particle const& p){return p.age<4;});
+		dc.SetPen(wxPen(flash?wxColour(210,255,250):wxColour(57,197,187), flash?4:2));
 		dc.DrawLine(hit, audio_top, hit, audio_top+audio_height);
+		dc.SetBrush(wxBrush(wxColour(57,197,187)));
+		for(auto const& p:timing39_particles)dc.DrawCircle(hit+int(p.x),audio_top+audio_height/2+int(p.y),2);
 	}
+}
+
+void AudioDisplay::On39Effects(wxTimerEvent&)
+{
+	auto timing=controller->GetTimingController();
+	if(!timing || !timing->Is39Mode() || !controller->IsPlaying()) timing39_particles.clear();
+	for(auto& p:timing39_particles){p.x+=p.vx;p.y+=p.vy;p.vy+=0.2f;++p.age;}
+	timing39_particles.erase(std::remove_if(timing39_particles.begin(),timing39_particles.end(),[](Timing39Particle const& p){return p.age>15;}),timing39_particles.end());
+	if(timing39_particles.empty())timing39_effect_timer.Stop();
+	RefreshRect(wxRect(GetClientSize().x/2-90,audio_top,180,audio_height),false);
 }
 
 void AudioDisplay::OnSize(wxSizeEvent &)
@@ -1491,7 +1520,13 @@ void AudioDisplay::OnPlaybackPosition(int ms)
 	int pixel_position = AbsoluteXFromTime(ms);
 	if (auto timing = controller->GetTimingController()) {
 		if (timing->Is39Mode()) {
-			ScrollPixelToLeft(pixel_position - GetClientSize().GetWidth() / 2);
+			// The highway may include blank preroll/postroll at the ends of the
+			// audio. Keep the hit line centered even there, without replacing
+			// either audio renderer or changing normal-mode scroll clamping.
+			scroll_left = pixel_position - GetClientSize().GetWidth() / 2;
+			scrollbar->SetPosition(std::max(0,scroll_left));
+			timeline->SetPosition(scroll_left);
+			Refresh(false);
 			SetTrackCursor(pixel_position, false);
 			return;
 		}

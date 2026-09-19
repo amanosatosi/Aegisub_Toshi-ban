@@ -519,9 +519,9 @@ void AudioController::OnTimingControllerUpdatedPrimaryRange()
 
 void AudioController::PlayRange(const TimeRange &range)
 {
-	if (timing_controller) timing_controller->PlaybackStarting(range.begin());
 	EnsureAudioPlayerForSpeed(1.0);
 	if (!player) return;
+	if (timing_controller) timing_controller->PlaybackStarting(range.begin());
 
 	playback_speed = 1.0;
 	playback_sample_offset = 0.0;
@@ -583,9 +583,9 @@ void AudioController::PlayToEndOfPrimary(int start_ms)
 
 void AudioController::PlayToEnd(int start_ms)
 {
-	if (timing_controller) timing_controller->PlaybackStarting(start_ms);
 	EnsureAudioPlayerForSpeed(1.0);
 	if (!player || !provider) return;
+	if (timing_controller) timing_controller->PlaybackStarting(start_ms);
 
 	playback_speed = 1.0;
 	playback_sample_offset = 0.0;

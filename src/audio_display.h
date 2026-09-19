@@ -173,6 +173,10 @@ class AudioDisplay: public wxWindow {
 	/// active timing controller.
 	void PaintToshikiKTimingPreview(wxDC &dc, TimeRange updtime);
 	void Paint39Overlay(wxDC &dc);
+	struct Timing39Particle { float x, y, vx, vy; int age; };
+	std::vector<Timing39Particle> timing39_particles;
+	wxTimer timing39_effect_timer;
+	void On39Effects(wxTimerEvent&);
 
 	/// Paint the markers in a time range
 	/// @param dc DC to paint to
