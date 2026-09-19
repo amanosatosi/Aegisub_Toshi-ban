@@ -64,6 +64,7 @@ all_test_sources += [
     'tests/resolution_resampler.cpp',
     'tests/toshiki_k_timing_model.cpp',
     'tests/timing39.cpp',
+    'tests/timing39_session.cpp',
     'tests/timing39_karaoke.cpp',
     'tests/karaoke_split.cpp',
     'tests/karaoke_matcher.cpp',

@@ -16,7 +16,8 @@ jobs:
           g++ -std=c++17 -Wall -Wextra -Wpedantic -g
           -fsanitize=address,undefined -fno-omit-frame-pointer
           -Ilibaegisub/include libaegisub/common/timing39_reading.cpp
-          libaegisub/common/timing39_match.cpp tests/tests/timing39.cpp
+          libaegisub/common/timing39_match.cpp libaegisub/common/timing39_session.cpp
+          tests/tests/timing39.cpp tests/tests/timing39_session.cpp
           -lgtest_main -lgtest -pthread -o timing39-tests
       - name: Exercise language, real lyrics, capture and assignment corrections
         run: ./timing39-tests --gtest_output=xml:timing39-results.xml

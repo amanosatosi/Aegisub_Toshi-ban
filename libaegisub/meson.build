@@ -27,6 +27,7 @@ libaegisub_src = [
     'common/karaoke_matcher.cpp',
     'common/timing39_reading.cpp',
     'common/timing39_match.cpp',
+    'common/timing39_session.cpp',
     'common/keyframe.cpp',
     'common/line_iterator.cpp',
     'common/log.cpp',

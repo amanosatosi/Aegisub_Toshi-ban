@@ -23,6 +23,15 @@ TEST(Timing39, DeterministicBaseMorae) {
 	for(auto const& c:cases) {auto a=Analyze(c.first);EXPECT_TRUE(a.error.empty())<<a.error;EXPECT_EQ(c.second,Morae(a));}
 	EXPECT_EQ(Morae(Analyze(u8"がぱ")),Morae(Analyze(u8"か\u3099は\u309a")));
 }
+
+TEST(Timing39, RealRubySentenceMustNotCollapseToOneUnknownWord) {
+	auto a=Analyze(u8"{\\fad(200,200)}<髪|かみ>の<黒|くろ>に<高|たか><鳴|な>る<胸|むね>を<知|し>る<頃|ころ>");
+	ASSERT_TRUE(a.error.empty())<<a.error;
+	EXPECT_EQ(u8"かみのくろにたかなるむねをしるころ",a.reading.normalized);
+	EXPECT_GE(a.words.size(),9u);
+	for(auto const& w:a.words)if(w.kind==WordKind::Unknown)EXPECT_LT(w.end-w.begin,10u);
+	for(auto const& particle:{u8"の",u8"に",u8"を"})EXPECT_TRUE(std::any_of(a.words.begin(),a.words.end(),[&](SpokenToken const& w){return w.reading==particle&&w.kind==WordKind::Particle;}));
+}
 TEST(Timing39, StrictRomajiAllOrNothing) {
 	for(auto const& c:std::vector<std::pair<std::string,std::string>>{{"doa",u8"どあ"},{"miku",u8"みく"},{"kyou",u8"きょう"},{"matte",u8"まって"},{"shinjite",u8"しんじて"},{"n",u8"ん"},{"nn",u8"ん"},{"n'ya",u8"んや"},{"konnichiha",u8"こんにちは"},{"thi dhi twu dwu",u8"てぃ でぃ とぅ どぅ"},{"go-ru",u8"ごーる"}}) {
 		auto r=ConvertRomaji(c.first);EXPECT_TRUE(r.valid)<<c.first;EXPECT_EQ(c.second,r.kana);
