@@ -86,6 +86,7 @@ public:
 	AudioBox(wxWindow *parent, agi::Context *context);
 
 	void ShowKaraokeBar(bool show);
+	void FocusAudio();
 
 	/// @brief Scroll the audio display
 	/// @param pixel_amount Number of pixels to scroll the view

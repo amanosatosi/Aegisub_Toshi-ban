@@ -25,7 +25,8 @@
         "app/toggle/global_hotkeys",
         "",
         "audio/karaoke",
-        "audio/karaoke/toshiki_ktiming"
+        "audio/karaoke/toshiki_ktiming",
+        "audio/karaoke/39"
     ],
     "main" : [
         "subtitle/new",

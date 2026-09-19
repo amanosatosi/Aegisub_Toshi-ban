@@ -126,6 +126,8 @@ BEGIN_EVENT_TABLE(AudioBox,wxSashWindow)
 	EVT_COMMAND_SCROLL(Audio_Volume, AudioBox::OnVolume)
 END_EVENT_TABLE()
 
+void AudioBox::FocusAudio() { audioDisplay->SetFocus(); }
+
 void AudioBox::OnMouseWheel(wxMouseEvent &evt) {
 	if (!ForwardMouseWheelEvent(audioDisplay, evt))
 		return;

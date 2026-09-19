@@ -647,6 +647,7 @@ AudioDisplay::AudioDisplay(wxWindow *parent, AudioController *controller, agi::C
 	Bind(wxEVT_SET_FOCUS, &AudioDisplay::OnFocus, this);
 	Bind(wxEVT_CHAR_HOOK, &AudioDisplay::OnKeyDown, this);
 	Bind(wxEVT_KEY_DOWN, &AudioDisplay::OnKeyDown, this);
+	Bind(wxEVT_KEY_UP, &AudioDisplay::OnKeyUp, this);
 	scroll_timer.Bind(wxEVT_TIMER, &AudioDisplay::OnScrollTimer, this);
 	load_timer.Bind(wxEVT_TIMER, &AudioDisplay::OnLoadTimer, this);
 }
@@ -892,6 +893,7 @@ void AudioDisplay::OnPaint(wxPaintEvent&)
 			PaintDialogTimeChangerOverlay(dc);
 			PaintMarkers(dc, updtime);
 			PaintLabels(dc, updtime);
+			Paint39Overlay(dc);
 		}
 	}
 
@@ -1338,7 +1340,49 @@ bool AudioDisplay::ForwardMouseEvent(wxMouseEvent &event) {
 
 void AudioDisplay::OnKeyDown(wxKeyEvent& event)
 {
+	if (auto timing = controller->GetTimingController()) {
+		if (HasFocus() && !event.AltDown() && timing->TimingKey(event.GetKeyCode(), true,
+			controller->GetPlaybackPosition(), event.ControlDown(), event.ShiftDown())) return;
+	}
 	hotkey::check("Audio", context, event);
+}
+
+void AudioDisplay::OnKeyUp(wxKeyEvent& event)
+{
+	if (auto timing = controller->GetTimingController()) {
+		if (HasFocus() && timing->TimingKey(event.GetKeyCode(), false,
+			controller->GetPlaybackPosition(), event.ControlDown(), event.ShiftDown())) return;
+	}
+	event.Skip();
+}
+
+void AudioDisplay::Paint39Overlay(wxDC &dc)
+{
+	auto timing = controller->GetTimingController();
+	if (!timing || !timing->Is39Mode()) return;
+	std::vector<AudioTimingController::Timing39Overlay> blocks;
+	timing->Get39Overlay(blocks, controller->GetPlaybackPosition());
+	int height = std::min(30, std::max(12, (audio_height - 22) / 3));
+	for (auto const& block : blocks) {
+		int x = RelativeXFromTime(block.start), right = RelativeXFromTime(block.end);
+		if (right < 0 || x > GetClientSize().x) continue;
+		int y = audio_top + 22 + block.lane * (height + 3);
+		wxColour accent = block.uncertain ? wxColour(235,190,65) : wxColour(57,197,187);
+		dc.SetPen(wxPen(block.gap ? wxColour(130,130,130) : accent, 1, block.gap ? wxPENSTYLE_DOT : wxPENSTYLE_SOLID));
+		dc.SetBrush(*wxTRANSPARENT_BRUSH);
+		dc.DrawRectangle(x, y, std::max(2, right-x), height);
+		dc.SetTextForeground(accent);
+		dc.SetClippingRegion(std::max(0,x), y, std::max(1,std::min(right,GetClientSize().x)-std::max(0,x)), height);
+		dc.DrawText(block.text, x+3, y+1);
+		dc.DestroyClippingRegion();
+	}
+	dc.SetTextForeground(wxColour(57,197,187));
+	dc.DrawText(timing->Get39Status(), 5, audio_top+2);
+	if (controller->IsPlaying()) {
+		int hit = RelativeXFromTime(controller->GetPlaybackPosition());
+		dc.SetPen(wxPen(wxColour(57,197,187), 2));
+		dc.DrawLine(hit, audio_top, hit, audio_top+audio_height);
+	}
 }
 
 void AudioDisplay::OnSize(wxSizeEvent &)
@@ -1365,8 +1409,10 @@ void AudioDisplay::OnSize(wxSizeEvent &)
 	Refresh();
 }
 
-void AudioDisplay::OnFocus(wxFocusEvent &)
+void AudioDisplay::OnFocus(wxFocusEvent &event)
 {
+	if (event.GetEventType() == wxEVT_KILL_FOCUS)
+		if (auto timing = controller->GetTimingController()) timing->TimingFocusLost(controller->GetPlaybackPosition());
 	// The scrollbar indicates focus so repaint that
 	RefreshRect(scrollbar->GetBounds(), false);
 }
@@ -1443,6 +1489,13 @@ void AudioDisplay::OnTimingController()
 void AudioDisplay::OnPlaybackPosition(int ms)
 {
 	int pixel_position = AbsoluteXFromTime(ms);
+	if (auto timing = controller->GetTimingController()) {
+		if (timing->Is39Mode()) {
+			ScrollPixelToLeft(pixel_position - GetClientSize().GetWidth() / 2);
+			SetTrackCursor(pixel_position, false);
+			return;
+		}
+	}
 	SetTrackCursor(pixel_position, false);
 
 	if (OPT_GET("Audio/Lock Scroll on Cursor")->GetBool())

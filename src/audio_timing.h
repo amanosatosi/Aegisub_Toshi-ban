@@ -108,6 +108,19 @@ public:
 	/// Controllers which do not use slot previews leave this empty.
 	virtual void GetToshikiKTimingPreviewRanges(std::vector<ToshikiKTimingPreviewRange> &) const { }
 
+	struct Timing39Overlay {
+		int start, end, lane;
+		wxString text;
+		bool gap, uncertain;
+	};
+	virtual bool Is39Mode() const { return false; }
+	virtual bool TimingKey(int key, bool down, int ms, bool control, bool shift) { return false; }
+	virtual void PlaybackStarting(int ms) { }
+	virtual void PlaybackStopped(int ms) { }
+	virtual void TimingFocusLost(int ms) { }
+	virtual void Get39Overlay(std::vector<Timing39Overlay>&, int ms) const { }
+	virtual wxString Get39Status() const { return {}; }
+
 	enum NextMode {
 		/// Advance to the next timing unit, whether it's a line or a sub-part
 		/// of a line such as a karaoke syllable
@@ -231,3 +244,5 @@ std::unique_ptr<AudioTimingController> CreateKaraokeTimingController(agi::Contex
 /// @param kara Karaoke model
 /// @param file_changed Project file change connection
 std::unique_ptr<AudioTimingController> CreateToshikiKTimingController(agi::Context *c, AssKaraoke *kara, agi::signal::Connection& file_changed);
+
+std::unique_ptr<AudioTimingController> Create39TimingController(agi::Context *c);

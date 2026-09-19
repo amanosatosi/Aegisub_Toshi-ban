@@ -175,7 +175,9 @@ struct Reader {
 			// Dictionary lookup is only for visible text without explicit ruby.
 			Lexeme const* best=nullptr;
 			for(auto const& l:Lexicon()) if(source.compare(p,l.source.size(),l.source)==0 && (!best||l.source.size()>best->source.size())) best=&l;
-			auto cp=Decode(source.substr(p, (static_cast<unsigned char>(source[p])<128 ? 1 : (static_cast<unsigned char>(source[p])<224 ? 2 : (static_cast<unsigned char>(source[p])<240 ? 3 : 4))))[0];
+			auto lead=static_cast<unsigned char>(source[p]);
+			size_t bytes=lead<128?1:lead<224?2:lead<240?3:4;
+			auto cp=Decode(source.substr(p,bytes))[0];
 			if(!Kana(Hira(cp)) && !Separator(cp) && best) {
 				a.surface+="<"+best->source+"|"+best->reading+">";
 				Span(best->source,best->reading,p,p+best->source.size(),false); p+=best->source.size(); continue;
@@ -279,7 +281,7 @@ RomajiResult ConvertRomaji(std::string const& text) {
 		if(s[p]=='-') {append(u8"ー",p,p+1);++p;continue;}
 		if(s[p]==' ' || s[p]=='\t') {append(" ",p,p+1);++p;continue;}
 		if(s[p]=='n') {
-			if(p+1==s.size()) {append(u8"ん",p,++p);continue;}
+			if(p+1==s.size()) {append(u8"ん",p,p+1);++p;continue;}
 			if(s[p+1]=='\'') {append(u8"ん",p,p+2);p+=2;continue;}
 			if(s[p+1]=='n') {
 				size_t len=(p+2<s.size() && std::string("aiueoy").find(s[p+2])!=std::string::npos) ? 1 : 2;

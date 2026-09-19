@@ -519,6 +519,7 @@ void AudioController::OnTimingControllerUpdatedPrimaryRange()
 
 void AudioController::PlayRange(const TimeRange &range)
 {
+	if (timing_controller) timing_controller->PlaybackStarting(range.begin());
 	EnsureAudioPlayerForSpeed(1.0);
 	if (!player) return;
 
@@ -543,6 +544,7 @@ void AudioController::PlayRange(const TimeRange &range, double speed)
 
 	EnsureAudioPlayerForSpeed(speed);
 	if (!player || !speed_provider) return;
+	if (timing_controller) timing_controller->PlaybackStarting(range.begin());
 
 	int64_t start_sample = SamplesFromMilliseconds(range.begin());
 	int64_t sample_count = SamplesFromMilliseconds(range.length());
@@ -581,6 +583,7 @@ void AudioController::PlayToEndOfPrimary(int start_ms)
 
 void AudioController::PlayToEnd(int start_ms)
 {
+	if (timing_controller) timing_controller->PlaybackStarting(start_ms);
 	EnsureAudioPlayerForSpeed(1.0);
 	if (!player || !provider) return;
 
@@ -606,6 +609,7 @@ void AudioController::PlayToEnd(int start_ms, double speed)
 
 	EnsureAudioPlayerForSpeed(speed);
 	if (!player || !speed_provider || !provider) return;
+	if (timing_controller) timing_controller->PlaybackStarting(start_ms);
 
 	int64_t start_sample = SamplesFromMilliseconds(start_ms);
 	int64_t sample_count = provider->GetNumSamples() - start_sample;
@@ -631,6 +635,7 @@ void AudioController::PlayToEnd(int start_ms, double speed)
 void AudioController::Stop()
 {
 	if (!player) return;
+	if (timing_controller && IsPlaying()) timing_controller->PlaybackStopped(GetPlaybackPosition());
 
 	player->Stop();
 	playback_mode = PM_NotPlaying;

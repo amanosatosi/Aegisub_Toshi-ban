@@ -562,6 +562,20 @@ struct audio_karaoke_toshiki_ktiming final : public validate_audio_open {
 	}
 };
 
+struct audio_karaoke_39 final : public validate_audio_open {
+	CMD_NAME("audio/karaoke/39")
+	CMD_ICON(kara_spectrogram_timing)
+	STR_MENU("39 Mode")
+	STR_DISP("39 Mode")
+	STR_HELP("Capture Japanese karaoke with F/J and D/K, then review mora assignments")
+	CMD_TYPE(COMMAND_VALIDATE | COMMAND_TOGGLE)
+	bool Validate(const agi::Context *c) override {
+		return c->karaoke && validate_audio_open::Validate(c) && c->selectionController->GetActiveLine();
+	}
+	bool IsActive(const agi::Context *c) override { return c->karaoke && c->karaoke->Is39Enabled(); }
+	void operator()(agi::Context *c) override { c->karaoke->Set39Enabled(!c->karaoke->Is39Enabled()); }
+};
+
 struct audio_karaoke_auto_cut_kana final : public Command {
 	CMD_NAME("audio/karaoke/auto_cut_kana")
 	STR_MENU("Toshiki K-Timing Auto Cut")
@@ -599,6 +613,7 @@ namespace cmd {
 		reg(agi::make_unique<audio_karaoke>());
 		reg(agi::make_unique<audio_karaoke_auto_cut_kana>());
 		reg(agi::make_unique<audio_karaoke_toshiki_ktiming>());
+		reg(agi::make_unique<audio_karaoke_39>());
 		reg(agi::make_unique<audio_open>());
 		reg(agi::make_unique<audio_open_blank>());
 		reg(agi::make_unique<audio_open_noise>());

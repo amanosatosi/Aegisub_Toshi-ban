@@ -172,6 +172,7 @@ class AudioDisplay: public wxWindow {
 	/// Paint provisional Toshiki K-Timing slot ranges, when supplied by the
 	/// active timing controller.
 	void PaintToshikiKTimingPreview(wxDC &dc, TimeRange updtime);
+	void Paint39Overlay(wxDC &dc);
 
 	/// Paint the markers in a time range
 	/// @param dc DC to paint to
@@ -217,6 +218,7 @@ class AudioDisplay: public wxWindow {
 	void OnFocus(wxFocusEvent &event);
 	/// wxWidgets keypress event
 	void OnKeyDown(wxKeyEvent& event);
+	void OnKeyUp(wxKeyEvent& event);
 	void OnScrollTimer(wxTimerEvent &event);
 	void OnLoadTimer(wxTimerEvent &);
 	void OnMouseEnter(wxMouseEvent&);

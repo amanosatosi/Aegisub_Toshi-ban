@@ -109,6 +109,7 @@ class AudioKaraoke final : public wxWindow {
 
 	bool enabled = false; ///< Is karaoke mode enabled?
 	bool ktiming_enabled = false; ///< Is dedicated k-timing mode enabled?
+	bool timing39_enabled = false;
 	std::string ktiming_tag_type = "\\k"; ///< Session-local Toshiki K-Timing commit tag type
 
 	wxButton *accept_button; ///< Accept pending splits button
@@ -171,6 +172,8 @@ public:
 	bool IsEnabled() const { return enabled; }
 	/// Is dedicated k-timing mode currently enabled?
 	bool IsKTimingEnabled() const { return ktiming_enabled; }
+	bool Is39Enabled() const { return timing39_enabled; }
+	void Set39Enabled(bool enable);
 
 	/// Enable or disable karaoke mode
 	void SetEnabled(bool enable);

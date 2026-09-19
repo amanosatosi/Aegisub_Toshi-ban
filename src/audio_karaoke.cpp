@@ -183,18 +183,22 @@ void AudioKaraoke::OnFileChanged(int type, const AssDialogue *changed) {
 
 void AudioKaraoke::OnAudioOpened(agi::AudioProvider *provider) {
 	if (provider) {
-		if (ktiming_enabled)
+		if (timing39_enabled)
+			c->audioController->SetTimingController(Create39TimingController(c));
+		else if (ktiming_enabled)
 			SetKTimingController();
 		else
 			SetEnabled(enabled);
 	}
 	else {
 		ktiming_enabled = false;
+		timing39_enabled = false;
 		c->audioController->SetTimingController(nullptr);
 	}
 }
 
 void AudioKaraoke::SetEnabled(bool en) {
+	if (en && timing39_enabled) Set39Enabled(false);
 	if (en && ktiming_enabled)
 		SetKTimingEnabled(false);
 
@@ -232,6 +236,7 @@ void AudioKaraoke::SetKTimingController() {
 }
 
 void AudioKaraoke::SetKTimingEnabled(bool en) {
+	if (en && timing39_enabled) Set39Enabled(false);
 	if (ktiming_enabled == en) return;
 	if (en && !c->selectionController->GetActiveLine()) return;
 
@@ -246,6 +251,21 @@ void AudioKaraoke::SetKTimingEnabled(bool en) {
 		UpdateAutoCutButton();
 		c->audioController->SetTimingController(CreateDialogueTimingController(c));
 	}
+}
+
+void AudioKaraoke::Set39Enabled(bool en) {
+	if (timing39_enabled == en) return;
+	if (en && (!c->selectionController->GetActiveLine() || !c->project->AudioProvider())) return;
+	c->audioController->Stop();
+	timing39_enabled = en;
+	if (en) {
+		enabled = false;
+		ktiming_enabled = false;
+		c->audioBox->ShowKaraokeBar(false);
+		c->audioController->SetTimingController(Create39TimingController(c));
+		c->audioBox->FocusAudio();
+	}
+	else c->audioController->SetTimingController(CreateDialogueTimingController(c));
 }
 
 void AudioKaraoke::OnSize(wxSizeEvent &evt) {
