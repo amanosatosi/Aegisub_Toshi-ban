@@ -14,6 +14,11 @@ jobs:
   build:
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.os }}
+    env:
+      # 39 Mode tests intentionally print Japanese lyrics/readings.
+      # Force Python/Meson stdout/stderr to UTF-8 instead of Windows cp1252.
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
 
     strategy:
       fail-fast: false
@@ -181,7 +186,21 @@ jobs:
       - name: Build
         run: meson compile -C build
       
-      - name: Run test
+      - name: Run test (Windows)
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          # Meson's test runner is Python. On Windows GitHub Actions its
+          # console stream may otherwise resolve to cp1252 and crash when
+          # forwarding Japanese test output.
+          chcp 65001
+          [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+          meson test -C build --verbose "gtest main"
+
+      - name: Run test (non-Windows)
+        if: matrix.config.os != 'windows-latest'
         run: meson test -C build --verbose "gtest main"
 
       # Windows artifacts
