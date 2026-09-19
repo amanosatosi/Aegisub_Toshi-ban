@@ -205,8 +205,8 @@ public:
  bool Is39Mode() const override{return true;}
  bool Is39SessionActive() const override{return session.State()==t39::SessionState::Countdown||session.State()==t39::SessionState::Ready||session.State()==t39::SessionState::Capturing;}
  unsigned RhythmSerial() const override{return rhythm_serial;}
- wxString GetWarningMessage() const override{return Get39GetConfidence();}
- wxString Get39GetConfidence() const override {
+ wxString GetWarningMessage() const override{return Get39Status();}
+ wxString Get39Status() const override {
   if(session.State()==t39::SessionState::Countdown)return to_wx("39 Mode    "+std::to_string(session.Countdown())+"    F/J primary • D/K secondary");
   if(session.State()==t39::SessionState::Capturing)return _("39 Mode • F/J primary • D/K secondary • Pause/stop to review");
   return _("39 Mode • right-click audio to reopen session results");
@@ -245,3 +245,4 @@ public:
 };
 }
 std::unique_ptr<AudioTimingController> Create39TimingController(agi::Context* c){return agi::make_unique<AudioTimingController39>(c);}
+
