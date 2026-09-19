@@ -29,6 +29,7 @@
 #include "audio_box.h"
 #include "audio_controller.h"
 #include "audio_timing.h"
+#include "frame_main.h"
 #include "compat.h"
 #include "libresrc/libresrc.h"
 #include "options.h"
@@ -259,10 +260,12 @@ void AudioKaraoke::Set39Enabled(bool en) {
 	c->audioController->Stop();
 	timing39_enabled = en;
 	if (en) {
+		c->frame->SetDisplayMode(-1, 1);
 		enabled = false;
 		ktiming_enabled = false;
 		c->audioBox->ShowKaraokeBar(false);
 		c->audioController->SetTimingController(Create39TimingController(c));
+		c->audioBox->ScrollToActiveLine();
 		c->audioBox->FocusAudio();
 	}
 	else c->audioController->SetTimingController(CreateDialogueTimingController(c));
