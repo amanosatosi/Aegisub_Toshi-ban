@@ -6,6 +6,10 @@
 
 #include BUILD_ROOT + "\git_version.h"
 
+; Git branch names may contain '/', e.g. "codex/39-mode".
+; Keep the real version string for display metadata, but sanitize it for filenames.
+#define BUILD_GIT_VERSION_FILENAME StringChange(BUILD_GIT_VERSION_STRING, "/", "-")
+
 [Setup]
 AppName=Aegisub
 AppVerName=Aegisub {#BUILD_GIT_VERSION_STRING}
@@ -35,7 +39,7 @@ UninstallDisplayIcon={app}\aegisub.exe
 WizardImageFile={#INSTALLER_DIR}\welcome-large.bmp
 WizardSmallImageFile={#INSTALLER_DIR}\aegisub-large.bmp
 
-OutputBaseFilename=Aegisub-{#BUILD_GIT_VERSION_STRING}
+OutputBaseFilename=Aegisub-{#BUILD_GIT_VERSION_FILENAME}
 VersionInfoDescription=Aegisub {#BUILD_GIT_VERSION_STRING}
 
 [Languages]
