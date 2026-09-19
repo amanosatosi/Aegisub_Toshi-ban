@@ -25,6 +25,8 @@ libaegisub_src = [
     'common/json.cpp',
     'common/kana_table.cpp',
     'common/karaoke_matcher.cpp',
+    'common/timing39_reading.cpp',
+    'common/timing39_match.cpp',
     'common/keyframe.cpp',
     'common/line_iterator.cpp',
     'common/log.cpp',

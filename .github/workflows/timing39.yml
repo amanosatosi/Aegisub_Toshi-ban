@@ -1,0 +1,27 @@
+name: 39 Mode model regressions
+on:
+  push:
+    branches: ['codex/39-mode']
+  pull_request:
+  workflow_dispatch:
+jobs:
+  model:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev libgtest-dev
+      - name: Compile portable model in CI
+        run: >-
+          g++ -std=c++17 -Wall -Wextra -Wpedantic -g
+          -fsanitize=address,undefined -fno-omit-frame-pointer
+          -Ilibaegisub/include libaegisub/common/timing39_reading.cpp
+          libaegisub/common/timing39_match.cpp tests/tests/timing39.cpp
+          -lgtest_main -lgtest -pthread -o timing39-tests
+      - name: Exercise language, real lyrics, capture and assignment corrections
+        run: ./timing39-tests --gtest_output=xml:timing39-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: timing39-model-results
+          path: timing39-results.xml
