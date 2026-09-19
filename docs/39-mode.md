@@ -70,9 +70,11 @@ partitioned, and stray out-of-target taps do not shift later assignments.
 
 Stopping, changing modes, closing the window, or invalidating the session hides
 the overlay, stops its timer, and disarms capture. Queued timer events cannot
-restart a canceled model. If a marker lies at/after the existing playback range
-end, activation reports the invalid range instead of playing from another time.
-The existing final-selected-checkpoint end policy is preserved.
+restart a canceled model. If a marker lies at/after media end, activation reports
+the invalid marker instead of playing from another time. The existing
+final-selected-checkpoint end policy is preserved when it is after the chosen
+start. If all selected checkpoints precede the marker, playback uses media end
+so those checkpoints cannot override or prevent the explicit start.
 
 ### Session checkpoints
 

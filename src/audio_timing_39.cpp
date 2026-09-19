@@ -74,12 +74,12 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   std::vector<AssDialogue*> all;
   for(auto& line:c->ass->Events)all.push_back(&line);
   auto const& chosen=c->selectionController->GetSelectedSet();
-  auto setup=t39::BuildSessionSetup(all,{chosen.begin(),chosen.end()},active,
-   int(provider->GetNumSamples()*1000/provider->GetSampleRate()));
+  int media_end=int(provider->GetNumSamples()*1000/provider->GetSampleRate());
+  auto setup=t39::BuildSessionSetup(all,{chosen.begin(),chosen.end()},active,media_end);
   full_start=setup.playback_start;
   for(auto const& target:setup.targets)events[target.id]=all[target.id-1];
-  if(full_start.time>=setup.playback_end) {
-   notice="39 Mode start is outside the playback range; move the comment marker or select later lyrics";
+  if(full_start.time>=media_end) {
+   notice="39 Mode start is outside the media; move the comment marker to a playable time";
    c->frame->StatusTimeout(to_wx(notice));return;
   }
   session.Prepare(std::move(setup.targets),setup.explicit_scope,setup.active_style,full_start.time,setup.playback_end);

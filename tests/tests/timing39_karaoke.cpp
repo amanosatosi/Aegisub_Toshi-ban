@@ -21,6 +21,9 @@ TEST(Timing39Karaoke, SessionSetupExcludesCommentsAndSeparatesStartFromScope) {
 	ASSERT_EQ(2u,session.Results().size());for(auto const& r:session.Results())EXPECT_NE(1u,r.target.id);
 	setup=BuildSessionSetup({&marker,&a,&b},{&marker,&a},&a,200000);
 	EXPECT_FALSE(setup.explicit_scope); // the selected comment does not inflate lyric scope
+	a.Start=40340;a.End=44660;b.Start=45470;b.End=51920;
+	setup=BuildSessionSetup({&marker,&a,&b},{&a,&b},&a,200000);
+	EXPECT_EQ(123450,setup.playback_start.time);EXPECT_EQ(200000,setup.playback_end);
 	marker.Comment=false;
 	setup=BuildSessionSetup({&marker,&a,&b},{&a,&b},&a,200000);
 	EXPECT_EQ(0,setup.playback_start.time);EXPECT_EQ(0u,setup.playback_start.marker);

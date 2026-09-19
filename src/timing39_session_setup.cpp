@@ -39,6 +39,9 @@ SessionSetup BuildSessionSetup(std::vector<AssDialogue*> const& events,
 		if (setup.explicit_scope) setup.playback_end = std::max(setup.playback_end, target.end);
 		setup.targets.push_back(std::move(target));
 	}
+	// A marker remains authoritative even when every selected checkpoint is
+	// earlier. Such checkpoints cannot supply a positive playback range here.
+	if (setup.playback_end <= setup.playback_start.time) setup.playback_end = media_end;
 	return setup;
 }
 } }
