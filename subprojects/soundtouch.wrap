@@ -1,8 +1,8 @@
 [wrap-file]
 directory = soundtouch
-source_url = https://www.surina.net/soundtouch/soundtouch-2.3.3.tar.gz
+source_url = https://codeberg.org/soundtouch/soundtouch/archive/2.3.3.tar.gz
 source_filename = soundtouch-2.3.3.tar.gz
-source_hash = 43b23dfac2f64a3aff55d64be096ffc7b73842c3f5665caff44975633a975a99
+source_hash = 06c00f37d28e5984944951c20d0845c7931e691c59820922230915d205131a47
 patch_directory = soundtouch
 
 [provide]
