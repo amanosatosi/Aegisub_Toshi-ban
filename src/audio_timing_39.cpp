@@ -44,6 +44,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  size_t selected=0;
  int selected_lane=0,last_position=0;
  unsigned rhythm_serial=0;
+ std::array<bool,4> physical_held{{false,false,false,false}};
  bool committing=false,refreshing=false;
  std::string notice;
  int Preroll() const {return std::max(0,int(OPT_GET("Audio/Lead/IN")->GetInt()));}
@@ -90,7 +91,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  }
  void Update() {
   if(!panel)return;refreshing=true;rows->Clear();
-  for(auto const& r:session.Results())rows->Append(to_wx(Color(r.Status())+(r.committed?" [committed] ":r.reviewed?" [reviewed] ":" ")+std::to_string(r.target.start)+"–"+std::to_string(r.target.end)+"  "+r.target.style+"  "+r.target.analysis.surface));
+  for(auto const& r:session.Results())rows->Append(to_wx(Color(r.GetConfidence())+(r.committed?" [committed] ":r.reviewed?" [reviewed] ":" ")+std::to_string(r.target.start)+"–"+std::to_string(r.target.end)+"  "+r.target.style+"  "+r.target.analysis.surface));
   if(auto r=Current()) {
    rows->SetSelection(int(selected));lane_choice->SetSelection(r->lane+1);
    status->SetLabel(to_wx(notice.empty()?r->target.discovery_reason+"; "+r->lanes[selected_lane].match.reason:notice));
@@ -135,7 +136,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   auto commit=new wxBoxSizer(wxHORIZONTAL);Button(panel,commit,_("Commit all GREEN"),[this]{CommitResults(false);});Button(panel,commit,_("Commit reviewed GREEN / YELLOW"),[this]{CommitResults(true);});root->Add(commit,0,wxALL,5);
   panel->SetSizer(root);
   rows->Bind(wxEVT_LISTBOX,[this](wxCommandEvent&){selected=size_t(rows->GetSelection());if(auto r=Current())selected_lane=std::max(0,r->lane);notice.clear();Update();});
-  lane_choice->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){if(refreshing)return;if(auto r=Current()){r->lane=lane_choice->GetSelection()-1;selected_lane=std::max(0,r->lane);r->reviewed=false;notice="Lane selected. Inspect and mark reviewed before committing ambiguity.";Update();}});
+  lane_choice->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){if(refreshing)return;if(auto r=Current()){r->lane=lane_choice->GetSelection()-1;r->association_ambiguous=true;selected_lane=std::max(0,r->lane);r->reviewed=false;notice="Lane selected. Inspect and mark reviewed before committing ambiguity.";Update();}});
   panel->Bind(wxEVT_CLOSE_WINDOW,[this](wxCloseEvent& e){if(e.CanVeto()){e.Veto();panel->Hide();}else e.Skip();});
  }
  void ShowInspector() {
@@ -163,7 +164,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   struct Write{t39::SessionResult* result;AssDialogue* event;std::string text;};std::vector<Write> writes;
   for(auto& r:session.Results()) {
    if(r.committed||r.lane<0)continue;
-   auto confidence=r.Status();
+   auto confidence=r.GetConfidence();
    if(reviewed?(!r.reviewed||confidence==t39::Confidence::Red):confidence!=t39::Confidence::Green)continue;
    auto it=events.find(r.target.id);if(it==events.end()||it->second->Text.get()!=r.target.analysis.source){notice="Source changed; restart session before committing";Update();return;}
    auto& l=r.lanes[r.lane];std::string output,error;
@@ -185,22 +186,27 @@ public:
  }
  ~AudioTimingController39() override {countdown.Stop();wxEvtHandler::RemoveFilter(this);connections.clear();delete inspector;delete panel;}
  int FilterEvent(wxEvent& event) override {
-  if(!Is39SessionActive())return Event_Skip;
-  if(event.GetEventType()==wxEVT_ACTIVATE_APP&&!static_cast<wxActivateEvent&>(event).GetActive()){c->audioController->Stop();return Event_Skip;}
+  if(Is39SessionActive()&&event.GetEventType()==wxEVT_ACTIVATE_APP&&!static_cast<wxActivateEvent&>(event).GetActive()){physical_held.fill(false);c->audioController->Stop();return Event_Skip;}
   if(event.GetEventType()!=wxEVT_CHAR_HOOK&&event.GetEventType()!=wxEVT_KEY_DOWN&&event.GetEventType()!=wxEVT_KEY_UP)return Event_Skip;
   auto window=dynamic_cast<wxWindow*>(event.GetEventObject());
   while(window&&window!=c->parent)window=window->GetParent();if(!window)return Event_Skip;
   auto& key=static_cast<wxKeyEvent&>(event);bool down=event.GetEventType()!=wxEVT_KEY_UP;
   int code=key.GetKeyCode();
-  if(down&&key.IsAutoRepeat()&&(code=='F'||code=='J'||code=='D'||code=='K'))return Event_Processed;
+  int index=code=='F'?0:code=='J'?1:code=='D'?2:code=='K'?3:-1;
+  if(index>=0&&!down)physical_held[index]=false;
+  if(!Is39SessionActive())return Event_Skip;
+#if wxCHECK_VERSION(3,1,0)
+  if(down&&index>=0&&key.IsAutoRepeat())return Event_Processed;
+#endif
   if(down&&(key.AltDown()||key.ControlDown()||key.ShiftDown()))return Event_Skip;
+  if(index>=0&&down){if(physical_held[index])return Event_Processed;physical_held[index]=true;}
   return TimingKey(key.GetKeyCode(),down,c->audioController->GetPlaybackPosition(),false,false)?Event_Processed:Event_Skip;
  }
  bool Is39Mode() const override{return true;}
  bool Is39SessionActive() const override{return session.State()==t39::SessionState::Countdown||session.State()==t39::SessionState::Ready||session.State()==t39::SessionState::Capturing;}
  unsigned RhythmSerial() const override{return rhythm_serial;}
- wxString GetWarningMessage() const override{return Get39Status();}
- wxString Get39Status() const override {
+ wxString GetWarningMessage() const override{return Get39GetConfidence();}
+ wxString Get39GetConfidence() const override {
   if(session.State()==t39::SessionState::Countdown)return to_wx("39 Mode    "+std::to_string(session.Countdown())+"    F/J primary • D/K secondary");
   if(session.State()==t39::SessionState::Capturing)return _("39 Mode • F/J primary • D/K secondary • Pause/stop to review");
   return _("39 Mode • right-click audio to reopen session results");

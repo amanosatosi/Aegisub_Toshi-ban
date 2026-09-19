@@ -637,6 +637,10 @@ void AudioController::PlayToEnd(int start_ms, double speed)
 void AudioController::Stop()
 {
 	int stopped_at = GetPlaybackPosition();
+	// Some backends return zero once natural playback has ended. Preserve the
+	// endpoint before resetting the player so the final held block is retained.
+	if (IsPlaying() && !player->IsPlaying())
+		stopped_at = MillisecondsFromSamples(player->GetEndPosition());
 	if (!player) {
 		if (timing_controller) timing_controller->PlaybackStopped(stopped_at);
 		return;

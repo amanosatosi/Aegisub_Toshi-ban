@@ -25,7 +25,7 @@ TEST(Timing39Session, ActivateCountdownCaptureAcrossLinesAndNormalStop) {
 	EXPECT_EQ(SessionState::Capturing,s.State()); // no checkpoint stops capture
 	Tap(s,'F',2050,2200);Tap(s,'J',2250,2450);
 	EXPECT_TRUE(s.Results().empty());EXPECT_TRUE(s.Stop(2500));EXPECT_FALSE(s.Stop(2500));
-	ASSERT_EQ(2u,s.Results().size());EXPECT_EQ(Confidence::Green,s.Results()[0].Status());EXPECT_EQ(Confidence::Green,s.Results()[1].Status());
+	ASSERT_EQ(2u,s.Results().size());EXPECT_EQ(Confidence::Green,s.Results()[0].GetConfidence());EXPECT_EQ(Confidence::Green,s.Results()[1].GetConfidence());
 	EXPECT_TRUE(s.Raw(1).empty());EXPECT_TRUE(s.Results()[0].lanes[1].capture.blocks.empty());
 	for(auto const& r:s.Results())for(auto const& b:r.lanes[0].capture.blocks){EXPECT_GE(b.start,r.target.start);EXPECT_LE(b.end,r.target.end);}
 	EXPECT_TRUE(std::any_of(s.Raw(0).begin(),s.Raw(0).end(),[](TimingBlock const& b){return b.gap&&b.start==1450&&b.end==2050;}));
@@ -45,7 +45,7 @@ TEST(Timing39Session, FailedLineDoesNotShiftLaterLinesAndRetakeIsIsolated) {
 TEST(Timing39Session, CheckpointCrossingPreservesRawAndRequiresReview) {
 	Timing39Session s;s.Prepare({Target(1,100,200,u8"み"),Target(2,200,300,u8"く")},true,"opaque style",0,300);Start(s);
 	Tap(s,'F',150,250);s.Stop(300);ASSERT_EQ(2u,s.Results().size());
-	for(auto const& r:s.Results()){EXPECT_TRUE(r.lanes[0].capture.clipped);EXPECT_EQ(Confidence::Yellow,r.Status());}
+	for(auto const& r:s.Results()){EXPECT_TRUE(r.lanes[0].capture.clipped);EXPECT_EQ(Confidence::Yellow,r.GetConfidence());}
 	EXPECT_EQ((TimingBlock{150,250,false}),s.Raw(0)[1]);
 	EXPECT_EQ((TimingBlock{150,200,false}),s.Results()[0].lanes[0].capture.blocks[1]);
 }

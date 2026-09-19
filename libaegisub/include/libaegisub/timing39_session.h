@@ -34,7 +34,7 @@ struct SessionResult {
 	std::array<SessionLaneResult, 2> lanes;
 	int lane = 0;
 	bool association_ambiguous = false, overlap = false, reviewed = false, committed = false;
-	Confidence Status() const;
+	Confidence GetConfidence() const;
 };
 struct SessionRetake {
 	uint64_t target;

@@ -43,7 +43,7 @@ std::vector<SessionTarget> DiscoverTargets(std::vector<SessionTarget> const& can
 	std::stable_sort(out.begin(), out.end(), [](SessionTarget const& a, SessionTarget const& b) { return a.start < b.start; });
 	return out;
 }
-Confidence SessionResult::Status() const {
+Confidence SessionResult::GetConfidence() const {
 	if (lane < 0 || lane > 1) return Confidence::Yellow;
 	auto status = lanes[lane].match.confidence;
 	if (status == Confidence::Red) return status;
