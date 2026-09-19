@@ -65,3 +65,62 @@ TEST(Timing39Session, CountdownCancelAndSeekFinalizeAreIdempotent) {
 	EXPECT_TRUE(s.Key('J',true,200));EXPECT_TRUE(s.Key('F',false,210));s.Stop(300);
 	EXPECT_FALSE(s.Key('J',false,350));EXPECT_FALSE(s.Start(100));EXPECT_EQ(300,s.Raw(0).back().end);
 }
+
+TEST(Timing39Session, FreshStartDefaultsToMediaZeroRegardlessOfTargets) {
+	auto start=FindSessionPlaybackStart({{1,false,40340,"39 mode start here"},{2,true,12000,"39 mode settings"}});
+	EXPECT_EQ(0,start.time);EXPECT_EQ(0u,start.marker);
+	Timing39Session s;
+	s.Prepare({Target(1,40340,44660),Target(2,45470,51920),Target(3,52040,55000)},true,"opaque style",start.time,55000);
+	EXPECT_EQ(0,s.StartTime());Start(s);
+	Tap(s,'F',40400,41000);Tap(s,'J',41500,42000);s.Stop(45000);
+	EXPECT_EQ((TimingBlock{40400,41000,false}),s.Raw(0)[1]);
+}
+
+TEST(Timing39Session, MarkerNormalizationAndEarliestAbsoluteStart) {
+	for(auto const& text:{"39 mode start here","  39 mode start here  ","39 Mode Start Here","39 MODE START HERE"}) {
+		auto start=FindSessionPlaybackStart({{7,true,123450,text}});
+		EXPECT_EQ(123450,start.time);EXPECT_EQ(7u,start.marker);
+	}
+	for(auto const& text:{"39 mode settings","start","39","before 39 mode start here","39 mode start here later"})
+		EXPECT_EQ(0u,FindSessionPlaybackStart({{1,true,123450,text}}).marker);
+	EXPECT_EQ(0u,FindSessionPlaybackStart({{1,false,123450,"39 mode start here"}}).marker);
+	auto a=FindSessionPlaybackStart({{1,true,90000,"39 mode start here"},{2,true,30000,"39 mode start here"}});
+	auto b=FindSessionPlaybackStart({{2,true,30000,"39 mode start here"},{1,true,90000,"39 mode start here"}});
+	EXPECT_EQ(30000,a.time);EXPECT_EQ(a.time,b.time);EXPECT_EQ(2u,a.marker);
+	EXPECT_NE(std::string::npos,a.Describe().find("comment marker"));
+	EXPECT_NE(std::string::npos,FindSessionPlaybackStart({}).Describe().find("default media start"));
+}
+
+TEST(Timing39Session, MarkerDoesNotRebaseCaptureAndRetakeUsesLocalPreroll) {
+	auto start=FindSessionPlaybackStart({{1,true,100000,"39 mode start here"}});
+	Timing39Session s;s.Prepare({Target(2,104000,106000)},true,"opaque style",start.time,106000);Start(s);
+	Tap(s,'F',104250,104500);Tap(s,'J',104750,105000);s.Stop(106000);
+	ASSERT_EQ(1u,s.Results().size());EXPECT_EQ(2u,s.Results()[0].target.id);
+	EXPECT_EQ((TimingBlock{104250,104500,false}),s.Raw(0)[1]);
+	EXPECT_TRUE(s.Retake(0,0,100));EXPECT_EQ(103900,s.StartTime());
+}
+
+TEST(Timing39Session, PreTargetSilenceAndStrayTapsStayOutsideLyricPartition) {
+	Timing39Session s;s.Prepare({Target(1,40000,45000)},true,"opaque style",0,45000);Start(s);
+	Tap(s,'F',1000,1500);Tap(s,'J',2000,2200);
+	Tap(s,'F',40200,41000);Tap(s,'J',42000,43000);s.Stop(45000);
+	ASSERT_EQ(1u,s.Results().size());auto const& local=s.Results()[0].lanes[0].capture.blocks;
+	ASSERT_FALSE(local.empty());EXPECT_EQ((TimingBlock{40000,40200,true}),local.front());
+	EXPECT_EQ(Confidence::Green,s.Results()[0].GetConfidence());
+	for(auto const& b:local){EXPECT_GE(b.start,40000);EXPECT_LE(b.end,45000);}
+	EXPECT_EQ((TimingBlock{1000,1500,false}),s.Raw(0)[1]);
+}
+
+TEST(Timing39Session, AllCountdownKeysAreDisarmedAndCancelledTicksCannotRestart) {
+	for(bool discard:{false,true}) {
+		Timing39Session s;s.Prepare({Target(1,40000,45000)},true,"opaque style",0,45000);
+		for(int tick=0;tick<2;++tick) {
+			for(char key:{'F','J','D','K'}){EXPECT_FALSE(s.Key(key,true,100));EXPECT_FALSE(s.Key(key,false,200));}
+			EXPECT_FALSE(s.TickCountdown());
+		}
+		EXPECT_TRUE(s.Raw(0).empty());EXPECT_TRUE(s.Raw(1).empty());
+		if(discard)s.Discard();else s.Stop(0);
+		for(int i=0;i<5;++i)EXPECT_FALSE(s.TickCountdown());
+		EXPECT_FALSE(s.Start(0));EXPECT_FALSE(s.Key('F',true,100));
+	}
+}

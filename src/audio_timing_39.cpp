@@ -1,6 +1,9 @@
 // Copyright (c) 2026, JibunSenyou contributors. ISC license.
 #include "audio_timing.h"
 #include "timing39_karaoke.h"
+#include "timing39_session_setup.h"
+#include "frame_main.h"
+#include "video_controller.h"
 #include "ass_dialogue.h"
 #include "ass_file.h"
 #include "audio_box.h"
@@ -33,6 +36,7 @@ namespace t39 = agi::timing39;
 class AudioTimingController39 final : public AudioTimingController, public wxEventFilter {
  agi::Context* c;
  t39::Timing39Session session;
+ t39::SessionPlaybackStart full_start;
  std::map<uint64_t,AssDialogue*> events;
  std::vector<agi::signal::Connection> connections;
  wxTimer countdown;
@@ -51,35 +55,51 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  void Notify(){AnnounceMarkerMoved();AnnounceLabelChanged();}
  t39::SessionResult* Current(){return selected<session.Results().size()?&session.Results()[selected]:nullptr;}
  static std::string Color(t39::Confidence s){return s==t39::Confidence::Green?"GREEN":s==t39::Confidence::Yellow?"YELLOW":"RED";}
+ void HideCountdown() {countdown.Stop();c->frame->Show39Countdown(0);}
+ void BeginCountdown() {
+  // AudioPlayer has no paused seek: retain the exact absolute cursor and open
+  // the device only after Ready. Video can display its containing frame now.
+  last_position=session.StartTime();
+  c->audioController->SeekWhileStopped(last_position);
+  c->videoController->JumpToTime(last_position);
+  c->frame->Show39Countdown(3);
+  countdown.Start(1000);
+ }
  void Prepare() {
   auto active=c->selectionController->GetActiveLine();
   auto provider=c->project->AudioProvider();
   if(!active||!provider){notice="Select a lyric line and open audio";return;}
+  c->videoController->Stop();
+  c->audioController->Stop();
+  std::vector<AssDialogue*> all;
+  for(auto& line:c->ass->Events)all.push_back(&line);
   auto const& chosen=c->selectionController->GetSelectedSet();
-  bool explicit_scope=chosen.size()>1;
-  int start=active->Start,end=int(provider->GetNumSamples()*1000/provider->GetSampleRate());
-  if(explicit_scope){start=end;end=0;for(auto d:chosen){start=std::min(start,int(d->Start));end=std::max(end,int(d->End));}}
-  std::vector<t39::SessionTarget> targets;
-  uint64_t id=0;
-  for(auto& d:c->ass->Events) {
-   if(d.Comment)continue;
-   if(explicit_scope&&!chosen.count(&d))continue;
-   if(!explicit_scope&&int(d.End)<=start)continue;
-   t39::SessionTarget t;t.id=++id;t.start=d.Start;t.end=d.End;t.style=d.Style;
-   t.analysis=t39::AnalyzeDialogue(d);t.existing_boundaries=t39::KaraokeBoundaries(d);
-   t.selected=chosen.count(&d)!=0;
-   t.lyric_evidence=!t.analysis.morae.empty() && std::any_of(t.analysis.reading.characters.begin(),t.analysis.reading.characters.end(),[](t39::ReadingCharacter const& ch){return ch.kana>=U'ぁ'&&ch.kana<=U'ー';});
-   events[t.id]=&d;targets.push_back(std::move(t));
+  auto setup=t39::BuildSessionSetup(all,{chosen.begin(),chosen.end()},active,
+   int(provider->GetNumSamples()*1000/provider->GetSampleRate()));
+  full_start=setup.playback_start;
+  for(auto const& target:setup.targets)events[target.id]=all[target.id-1];
+  if(full_start.time>=setup.playback_end) {
+   notice="39 Mode start is outside the playback range; move the comment marker or select later lyrics";
+   c->frame->StatusTimeout(to_wx(notice));return;
   }
-  session.Prepare(std::move(targets),explicit_scope,active->Style,std::max(0,start-Preroll()),end);
-  last_position=session.StartTime();countdown.Start(1000);
+  session.Prepare(std::move(setup.targets),setup.explicit_scope,setup.active_style,full_start.time,setup.playback_end);
+  BeginCountdown();
  }
  void Tick(wxTimerEvent&) {
-  if(session.State()!=t39::SessionState::Countdown){countdown.Stop();return;}
+  if(session.State()!=t39::SessionState::Countdown){HideCountdown();return;}
   if(session.TickCountdown()) {
-   countdown.Stop();c->audioController->PlayRange(TimeRange(session.StartTime(),session.EndTime()));
-   if(!c->audioController->IsPlaying())PlaybackStopped(session.StartTime());
+   HideCountdown();
+   try {
+    if(c->project->VideoProvider())c->videoController->PlayRange(session.StartTime(),session.EndTime());
+    else c->audioController->PlayRange(TimeRange(session.StartTime(),session.EndTime()));
+    if(!c->audioController->IsPlaying())PlaybackStopped(session.StartTime());
+   }
+   catch(...) {
+    notice="Playback could not start. Capture stopped; check the media/audio device.";
+    c->audioController->Stop();PlaybackStopped(session.StartTime());
+   }
   }
+  else c->frame->Show39Countdown(session.Countdown());
   Notify();
  }
  void ShowResults(){if(!panel)MakePanel();Update();panel->Show();panel->Raise();}
@@ -115,7 +135,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    std::string text;for(auto const& x:l.match.paths[i].assignments)text+="["+Group(r->target.analysis,x)+"]";
    paths->Append(to_wx(text));if(l.editor.Get()==l.match.paths[i].assignments)paths->SetSelection(int(i));
   }
-  std::string extra="\nSESSION RAW F/J\n";
+  std::string extra="\n"+full_start.Describe()+"SESSION RAW F/J\n";
   for(int lane=0;lane<2;++lane){if(lane)extra+="SESSION RAW D/K\n";for(auto const& b:session.Raw(lane))extra+=std::to_string(b.start)+" "+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");}
   for(auto const& take:session.retakes){extra+="RETAKE target="+std::to_string(take.target)+" lane="+std::to_string(take.lane)+"\n";for(auto const& b:take.raw)extra+=std::to_string(b.start)+" "+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");}
   extra+="LOCAL RAW INDICES ";for(auto i:l.capture.raw_indices)extra+=std::to_string(i)+" ";
@@ -158,7 +178,13 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  }
  void Move(int delta){if(auto r=Current()){if(!r->lanes[selected_lane].editor.Move(r->target.analysis,size_t(std::max(0,assignments->GetSelection())),delta))notice="Protected divider; choose a complete alternative path.";else notice="Assignment moved; raw timestamps unchanged";r->reviewed=false;Update();}}
  void History(bool redo){if(auto r=Current()){auto& e=r->lanes[selected_lane].editor;if(redo)e.Redo();else e.Undo();r->reviewed=false;Update();}}
- void Retake(){if(session.Retake(selected,selected_lane,Preroll())){panel->Hide();if(inspector)inspector->Hide();last_position=session.StartTime();countdown.Start(1000);c->audioBox->FocusAudio();AnnounceUpdatedPrimaryRange();Notify();}}
+ void Retake(){
+  c->videoController->Stop();c->audioController->Stop();
+  if(session.Retake(selected,selected_lane,Preroll())){
+   panel->Hide();if(inspector)inspector->Hide();BeginCountdown();
+   c->audioBox->FocusAudio();AnnounceUpdatedPrimaryRange();Notify();
+  }
+ }
  void CommitResults(bool reviewed) {
   if(Is39SessionActive())return;
   struct Write{t39::SessionResult* result;AssDialogue* event;std::string text;};std::vector<Write> writes;
@@ -184,7 +210,7 @@ public:
   connections.push_back(c->ass->AddCommitListener(&AudioTimingController39::FileChanged,this));
   connections.push_back(c->audioController->AddPlaybackPositionListener([this](int ms){last_position=ms;}));
  }
- ~AudioTimingController39() override {countdown.Stop();wxEvtHandler::RemoveFilter(this);connections.clear();delete inspector;delete panel;}
+ ~AudioTimingController39() override {HideCountdown();session.Discard();physical_held.fill(false);wxEvtHandler::RemoveFilter(this);connections.clear();delete inspector;delete panel;}
  int FilterEvent(wxEvent& event) override {
   if(Is39SessionActive()&&event.GetEventType()==wxEVT_ACTIVATE_APP&&!static_cast<wxActivateEvent&>(event).GetActive()){physical_held.fill(false);c->audioController->Stop();return Event_Skip;}
   if(event.GetEventType()!=wxEVT_CHAR_HOOK&&event.GetEventType()!=wxEVT_KEY_DOWN&&event.GetEventType()!=wxEVT_KEY_UP)return Event_Skip;
@@ -207,7 +233,7 @@ public:
  unsigned RhythmSerial() const override{return rhythm_serial;}
  wxString GetWarningMessage() const override{return Get39Status();}
  wxString Get39Status() const override {
-  if(session.State()==t39::SessionState::Countdown)return to_wx("39 Mode    "+std::to_string(session.Countdown())+"    F/J primary • D/K secondary");
+  if(session.State()==t39::SessionState::Countdown)return _("39 Mode • preparing playback • F/J primary • D/K secondary");
   if(session.State()==t39::SessionState::Capturing)return _("39 Mode • F/J primary • D/K secondary • Pause/stop to review");
   return _("39 Mode • right-click audio to reopen session results");
  }
@@ -230,7 +256,7 @@ public:
   else if(session.State()==t39::SessionState::Countdown)PlaybackStopped(session.StartTime());
   session.Start(ms);last_position=ms;Notify();
  }
- void PlaybackStopped(int ms) override {countdown.Stop();if(session.Stop(ms)){last_position=ms;ShowResults();Notify();}}
+ void PlaybackStopped(int ms) override {HideCountdown();physical_held.fill(false);if(session.Stop(ms)){c->videoController->Stop();last_position=ms;ShowResults();Notify();}}
  void TimingFocusLost(int) override{} // widget focus changes do not end the session; app deactivation does
  bool TimingKey(int key,bool down,int ms,bool control,bool shift) override {
   if(!Is39SessionActive())return false;
@@ -245,4 +271,3 @@ public:
 };
 }
 std::unique_ptr<AudioTimingController> Create39TimingController(agi::Context* c){return agi::make_unique<AudioTimingController39>(c);}
-

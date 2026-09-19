@@ -159,6 +159,57 @@ public:
 	}
 };
 
+// A direct child of the main content panel is above its video/audio/grid
+// siblings, including native Windows child controls. It is never in a sizer.
+class Timing39CountdownOverlay final : public wxWindow {
+public:
+	explicit Timing39CountdownOverlay(wxWindow* parent)
+	: wxWindow(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE) {
+		SetName("39 Mode countdown");
+		SetBackgroundStyle(wxBG_STYLE_PAINT);
+		Hide();
+		Bind(wxEVT_PAINT, [this](wxPaintEvent&) {
+			wxAutoBufferedPaintDC dc(this);
+			dc.SetBackground(wxBrush(wxColour(20, 32, 35)));
+			dc.Clear();
+			auto size = GetClientSize();
+			auto font = GetFont();
+			font.SetWeight(wxFONTWEIGHT_BOLD);
+			font.SetPixelSize(wxSize(0, std::max(1, size.y * 3 / 4)));
+			dc.SetFont(font);
+			dc.SetTextForeground(wxColour(57, 197, 187));
+			dc.DrawLabel(GetLabel(), wxRect(wxPoint(0, 0), size), wxALIGN_CENTER);
+		});
+	}
+	bool AcceptsFocus() const override { return false; }
+};
+
+void FrameMain::Position39Countdown() {
+	if (!timing39Countdown || !mainPanel) return;
+	auto area = mainPanel->GetClientSize();
+	int side = 180;
+#if wxCHECK_VERSION(3, 1, 0)
+	side = mainPanel->FromDIP(side);
+#endif
+	side = std::max(1, std::min(side, std::min(area.x, area.y)));
+	timing39Countdown->SetSize((area.x-side)/2, (area.y-side)/2, side, side);
+	timing39Countdown->Raise();
+}
+
+void FrameMain::Show39Countdown(int number) {
+	if (!mainPanel) return;
+	if (number <= 0) {
+		if (timing39Countdown) timing39Countdown->Hide();
+		return;
+	}
+	if (!timing39Countdown) timing39Countdown = new Timing39CountdownOverlay(mainPanel);
+	timing39Countdown->SetLabel(wxString::Format("%d", number));
+	Position39Countdown();
+	timing39Countdown->Show();
+	timing39Countdown->Raise();
+	timing39Countdown->Refresh();
+}
+
 static bool ctrl_alt_down() {
 	bool ctrl = wxGetKeyState(WXK_CONTROL);
 #ifdef WXK_RAW_CONTROL
@@ -289,6 +340,8 @@ FrameMain::FrameMain()
 
 FrameMain::~FrameMain () {
 	HideAlignmentPicker();
+	// Stop session timers and destroy owned review views before child teardown.
+	context->audioController->SetTimingController(nullptr);
 	context->project->CloseAudio();
 	context->project->CloseVideo();
 
@@ -312,6 +365,11 @@ void FrameMain::EnableToolBar(agi::OptionValue const& opt) {
 void FrameMain::InitContents() {
 	StartupLog("Create background panel");
 	auto Panel = new wxPanel(this, -1, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL | wxCLIP_CHILDREN);
+	mainPanel = Panel;
+	Panel->Bind(wxEVT_SIZE, [this](wxSizeEvent& event) { Position39Countdown(); event.Skip(); });
+#if defined(__WXMSW__) && wxCHECK_VERSION(3, 1, 3)
+	Bind(wxEVT_DPI_CHANGED, [this](wxDPIChangedEvent& event) { Position39Countdown(); event.Skip(); });
+#endif
 
 	StartupLog("Create subtitles grid");
 	context->subsGrid = new BaseGrid(Panel, context.get());

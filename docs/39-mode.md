@@ -9,27 +9,36 @@ retain their existing controllers, tag selectors and split behavior.
    39 Mode**. With multiple selected rows, that selection is the explicit scope.
    With only one selected row, the active style and overlapping Japanese/ruby or
    existing karaoke evidence determine candidate targets after capture.
-2. The audio display shows **3, 2, 1**, one second each. Playback then starts
-   automatically at the first checkpoint minus the configured **Audio Lead IN**.
-   Both F/J and D/K are armed together. There is no opening review dialog.
-3. Perform continuously. A fresh **F/J** press starts the primary block and
+2. Fresh sessions seek to **media time zero**, or the earliest Comment whose
+   plain text is exactly **39 mode start here** (ASCII case-insensitive, trimmed;
+   ASS overrides are ignored). The Comment's absolute Start supplies the marker.
+   Ordinary Dialogue text never supplies a marker. Comments do not count toward
+   lyric selection, analysis, results, or serialization.
+3. Playback remains paused while a large **3, 2, 1** appears at the center of the
+   main window, one second each. The raised child overlay does not resize panels,
+   moves with the main client area, and uses DPI-scaled size and turquoise text
+   on dark backing. It disappears before playback starts. F/J/D/K capture is
+   disabled until the Ready → Capturing transition; countdown taps are ignored.
+   Video and audio then start together at the chosen absolute media time.
+4. Perform continuously. A fresh **F/J** press starts the primary block and
    immediately takes ownership from the other primary key. Releasing the old
    key does not stop its replacement; releasing the current owner starts a gap.
    **D/K** has exactly the same independent behavior for the secondary lane.
    Repeated keydown events are ignored. No matching occurs during performance.
-4. Normal audio stop/toggle or **Ctrl+P / video play** finalizes the session.
+5. Normal audio stop/toggle or **Ctrl+P / video play** finalizes the session.
    Reaching the final selected checkpoint also stops; intermediate dialogues
    never stop recording. In discovery mode playback can continue to audio end.
-5. The results dialog lists every target with **GREEN / YELLOW / RED**, its
+6. The results dialog lists every target with **GREEN / YELLOW / RED**, its
    times, style, and source. Choose **Commit all GREEN**, or inspect ambiguous
    results, select their lane, mark reviewed, and **Commit reviewed GREEN /
    YELLOW**. RED rows have no supported assignment and cannot be committed.
    Language uncertainty is reported separately from timing confidence.
-6. **Inspector** contains explicit reading edits, alternate paths, assignments,
+7. **Inspector** contains explicit reading edits, alternate paths, assignments,
    and detailed diagnostics. Select the block after a divider and use the arrow
    buttons or Left/Right to transfer a mora. Protected dividers cannot move.
    Assignment Undo/Redo never changes captured timestamps.
-7. **Retake selected lane** runs the countdown and that line's preroll again,
+8. **Retake selected lane** uses that line minus **Audio Lead IN**, then the same
+   centered countdown,
    then returns to results. It replaces only the selected result/lane. Other
    lines, the other lane, and the original full-session raw capture survive.
    Canceling a retake countdown preserves the old result.
@@ -44,9 +53,26 @@ edits/undo invalidate cached targets rather than retaining stale event pointers.
 
 The existing waveform/spectrum scrolls beneath a centered turquoise `#39C5BB`
 hit line. Rounded captured blocks and gap outlines are **blank**: no kana,
-romaji, numbers, or labels inside them. Status/countdown lives above the lanes.
+romaji, numbers, or labels inside them. Small playback status stays above the
+lanes; countdown numerals appear only in the main-window overlay.
 Fresh accepted keydowns flash the hit line and emit a bounded particle burst;
 a timer advances effects and paint only reads them.
+
+### Start metadata and cancellation
+
+With multiple valid markers, the earliest absolute Start wins regardless of grid
+order (same-time ties use event order). Inspector records `SESSION START`, its
+milliseconds, and the chosen comment event number, or `default media start`.
+A marker at 100000 ms leaves a tap at 104250 ms as **104250**, never 4250.
+Dialogue checkpoints are never shifted. Session silence before 40000 ms is not
+serialized inside a lyric starting at 40000; only intersecting blocks/gaps are
+partitioned, and stray out-of-target taps do not shift later assignments.
+
+Stopping, changing modes, closing the window, or invalidating the session hides
+the overlay, stops its timer, and disarms capture. Queued timer events cannot
+restart a canceled model. If a marker lies at/after the existing playback range
+end, activation reports the invalid range instead of playing from another time.
+The existing final-selected-checkpoint end policy is preserved.
 
 ### Session checkpoints
 

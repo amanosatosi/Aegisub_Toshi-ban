@@ -5,6 +5,18 @@
 
 namespace agi { namespace timing39 {
 enum class SessionState { Idle, Countdown, Ready, Capturing, Results };
+struct SessionStartEvent {
+	uint64_t id;
+	bool comment;
+	int start;
+	std::string plain_text; // ASS adapter removes override/drawing blocks
+};
+struct SessionPlaybackStart {
+	int time = 0;
+	uint64_t marker = 0; // zero means default media start; event IDs are one-based
+	std::string Describe() const;
+};
+SessionPlaybackStart FindSessionPlaybackStart(std::vector<SessionStartEvent> const&);
 struct SessionTarget {
 	uint64_t id = 0;
 	int start = 0, end = 0;

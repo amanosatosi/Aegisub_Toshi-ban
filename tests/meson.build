@@ -33,6 +33,7 @@ all_test_sources += [
     '../src/ass_style.cpp',
     '../src/ass_karaoke.cpp',
     '../src/timing39_karaoke.cpp',
+    '../src/timing39_session_setup.cpp',
     '../src/better_view.cpp',
     '../src/motion_tracking/motion_track_export_ae.cpp',
     '../src/motion_tracking/motion_track_segments.cpp',

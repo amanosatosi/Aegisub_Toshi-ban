@@ -161,6 +161,8 @@ public:
 
 	/// Starting playing the video
 	void Play();
+	/// Play an exact media-time range without rounding its audio start to a frame.
+	void PlayRange(int begin_ms, int end_ms);
 	/// Play the next frame then stop
 	void NextFrame();
 	/// Play the previous frame then stop

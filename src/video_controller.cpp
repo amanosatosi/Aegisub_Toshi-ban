@@ -194,6 +194,20 @@ void VideoController::PlayLine() {
 	playback.Start(10);
 }
 
+void VideoController::PlayRange(int begin_ms, int finish_ms) {
+	if (!provider || finish_ms <= begin_ms) return;
+	Stop();
+	JumpToTime(begin_ms);
+	start_ms = begin_ms;
+	end_frame = std::min(FrameAtTime(finish_ms, agi::vfr::END) + 1, provider->GetFrameCount());
+	audio_playback_mode = AudioPlaybackMode::Range;
+	audio_playback_end_ms = finish_ms;
+	context->audioController->PlayRange(TimeRange(begin_ms, finish_ms), playback_speed);
+	if (!context->audioController->IsPlaying()) return;
+	playback_start_time = std::chrono::steady_clock::now();
+	playback.Start(10);
+}
+
 void VideoController::Stop() {
 	if (IsPlaying()) {
 		playback.Stop();

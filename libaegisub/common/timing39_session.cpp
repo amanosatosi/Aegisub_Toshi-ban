@@ -3,6 +3,26 @@
 #include <algorithm>
 
 namespace agi { namespace timing39 {
+SessionPlaybackStart FindSessionPlaybackStart(std::vector<SessionStartEvent> const& events) {
+	SessionPlaybackStart chosen;
+	for (auto const& event : events) {
+		if (!event.comment || event.start < 0 || !event.id) continue;
+		auto text = event.plain_text;
+		auto first = text.find_first_not_of(" \t\r\n\f\v");
+		if (first == std::string::npos) continue;
+		text = text.substr(first, text.find_last_not_of(" \t\r\n\f\v") - first + 1);
+		for (auto& c : text) if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+		if (text != "39 mode start here") continue;
+		if (!chosen.marker || event.start < chosen.time ||
+			(event.start == chosen.time && event.id < chosen.marker))
+			chosen = {event.start, event.id};
+	}
+	return chosen;
+}
+std::string SessionPlaybackStart::Describe() const {
+	return "SESSION START: " + std::to_string(time) + " ms (" +
+		(marker ? "comment marker: 39 mode start here; event " + std::to_string(marker) : "default media start") + ")\n";
+}
 bool HasSungBlocks(std::vector<TimingBlock> const& blocks) {
 	return std::any_of(blocks.begin(), blocks.end(), [](TimingBlock const& b) { return !b.gap; });
 }

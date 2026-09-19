@@ -56,6 +56,9 @@ class FrameMain : public wxFrame {
 	wxTimer StatusClear;   ///< Status bar timeout timer
 	wxTimer AlignmentPickerTimer;
 	wxWindow *alignmentPicker = nullptr;
+	wxWindow *mainPanel = nullptr;
+	wxWindow *timing39Countdown = nullptr;
+	void Position39Countdown();
 	int alignmentPickerPreview = 0;
 	int alignmentPickerSelected = 0;
 	int alignmentPickerPendingArrows = 0;
@@ -102,6 +105,8 @@ public:
 	/// @param video -1: leave unchanged; 0: hide; 1: show
 	/// @param audio -1: leave unchanged; 0: hide; 1: show
 	void SetDisplayMode(int showVid,int showAudio);
+	/// A raised child overlay, outside all layout sizers; zero hides it.
+	void Show39Countdown(int number);
 
 	bool IsVideoShown() const { return showVideo; }
 	bool IsAudioShown() const { return showAudio; }

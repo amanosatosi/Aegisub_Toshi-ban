@@ -1,9 +1,40 @@
 #include <main.h>
 #include "timing39_karaoke.h"
+#include "timing39_session_setup.h"
 #include "ass_dialogue.h"
 #include "ass_karaoke.h"
 #include <iostream>
 using namespace agi::timing39;
+TEST(Timing39Karaoke, SessionSetupExcludesCommentsAndSeparatesStartFromScope) {
+	AssDialogue marker,a,b,other;
+	marker.Comment=true;marker.Start=123450;marker.Text=" {\\i1}39 Mode Start Here{\\i0} ";
+	a.Start=140000;a.End=145000;a.Text=u8"みく";
+	b.Start=150000;b.End=155000;b.Text=u8"みく";
+	other.Start=160000;other.End=165000;other.Text=u8"みく";
+	auto setup=BuildSessionSetup({&marker,&a,&b,&other},{&marker,&a,&b},&a,200000);
+	EXPECT_EQ(123450,setup.playback_start.time);EXPECT_EQ(1u,setup.playback_start.marker);
+	EXPECT_TRUE(setup.explicit_scope);ASSERT_EQ(2u,setup.targets.size());
+	EXPECT_EQ(2u,setup.targets[0].id);EXPECT_EQ(3u,setup.targets[1].id);
+	EXPECT_EQ(155000,setup.playback_end);
+	Timing39Session session;session.Prepare(setup.targets,true,setup.active_style,setup.playback_start.time,setup.playback_end);
+	session.TickCountdown();session.TickCountdown();session.TickCountdown();session.Start(123450);session.Stop(155000);
+	ASSERT_EQ(2u,session.Results().size());for(auto const& r:session.Results())EXPECT_NE(1u,r.target.id);
+	setup=BuildSessionSetup({&marker,&a,&b},{&marker,&a},&a,200000);
+	EXPECT_FALSE(setup.explicit_scope); // the selected comment does not inflate lyric scope
+	marker.Comment=false;
+	setup=BuildSessionSetup({&marker,&a,&b},{&a,&b},&a,200000);
+	EXPECT_EQ(0,setup.playback_start.time);EXPECT_EQ(0u,setup.playback_start.marker);
+}
+
+TEST(Timing39Karaoke, SessionSilenceDoesNotSerializeAsFortySecondsOfKaraoke) {
+	AssDialogue d;d.Start=40000;d.End=45000;d.Text=u8"みく";
+	auto local=PartitionCapture({{0,40200,true},{40200,41000,false},{41000,42000,true},{42000,43000,false},{43000,45000,true}},40000,45000);
+	auto a=AnalyzeDialogue(d);auto result=Match(a,local.blocks);ASSERT_FALSE(result.paths.empty());
+	std::string out,error;ASSERT_TRUE(Serialize(d,a,local.blocks,result.paths[0].assignments,out,error))<<error;
+	EXPECT_EQ(u8"{\\k20}{\\k80}み{\\k100}{\\k100}く{\\k200}",out);
+	d.Text=out;AssKaraoke reopened(&d,false,false);
+	EXPECT_EQ(40200,(reopened.begin()+1)->start_time);
+}
 TEST(Timing39Karaoke, GoldenRubyAndGaps) {
 	AssDialogue d;d.Start=1000;d.End=1600;d.Text=u8"<現在|イマ>";
 	auto a=AnalyzeDialogue(d);std::vector<TimingBlock> b{{1000,1100,true},{1100,1250,false},{1250,1350,true},{1350,1500,false},{1500,1600,true}};
