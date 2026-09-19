@@ -41,6 +41,7 @@
 #include "ass_file.h"
 #include "async_video_provider.h"
 #include "audio_controller.h"
+#include "audio_timing.h"
 #include "audio_box.h"
 #include "base_grid.h"
 #include "compat.h"
