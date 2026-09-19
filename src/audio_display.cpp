@@ -1349,14 +1349,8 @@ bool AudioDisplay::ForwardMouseEvent(wxMouseEvent &event) {
 void AudioDisplay::OnKeyDown(wxKeyEvent& event)
 {
 	if (auto timing = controller->GetTimingController()) {
-		unsigned serial = timing->RhythmSerial();
 		if (HasFocus() && !event.AltDown() && timing->TimingKey(event.GetKeyCode(), true,
 			controller->GetPlaybackPosition(), event.ControlDown(), event.ShiftDown())) {
-			if (timing->RhythmSerial() != serial) {
-				for (int i=0; i<6; ++i) timing39_particles.push_back({0,0,float(i-3)*1.4f,-float(2+i%3),0});
-				if (timing39_particles.size()>48) timing39_particles.erase(timing39_particles.begin(),timing39_particles.end()-48);
-				timing39_effect_timer.Start(20);
-			}
 			return;
 		}
 	}
@@ -1386,11 +1380,7 @@ void AudioDisplay::Paint39Overlay(wxDC &dc)
 		wxColour accent = block.uncertain ? wxColour(235,190,65) : wxColour(57,197,187);
 		dc.SetPen(wxPen(block.gap ? wxColour(130,130,130) : accent, 1, block.gap ? wxPENSTYLE_DOT : wxPENSTYLE_SOLID));
 		dc.SetBrush(*wxTRANSPARENT_BRUSH);
-		dc.DrawRectangle(x, y, std::max(2, right-x), height);
-		dc.SetTextForeground(accent);
-		dc.SetClippingRegion(std::max(0,x), y, std::max(1,std::min(right,GetClientSize().x)-std::max(0,x)), height);
-		dc.DrawText(block.text, x+3, y+1);
-		dc.DestroyClippingRegion();
+		dc.DrawRoundedRectangle(x, y, std::max(2, right-x), height, 4);
 	}
 	dc.SetTextForeground(wxColour(57,197,187));
 	dc.DrawText(timing->Get39Status(), 5, audio_top+2);
@@ -1502,6 +1492,9 @@ void AudioDisplay::OnAudioOpen(agi::AudioProvider *provider)
 
 void AudioDisplay::OnTimingController()
 {
+	timing39_seen_serial = 0;
+	timing39_particles.clear();
+	timing39_effect_timer.Stop();
 	AudioTimingController *timing_controller = controller->GetTimingController();
 	if (timing_controller)
 	{
@@ -1610,5 +1603,13 @@ void AudioDisplay::OnStyleRangesChanged()
 
 void AudioDisplay::OnMarkerMoved()
 {
+	if (auto timing = controller->GetTimingController()) {
+		if (timing->Is39Mode() && timing39_seen_serial != timing->RhythmSerial()) {
+			timing39_seen_serial = timing->RhythmSerial();
+			for (int i=0; i<8; ++i) timing39_particles.push_back({0,0,float(i-4)*1.8f,-float(2+i%3),0});
+			if (timing39_particles.size()>48) timing39_particles.erase(timing39_particles.begin(),timing39_particles.end()-48);
+			timing39_effect_timer.Start(20);
+		}
+	}
 	RefreshRect(wxRect(0, audio_top, GetClientSize().GetWidth(), audio_height), false);
 }

@@ -7,337 +7,233 @@
 #include "audio_controller.h"
 #include "audio_rendering_style.h"
 #include "compat.h"
+#include "options.h"
+#include "project.h"
 #include "include/aegisub/context.h"
 #include "selection_controller.h"
+#include <libaegisub/audio/provider.h>
 #include <libaegisub/make_unique.h>
+#include <libaegisub/timing39_session.h>
 #include <algorithm>
 #include <map>
 #include <wx/button.h>
 #include <wx/choice.h>
 #include <wx/dialog.h>
+#include <wx/eventfilter.h>
 #include <wx/listbox.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/timer.h>
 #include <wx/filedlg.h>
 #include <wx/ffile.h>
 
 namespace {
 namespace t39 = agi::timing39;
-struct LaneReview {
-	AssDialogue* target = nullptr;
-	t39::Analysis analysis;
-	t39::MatchResult match;
-	t39::AssignmentEditor editor;
-};
-struct LineReview {
-	int start=0,end=0;
-	t39::TimingCaptureSession capture;
-	std::array<LaneReview,2> lanes;
-};
-
-class AudioTimingController39 final : public AudioTimingController {
-	agi::Context* c;
-	std::vector<agi::signal::Connection> connections;
-	std::map<AssDialogue*,LineReview> lines;
-	AssDialogue* active=nullptr;
-	wxDialog* panel=nullptr;
-	wxStaticText* status=nullptr;
-	wxChoice *lane_choice=nullptr,*target_choice=nullptr,*path_choice=nullptr;
-	wxListBox* assignments=nullptr;
-	wxTextCtrl *reading=nullptr,*details=nullptr;
-	std::vector<AssDialogue*> targets;
-	int selected_lane=0,armed=0,pending_arm=3,last_position=0;
-	bool committing=false,refreshing=false;
-	unsigned rhythm_serial=0;
-	std::string notice;
-
-	LineReview* Current() {auto it=lines.find(active);return it==lines.end()?nullptr:&it->second;}
-	LineReview const* Current() const {auto it=lines.find(active);return it==lines.end()?nullptr:&it->second;}
-	void Notify() {AnnounceMarkerMoved();AnnounceLabelChanged();}
-	void AnalyzeTarget(LaneReview& lane,AssDialogue* target) {
-		lane.target=target;
-		lane.analysis=target?t39::AnalyzeDialogue(*target):t39::Analysis{};
-		if(!target) lane.analysis.error="Choose a relevant subtitle event for this lane";
-		lane.match={};lane.editor.Reset({});
-	}
-	void SelectLine() {
-		if(c->audioController->IsPlaying()) c->audioController->Stop();
-		active=c->selectionController->GetActiveLine();armed=0;pending_arm=0;
-		if(active && !lines.count(active)) {
-			auto& line=lines[active];line.start=active->Start;line.end=active->End;
-			AnalyzeTarget(line.lanes[0],active);AnalyzeTarget(line.lanes[1],nullptr);pending_arm=3;
-		}
-		if(auto line=Current())reading->ChangeValue(to_wx(line->lanes[selected_lane].analysis.surface));
-		notice.clear();Update();AnnounceUpdatedPrimaryRange();Notify();
-	}
-	void FileChanged(int type,AssDialogue const* changed) {
-		if(committing || !(type&(AssFile::COMMIT_DIAG_FULL|AssFile::COMMIT_DIAG_ADDREM))) return;
-		// Undo/deletion may replace dialogue objects. Never retain stale pointers.
-		if(c->audioController->IsPlaying()) c->audioController->Stop();
-		if(changed && !(type&AssFile::COMMIT_DIAG_ADDREM)) {
-			for(auto it=lines.begin();it!=lines.end();) {
-				bool affected=it->first==changed;
-				for(auto const& lane:it->second.lanes)affected=affected||lane.target==changed;
-				if(affected)it=lines.erase(it);else ++it;
-			}
-		}
-		else lines.clear();
-		SelectLine();notice="Subtitle edit/undo reloaded affected previews";Update();
-	}
-	void Resolve(int mask) {
-		auto line=Current();if(!line)return;
-		for(size_t i=0;i<2;++i) {
-			if(!(mask&(1<<i)))continue;
-			auto& lane=line->lanes[i];lane.match=t39::Match(lane.analysis,line->capture.lanes[i].Blocks());
-			lane.editor.Reset(lane.match.paths.empty()?std::vector<t39::TimingAssignment>{}:lane.match.paths[0].assignments);
-		}
-		InferTargets();Update();Notify();
-	}
-	static std::vector<int> Boundaries(std::vector<t39::TimingBlock> const& blocks) {
-		std::vector<int> out;for(auto const& b:blocks)if(!b.gap) {out.push_back(b.start);out.push_back(b.end);}
-		std::sort(out.begin(),out.end());out.erase(std::unique(out.begin(),out.end()),out.end());return out;
-	}
-	bool Relevant(AssDialogue const& d,LineReview const& line) const {
-		return !d.Comment && int(d.Start)<line.end && int(d.End)>line.start;
-	}
-	void InferTargets() {
-		auto line=Current();if(!line)return;
-		std::vector<t39::StyleEvidence> evidence;
-		for(auto const& checkpoint:lines) {
-			auto const& review=checkpoint.second;
-			auto p=Boundaries(review.capture.lanes[0].Blocks()),s=Boundaries(review.capture.lanes[1].Blocks());
-			if(p.empty()||s.empty())continue;
-			for(auto const& d:c->ass->Events) if(Relevant(d,review)) evidence.push_back({d.Style,t39::KaraokeBoundaries(d),p,s});
-		}
-		auto inferred=t39::InferStyles(evidence);
-		if(Boundaries(line->capture.lanes[1].Blocks()).empty())return;
-		if(inferred.ambiguous) {if(!line->lanes[1].target)notice="YELLOW: style evidence is ambiguous; choose the D/K target event";return;}
-		if(line->lanes[0].target && line->lanes[0].target->Style!=inferred.primary) {
-			notice="YELLOW: primary target conflicts with timing evidence; resolve both target events manually";return;
-		}
-		// There must be exactly one relevant event per inferred style. Never pick
-		// an arbitrary row when overlapping duplicates share a style.
-		for(size_t i=0;i<2;++i) {
-			if(line->lanes[i].target)continue;
-			AssDialogue* target=nullptr;size_t count=0;
-			for(auto& d:c->ass->Events) if(Relevant(d,*line) && d.Style==(i?inferred.secondary:inferred.primary)) {target=&d;++count;}
-			if(count==1 && target!=line->lanes[1-i].target) {
-				AnalyzeTarget(line->lanes[i],target);
-				auto& lane=line->lanes[i];lane.match=t39::Match(lane.analysis,line->capture.lanes[i].Blocks());
-				if(!lane.match.paths.empty())lane.editor.Reset(lane.match.paths[0].assignments);
-			}
-		}
-	}
-	std::string Group(t39::Analysis const& a,t39::TimingAssignment const& x) const {
-		std::string out;for(size_t i=0;i<x.mora_count;++i)out+=a.morae[x.first_mora+i].text;return out;
-	}
-	void Update() {
-		if(!panel)return;refreshing=true;
-		auto line=Current();targets.clear();target_choice->Clear();target_choice->Append(_("Choose target event"));
-		if(line) {
-			for(auto& d:c->ass->Events) if(Relevant(d,*line)) {
-				targets.push_back(&d);target_choice->Append(to_wx(d.Style.get()+"  "+d.Text.get().substr(0,180)));
-			}
-			auto& lane=line->lanes[selected_lane];int selection=0;
-			for(size_t i=0;i<targets.size();++i)if(targets[i]==lane.target)selection=int(i+1);
-			target_choice->SetSelection(selection);
-			std::string message=armed?"Capturing: F/J primary, D/K secondary. Space stops.":lane.match.reason;
-			if(!lane.analysis.error.empty())message=lane.analysis.error;
-			if(!notice.empty())message=notice;
-			if(message.empty())message="Space starts capture. F/J primary, D/K secondary. R retakes this lane.";
-			std::string color=lane.match.confidence==t39::Confidence::Green?"GREEN":lane.match.confidence==t39::Confidence::Yellow?"YELLOW":"RED";
-			status->SetLabel(to_wx("39 Mode — "+(armed?std::string("LIVE"):color)+"\n"+message));
-			status->SetForegroundColour(armed?wxColour(57,197,187):lane.match.confidence==t39::Confidence::Green?wxColour(30,160,110):lane.match.confidence==t39::Confidence::Yellow?wxColour(175,125,0):wxColour(200,60,60));
-			int divider=assignments->GetSelection();assignments->Clear();
-			for(size_t i=0;i<lane.editor.Get().size();++i) {
-				auto const& x=lane.editor.Get()[i];auto const& b=line->capture.lanes[selected_lane].Blocks()[x.timing_block];
-				bool uncertain=std::find(lane.match.uncertain_boundaries.begin(),lane.match.uncertain_boundaries.end(),i)!=lane.match.uncertain_boundaries.end();
-				assignments->Append(to_wx((uncertain?"? ":"  ")+std::to_string(i+1)+"  "+std::to_string(b.start)+"–"+std::to_string(b.end)+" ms  ["+Group(lane.analysis,x)+"]"));
-			}
-			if(assignments->GetCount())assignments->SetSelection(std::max(0,std::min(divider,int(assignments->GetCount()-1))));
-			path_choice->Clear();
-			for(size_t p=0;p<lane.match.paths.size();++p) {
-				std::string text=std::to_string(p+1)+": ";for(auto const& x:lane.match.paths[p].assignments)text+="["+Group(lane.analysis,x)+"]";
-				path_choice->Append(to_wx(text));if(lane.editor.Get()==lane.match.paths[p].assignments)path_choice->SetSelection(int(p));
-			}
-			details->ChangeValue(to_wx(t39::Inspect(lane.analysis,line->capture.lanes[selected_lane].Blocks(),lane.match,&lane.editor)));
-		}
-		else status->SetLabel(_("39 Mode — select a dialogue line"));
-		panel->Layout();refreshing=false;
-	}
-	void Retake(int mask) {
-		auto line=Current();if(!line)return;
-		c->audioController->Stop();pending_arm=mask;notice.clear();
-		for(int i=0;i<2;++i)if(mask&(1<<i)) {line->capture.lanes[i].Clear();line->lanes[i].match={};line->lanes[i].editor.Reset({});}
-		c->audioBox->FocusAudio();c->audioController->PlayRange(TimeRange(std::max(0,line->start-500),line->end));
-	}
-	void Move(int delta) {
-		auto line=Current();if(!line||armed)return;auto& lane=line->lanes[selected_lane];
-		int divider=assignments->GetSelection();
-		if(divider<=0 || !lane.editor.Move(lane.analysis,size_t(divider),delta))notice="This divider cannot move through a protected boundary. Choose a complete alternative path.";
-		else notice="Assignment moved; captured timestamps unchanged";
-		Update();Notify();
-	}
-	void History(bool redo) {
-		auto line=Current();if(!line||armed)return;auto& editor=line->lanes[selected_lane].editor;
-		if(redo)editor.Redo();else editor.Undo();Update();Notify();
-	}
-	void ApplyReading() {
-		auto line=Current();if(!line||armed)return;auto& lane=line->lanes[selected_lane];
-		// Accept a complete source/ruby expression so explicit pronunciation is
-		// never silently overwritten by a dictionary or guessed alignment.
-		auto replacement=t39::Analyze(from_wx(reading->GetValue()));
-		if(!replacement.error.empty()) {notice=replacement.error;Update();return;}
-		if(!lane.target) {notice="Choose the target event before editing its reading";Update();return;}
-		replacement.source=lane.target->Text;lane.analysis=std::move(replacement);
-		lane.match=t39::Match(lane.analysis,line->capture.lanes[selected_lane].Blocks());
-		lane.editor.Reset(lane.match.paths.empty()?std::vector<t39::TimingAssignment>{}:lane.match.paths[0].assignments);
-		notice="Reading preview updated; capture preserved. Enter commits the displayed source and timing.";Update();Notify();
-	}
-	void SaveInspection() {
-		auto line=Current();if(!line)return;
-		wxFileDialog save(panel,_("Save 39 Mode analysis and corrections"),"","39-mode.txt",_("Text files (*.txt)|*.txt"),wxFD_SAVE|wxFD_OVERWRITE_PROMPT);
-		if(save.ShowModal()!=wxID_OK)return;
-		wxFFile file(save.GetPath(),"w");if(file.IsOpened())file.Write(details->GetValue(),wxConvUTF8);
-	}
-	void MakePanel() {
-		panel=new wxDialog(c->parent,wxID_ANY,_("39 Mode"),wxDefaultPosition,wxSize(740,650),wxDEFAULT_DIALOG_STYLE|wxRESIZE_BORDER);
-		auto root=new wxBoxSizer(wxVERTICAL);status=new wxStaticText(panel,wxID_ANY,_("39 Mode"));root->Add(status,0,wxEXPAND|wxALL,8);
-		auto row=new wxBoxSizer(wxHORIZONTAL);lane_choice=new wxChoice(panel,wxID_ANY);lane_choice->Append(_("F/J primary"));lane_choice->Append(_("D/K secondary"));lane_choice->SetSelection(0);row->Add(lane_choice,0,wxRIGHT,5);
-		target_choice=new wxChoice(panel,wxID_ANY);row->Add(target_choice,1);root->Add(row,0,wxEXPAND|wxALL,8);
-		root->Add(new wxStaticText(panel,wxID_ANY,_("Source / reading preview (use <display|reading>; explicit readings always win):")),0,wxLEFT|wxRIGHT,8);
-		reading=new wxTextCtrl(panel,wxID_ANY);root->Add(reading,0,wxEXPAND|wxALL,8);
-		auto actions=new wxBoxSizer(wxHORIZONTAL);
-		auto button=[&](wxSizer* s,wxString const& label,std::function<void()> fn) {auto b=new wxButton(panel,wxID_ANY,label);s->Add(b,0,wxRIGHT,4);b->Bind(wxEVT_BUTTON,[fn](wxCommandEvent&){fn();});};
-		button(actions,_("Apply reading"),[this]{ApplyReading();});button(actions,_("Capture both"),[this]{Retake(3);});button(actions,_("Retake lane (R)"),[this]{Retake(1<<selected_lane);});button(actions,_("Stop"),[this]{c->audioController->Stop();});root->Add(actions,0,wxALL,8);
-		path_choice=new wxChoice(panel,wxID_ANY);root->Add(path_choice,0,wxEXPAND|wxALL,8);
-		root->Add(new wxStaticText(panel,wxID_ANY,_("Select the block after a divider. Left/Right moves mora placement, not time.")),0,wxLEFT|wxRIGHT,8);
-		assignments=new wxListBox(panel,wxID_ANY);root->Add(assignments,1,wxEXPAND|wxALL,8);
-		auto edits=new wxBoxSizer(wxHORIZONTAL);button(edits,_("← Mora"),[this]{Move(-1);});button(edits,_("Mora →"),[this]{Move(1);});button(edits,_("Undo"),[this]{History(false);});button(edits,_("Redo"),[this]{History(true);});button(edits,_("Commit (Enter)"),[this]{Commit();});button(edits,_("Discard"),[this]{Revert();});root->Add(edits,0,wxALL,8);
-		details=new wxTextCtrl(panel,wxID_ANY,"",wxDefaultPosition,wxSize(-1,140),wxTE_MULTILINE|wxTE_READONLY|wxTE_DONTWRAP);root->Add(details,1,wxEXPAND|wxALL,8);
-		auto footer=new wxBoxSizer(wxHORIZONTAL);button(footer,_("Save inspection"),[this]{SaveInspection();});button(footer,_("Focus audio"),[this]{c->audioBox->FocusAudio();});button(footer,_("Next line"),[this]{Next(LINE);});root->Add(footer,0,wxALL,8);
-		panel->SetSizer(root);
-		lane_choice->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){selected_lane=lane_choice->GetSelection();notice.clear();Update();auto line=Current();if(line)reading->ChangeValue(to_wx(line->lanes[selected_lane].analysis.surface));});
-		target_choice->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){
-			if(refreshing||armed)return;auto line=Current();int n=target_choice->GetSelection();if(!line||n<1)return;
-			auto target=targets[size_t(n-1)];if(target==line->lanes[1-selected_lane].target){notice="The two lanes require distinct events";Update();return;}
-			AnalyzeTarget(line->lanes[selected_lane],target);auto& lane=line->lanes[selected_lane];lane.match=t39::Match(lane.analysis,line->capture.lanes[selected_lane].Blocks());if(!lane.match.paths.empty())lane.editor.Reset(lane.match.paths[0].assignments);
-			notice="Target event selected manually";reading->ChangeValue(to_wx(lane.analysis.surface));Update();Notify();
-		});
-		path_choice->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){auto line=Current();int p=path_choice->GetSelection();if(!line||armed||p<0)return;auto& lane=line->lanes[selected_lane];lane.editor.Choose(lane.analysis,lane.match.paths[size_t(p)].assignments);notice="Alternative selected; captured timestamps unchanged";Update();Notify();});
-		assignments->Bind(wxEVT_KEY_DOWN,[this](wxKeyEvent& e){if(e.GetKeyCode()==WXK_LEFT)Move(-1);else if(e.GetKeyCode()==WXK_RIGHT)Move(1);else if(e.GetKeyCode()==WXK_RETURN)Commit();else e.Skip();});
-		panel->Bind(wxEVT_CLOSE_WINDOW,[this](wxCloseEvent& e){if(e.CanVeto()){e.Veto();panel->Hide();c->audioBox->FocusAudio();}else e.Skip();});
-		panel->Show();
-	}
+class AudioTimingController39 final : public AudioTimingController, public wxEventFilter {
+ agi::Context* c;
+ t39::Timing39Session session;
+ std::map<uint64_t,AssDialogue*> events;
+ std::vector<agi::signal::Connection> connections;
+ wxTimer countdown;
+ wxDialog *panel=nullptr,*inspector=nullptr;
+ wxListBox *rows=nullptr,*assignments=nullptr;
+ wxChoice *lane_choice=nullptr,*paths=nullptr;
+ wxStaticText *status=nullptr;
+ wxTextCtrl *reading=nullptr,*details=nullptr;
+ size_t selected=0;
+ int selected_lane=0,last_position=0;
+ unsigned rhythm_serial=0;
+ bool committing=false,refreshing=false;
+ std::string notice;
+ int Preroll() const {return std::max(0,int(OPT_GET("Audio/Lead/IN")->GetInt()));}
+ void Notify(){AnnounceMarkerMoved();AnnounceLabelChanged();}
+ t39::SessionResult* Current(){return selected<session.Results().size()?&session.Results()[selected]:nullptr;}
+ static std::string Color(t39::Confidence s){return s==t39::Confidence::Green?"GREEN":s==t39::Confidence::Yellow?"YELLOW":"RED";}
+ void Prepare() {
+  auto active=c->selectionController->GetActiveLine();
+  auto provider=c->project->AudioProvider();
+  if(!active||!provider){notice="Select a lyric line and open audio";return;}
+  auto const& chosen=c->selectionController->GetSelectedSet();
+  bool explicit_scope=chosen.size()>1;
+  int start=active->Start,end=int(provider->GetNumSamples()*1000/provider->GetSampleRate());
+  if(explicit_scope){start=end;end=0;for(auto d:chosen){start=std::min(start,int(d->Start));end=std::max(end,int(d->End));}}
+  std::vector<t39::SessionTarget> targets;
+  uint64_t id=0;
+  for(auto& d:c->ass->Events) {
+   if(d.Comment)continue;
+   if(explicit_scope&&!chosen.count(&d))continue;
+   if(!explicit_scope&&int(d.End)<=start)continue;
+   t39::SessionTarget t;t.id=++id;t.start=d.Start;t.end=d.End;t.style=d.Style;
+   t.analysis=t39::AnalyzeDialogue(d);t.existing_boundaries=t39::KaraokeBoundaries(d);
+   t.selected=chosen.count(&d)!=0;
+   t.lyric_evidence=!t.analysis.morae.empty() && std::any_of(t.analysis.reading.characters.begin(),t.analysis.reading.characters.end(),[](t39::ReadingCharacter const& ch){return ch.kana>=U'ぁ'&&ch.kana<=U'ー';});
+   events[t.id]=&d;targets.push_back(std::move(t));
+  }
+  session.Prepare(std::move(targets),explicit_scope,active->Style,std::max(0,start-Preroll()),end);
+  last_position=session.StartTime();countdown.Start(1000);
+ }
+ void Tick(wxTimerEvent&) {
+  if(session.State()!=t39::SessionState::Countdown){countdown.Stop();return;}
+  if(session.TickCountdown()) {
+   countdown.Stop();c->audioController->PlayRange(TimeRange(session.StartTime(),session.EndTime()));
+   if(!c->audioController->IsPlaying())PlaybackStopped(session.StartTime());
+  }
+  Notify();
+ }
+ void ShowResults(){if(!panel)MakePanel();Update();panel->Show();panel->Raise();}
+ void FileChanged(int type,AssDialogue const*) {
+  if(committing||!(type&(AssFile::COMMIT_DIAG_FULL|AssFile::COMMIT_DIAG_ADDREM)))return;
+  c->audioController->Stop();countdown.Stop();session.Discard();events.clear();
+  notice="Subtitle edit or undo invalidated the cached targets. Toggle 39 Mode to start a new session.";
+  if(inspector)inspector->Hide();Update();Notify();
+ }
+ void Update() {
+  if(!panel)return;refreshing=true;rows->Clear();
+  for(auto const& r:session.Results())rows->Append(to_wx(Color(r.Status())+(r.committed?" [committed] ":r.reviewed?" [reviewed] ":" ")+std::to_string(r.target.start)+"–"+std::to_string(r.target.end)+"  "+r.target.style+"  "+r.target.analysis.surface));
+  if(auto r=Current()) {
+   rows->SetSelection(int(selected));lane_choice->SetSelection(r->lane+1);
+   status->SetLabel(to_wx(notice.empty()?r->target.discovery_reason+"; "+r->lanes[selected_lane].match.reason:notice));
+  }else status->SetLabel(to_wx(notice.empty()?"No captured lyric targets. Toggle 39 Mode to start again.":notice));
+  if(inspector)UpdateInspector();
+  panel->Layout();refreshing=false;
+ }
+ std::string Group(t39::Analysis const& a,t39::TimingAssignment const& x) const {
+  std::string out;for(size_t i=0;i<x.mora_count;++i)out+=a.morae[x.first_mora+i].text;return out;
+ }
+ void UpdateInspector() {
+  auto r=Current();if(!r)return;auto& l=r->lanes[selected_lane];
+  reading->ChangeValue(to_wx(r->target.analysis.surface));
+  int divider=assignments->GetSelection();assignments->Clear();paths->Clear();
+  for(auto const& x:l.editor.Get()) {
+   auto const& b=l.capture.blocks[x.timing_block];
+   assignments->Append(to_wx(std::to_string(b.start)+"–"+std::to_string(b.end)+"  ["+Group(r->target.analysis,x)+"]"));
+  }
+  if(assignments->GetCount())assignments->SetSelection(std::max(0,std::min(divider,int(assignments->GetCount()-1))));
+  for(size_t i=0;i<l.match.paths.size();++i) {
+   std::string text;for(auto const& x:l.match.paths[i].assignments)text+="["+Group(r->target.analysis,x)+"]";
+   paths->Append(to_wx(text));if(l.editor.Get()==l.match.paths[i].assignments)paths->SetSelection(int(i));
+  }
+  std::string extra="\nSESSION RAW F/J\n";
+  for(int lane=0;lane<2;++lane){if(lane)extra+="SESSION RAW D/K\n";for(auto const& b:session.Raw(lane))extra+=std::to_string(b.start)+" "+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");}
+  for(auto const& take:session.retakes){extra+="RETAKE target="+std::to_string(take.target)+" lane="+std::to_string(take.lane)+"\n";for(auto const& b:take.raw)extra+=std::to_string(b.start)+" "+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");}
+  extra+="LOCAL RAW INDICES ";for(auto i:l.capture.raw_indices)extra+=std::to_string(i)+" ";
+  extra+=l.capture.clipped?"\nCLIPPED at dialogue checkpoint; review required\n":"\n";
+  details->ChangeValue(to_wx(t39::Inspect(r->target.analysis,l.capture.blocks,l.match,&l.editor)+extra));
+ }
+ void Button(wxWindow* parent,wxSizer* s,wxString const& label,std::function<void()> fn) {
+  auto b=new wxButton(parent,wxID_ANY,label);s->Add(b,0,wxALL,3);b->Bind(wxEVT_BUTTON,[fn](wxCommandEvent&){fn();});
+ }
+ void MakePanel() {
+  panel=new wxDialog(c->parent,wxID_ANY,_("39 Mode — session results"),wxDefaultPosition,wxSize(820,460),wxDEFAULT_DIALOG_STYLE|wxRESIZE_BORDER);
+  auto root=new wxBoxSizer(wxVERTICAL);status=new wxStaticText(panel,wxID_ANY,"");root->Add(status,0,wxEXPAND|wxALL,8);
+  rows=new wxListBox(panel,wxID_ANY);root->Add(rows,1,wxEXPAND|wxALL,8);
+  auto select=new wxBoxSizer(wxHORIZONTAL);lane_choice=new wxChoice(panel,wxID_ANY);lane_choice->Append(_("Unresolved lane"));lane_choice->Append(_("F/J primary"));lane_choice->Append(_("D/K secondary"));select->Add(lane_choice,0,wxALL,3);
+  Button(panel,select,_("Mark reviewed"),[this]{if(auto r=Current()){r->reviewed=r->lane>=0;notice=r->reviewed?"Selected line reviewed":"Choose its lane first";Update();}});
+  Button(panel,select,_("Inspector"),[this]{ShowInspector();});
+  Button(panel,select,_("Retake selected lane"),[this]{Retake();});root->Add(select,0,wxALL,5);
+  auto commit=new wxBoxSizer(wxHORIZONTAL);Button(panel,commit,_("Commit all GREEN"),[this]{CommitResults(false);});Button(panel,commit,_("Commit reviewed GREEN / YELLOW"),[this]{CommitResults(true);});root->Add(commit,0,wxALL,5);
+  panel->SetSizer(root);
+  rows->Bind(wxEVT_LISTBOX,[this](wxCommandEvent&){selected=size_t(rows->GetSelection());if(auto r=Current())selected_lane=std::max(0,r->lane);notice.clear();Update();});
+  lane_choice->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){if(refreshing)return;if(auto r=Current()){r->lane=lane_choice->GetSelection()-1;selected_lane=std::max(0,r->lane);r->reviewed=false;notice="Lane selected. Inspect and mark reviewed before committing ambiguity.";Update();}});
+  panel->Bind(wxEVT_CLOSE_WINDOW,[this](wxCloseEvent& e){if(e.CanVeto()){e.Veto();panel->Hide();}else e.Skip();});
+ }
+ void ShowInspector() {
+  if(!Current())return;
+  if(!inspector) {
+   inspector=new wxDialog(panel,wxID_ANY,_("39 Mode — selected line Inspector"),wxDefaultPosition,wxSize(800,650),wxDEFAULT_DIALOG_STYLE|wxRESIZE_BORDER);
+   auto root=new wxBoxSizer(wxVERTICAL);reading=new wxTextCtrl(inspector,wxID_ANY);root->Add(reading,0,wxEXPAND|wxALL,6);
+   Button(inspector,root,_("Apply explicit reading"),[this]{auto r=Current();if(!r)return;auto a=t39::Analyze(from_wx(reading->GetValue()));if(!a.error.empty()){notice=a.error;Update();return;}a.source=r->target.analysis.source;r->target.analysis=std::move(a);session.Rematch(selected,0);session.Rematch(selected,1);Update();});
+   paths=new wxChoice(inspector,wxID_ANY);root->Add(paths,0,wxEXPAND|wxALL,6);
+   assignments=new wxListBox(inspector,wxID_ANY);root->Add(assignments,1,wxEXPAND|wxALL,6);
+   auto edit=new wxBoxSizer(wxHORIZONTAL);Button(inspector,edit,_("← Mora"),[this]{Move(-1);});Button(inspector,edit,_("Mora →"),[this]{Move(1);});Button(inspector,edit,_("Undo"),[this]{History(false);});Button(inspector,edit,_("Redo"),[this]{History(true);});root->Add(edit,0);
+   details=new wxTextCtrl(inspector,wxID_ANY,"",wxDefaultPosition,wxSize(-1,240),wxTE_MULTILINE|wxTE_READONLY|wxTE_DONTWRAP);root->Add(details,1,wxEXPAND|wxALL,6);
+   Button(inspector,root,_("Save inspection"),[this]{wxFileDialog save(inspector,_("Save inspection"),"","39-mode.txt",_("Text files (*.txt)|*.txt"),wxFD_SAVE|wxFD_OVERWRITE_PROMPT);if(save.ShowModal()==wxID_OK){wxFFile f(save.GetPath(),"w");if(f.IsOpened())f.Write(details->GetValue(),wxConvUTF8);}});
+   paths->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){auto r=Current();int p=paths->GetSelection();if(!r||p<0)return;auto& l=r->lanes[selected_lane];l.editor.Choose(r->target.analysis,l.match.paths[size_t(p)].assignments);r->reviewed=false;Update();});
+   assignments->Bind(wxEVT_KEY_DOWN,[this](wxKeyEvent& e){if(e.GetKeyCode()==WXK_LEFT)Move(-1);else if(e.GetKeyCode()==WXK_RIGHT)Move(1);else e.Skip();});
+   inspector->SetSizer(root);inspector->Bind(wxEVT_CLOSE_WINDOW,[this](wxCloseEvent& e){if(e.CanVeto()){e.Veto();inspector->Hide();}else e.Skip();});
+  }
+  UpdateInspector();inspector->Show();inspector->Raise();
+ }
+ void Move(int delta){if(auto r=Current()){if(!r->lanes[selected_lane].editor.Move(r->target.analysis,size_t(std::max(0,assignments->GetSelection())),delta))notice="Protected divider; choose a complete alternative path.";else notice="Assignment moved; raw timestamps unchanged";r->reviewed=false;Update();}}
+ void History(bool redo){if(auto r=Current()){auto& e=r->lanes[selected_lane].editor;if(redo)e.Redo();else e.Undo();r->reviewed=false;Update();}}
+ void Retake(){if(session.Retake(selected,selected_lane,Preroll())){panel->Hide();if(inspector)inspector->Hide();last_position=session.StartTime();countdown.Start(1000);c->audioBox->FocusAudio();AnnounceUpdatedPrimaryRange();Notify();}}
+ void CommitResults(bool reviewed) {
+  if(Is39SessionActive())return;
+  struct Write{t39::SessionResult* result;AssDialogue* event;std::string text;};std::vector<Write> writes;
+  for(auto& r:session.Results()) {
+   if(r.committed||r.lane<0)continue;
+   auto confidence=r.Status();
+   if(reviewed?(!r.reviewed||confidence==t39::Confidence::Red):confidence!=t39::Confidence::Green)continue;
+   auto it=events.find(r.target.id);if(it==events.end()||it->second->Text.get()!=r.target.analysis.source){notice="Source changed; restart session before committing";Update();return;}
+   auto& l=r.lanes[r.lane];std::string output,error;
+   if(!t39::Serialize(*it->second,r.target.analysis,l.capture.blocks,l.editor.Get(),output,error)){notice=error;Update();return;}
+   writes.push_back({&r,it->second,std::move(output)});
+  }
+  if(writes.empty()){notice="No eligible lines to commit";Update();return;}
+  committing=true;
+  for(auto& w:writes){w.event->Text=w.text;auto& l=w.result->lanes[w.result->lane];if(!l.editor.corrections.empty())c->ass->SetExtradataValue(*w.event,"39-mode-correction",t39::Inspect(w.result->target.analysis,l.capture.blocks,l.match,&l.editor));}
+  c->ass->Commit(_("39 Mode session timing"),AssFile::COMMIT_DIAG_TEXT|AssFile::COMMIT_EXTRADATA);committing=false;
+  for(auto& w:writes){w.result->committed=true;w.result->target.analysis.source=w.text;}
+  notice=std::to_string(writes.size())+" lines committed in one subtitle undo step";Update();Notify();
+ }
 public:
-	explicit AudioTimingController39(agi::Context* context):c(context) {
-		MakePanel();SelectLine();
-		if(auto line=Current())reading->ChangeValue(to_wx(line->lanes[0].analysis.surface));
-		connections.push_back(c->selectionController->AddActiveLineListener([this]{SelectLine();}));
-		connections.push_back(c->ass->AddCommitListener(&AudioTimingController39::FileChanged,this));
-		connections.push_back(c->audioController->AddPlaybackPositionListener([this](int ms){last_position=ms;if(armed && Current() && ms>=Current()->end)PlaybackStopped(Current()->end);}));
-	}
-	~AudioTimingController39() override {
-		connections.clear();
-		// wx Destroy is deferred. Delete the owned modeless view synchronously
-		// so none of its callbacks can outlive this controller.
-		delete panel;
-	}
-	bool Is39Mode() const override{return true;}
-	unsigned RhythmSerial() const override{return rhythm_serial;}
-	wxString GetWarningMessage() const override{return Get39Status();}
-	wxString Get39Status() const override {
-		auto line=Current();if(!line)return _("39 Mode — select a line");
-		if(armed)return _("39 Mode • F/J primary • D/K secondary • Space stops");
-		return to_wx("39 Mode • Space capture / audition • R retake lane • Tab review • "+notice);
-	}
-	TimeRange GetActiveLineRange() const override{auto line=Current();return line?TimeRange(line->start,line->end):TimeRange(0,0);}
-	TimeRange GetIdealVisibleTimeRange() const override{return GetActiveLineRange();}
-	TimeRange GetPrimaryPlaybackRange() const override{return GetActiveLineRange();}
-	void GetMarkers(TimeRange const&,AudioMarkerVector&) const override{}
-	void GetLabels(TimeRange const&,std::vector<AudioLabel>&) const override{}
-	void GetRenderingStyles(AudioRenderingStyleRanges& ranges) const override {auto line=Current();if(line)ranges.AddRange(line->start,line->end,AudioStyle_Selected);}
-	bool IsNearbyMarker(int,int,bool) const override{return false;}
-	std::vector<AudioMarker*> OnLeftClick(int,bool,bool,int,int) override{return {};}
-	std::vector<AudioMarker*> OnRightClick(int,bool,int,int) override{panel->Show();panel->Raise();return {};}
-	void OnMarkerDrag(std::vector<AudioMarker*> const&,int,int) override{}
-	void AddLeadIn() override{}
-	void AddLeadOut() override{}
-	void ModifyLength(int,bool) override{}
-	void ModifyStart(int) override{}
-	void Next(NextMode) override{c->selectionController->NextLine();}
-	void Prev() override{c->selectionController->PrevLine();}
-	void Revert() override {c->audioController->Stop();lines.erase(active);SelectLine();}
-	void PlaybackStarting(int ms) override {
-		auto line=Current();if(!line)return;
-		if(armed)PlaybackStopped(last_position); // seek/restart sanitizes owner
-		armed=pending_arm;pending_arm=0;last_position=ms;
-		for(int i=0;i<2;++i)if(armed&(1<<i))line->capture.lanes[i].Begin(line->start,line->end);
-		Update();Notify();
-	}
-	void PlaybackStopped(int ms) override {
-		auto line=Current();if(!line||!armed)return;
-		for(int i=0;i<2;++i)if(armed&(1<<i))line->capture.lanes[i].Finish(ms);
-		int captured=armed;armed=0;last_position=ms;Resolve(captured);
-	}
-	void TimingFocusLost(int ms) override {PlaybackStopped(ms);}
-	bool TimingKey(int key,bool down,int ms,bool control,bool shift) override {
-		auto line=Current();if(!line)return false;
-		if(key=='F'||key=='J'||key=='D'||key=='K') {
-			if((down&&(control||shift))||!armed||!c->audioController->IsPlaying())return false;
-			int lane=key=='F'||key=='J'?0:1;if(!(armed&(1<<lane)))return true;
-			bool changed=down?line->capture.lanes[lane].KeyDown(key,ms):line->capture.lanes[lane].KeyUp(key,ms);
-			if(changed && down)++rhythm_serial;
-			if(changed)Notify();return true;
-		}
-		if(!down)return false;
-		if(key==WXK_SPACE) {if(c->audioController->IsPlaying())c->audioController->Stop();else {c->audioController->PlayRange(TimeRange(std::max(0,line->start-500),line->end));}return true;}
-		if(key==WXK_ESCAPE){c->audioController->Stop();notice="Capture stopped and preserved; Discard clears this checkpoint";Update();return true;}
-		if(key==WXK_TAB){panel->Show();panel->Raise();assignments->SetFocus();return true;}
-		if(key=='R'&&!control){Retake(1<<selected_lane);return true;}
-		if(key==WXK_RETURN){Commit();return true;}
-		if(control&&key=='Z'){History(shift);return true;}
-		if(control&&key=='Y'){History(true);return true;}
-		return false;
-	}
-	void Get39Overlay(std::vector<Timing39Overlay>& out,int ms) const override {
-		auto line=Current();if(!line)return;
-		for(size_t lane=0;lane<2;++lane) {
-			auto blocks=line->capture.lanes[lane].Preview(ms);auto const& review=line->lanes[lane];
-			for(size_t i=0;i<blocks.size();++i) {
-				auto const& b=blocks[i];std::string text=b.gap?"gap":"•";
-				for(auto const& x:review.editor.Get())if(x.timing_block==i)text=Group(review.analysis,x);
-				out.push_back({b.start,b.end,int(lane),to_wx(text),b.gap,review.match.confidence==t39::Confidence::Yellow});
-			}
-			if(blocks.empty()) {
-				std::string text;for(auto const& mora:review.analysis.morae){if(!text.empty())text+=" | ";text+=mora.text;}
-				out.push_back({line->start,line->end,int(lane),to_wx(text),false,false});
-			}
-		}
-	}
-	void Commit() override {
-		c->audioController->Stop();auto line=Current();if(!line)return;
-		std::vector<std::pair<AssDialogue*,std::string>> writes;
-		for(size_t i=0;i<2;++i) {
-			auto const& blocks=line->capture.lanes[i].Blocks();if(Boundaries(blocks).empty())continue;
-			auto& lane=line->lanes[i];std::string output,error;
-			if(!lane.target || lane.analysis.source!=lane.target->Text.get()) {notice="Choose a target event or reload its changed source before committing";Update();return;}
-			if(!t39::Serialize(*lane.target,lane.analysis,blocks,lane.editor.Get(),output,error)) {notice=error;Update();return;}
-			writes.emplace_back(lane.target,std::move(output));
-		}
-		if(writes.empty()){notice="No capture to commit";Update();return;}
-		committing=true;
-		for(auto const& write:writes)write.first->Text=write.second;
-		// Structured diagnostics are retained with the line for regression data;
-		// no global weights are changed in response to a correction.
-		for(size_t i=0;i<2;++i) {auto& lane=line->lanes[i];if(lane.target&&!lane.editor.corrections.empty())c->ass->SetExtradataValue(*lane.target,"39-mode-correction",t39::Inspect(lane.analysis,line->capture.lanes[i].Blocks(),lane.match,&lane.editor));}
-		c->ass->Commit(_("39 Mode karaoke timing"),AssFile::COMMIT_DIAG_TEXT|AssFile::COMMIT_EXTRADATA);
-		committing=false;
-		for(auto const& write:writes)for(auto& lane:line->lanes)if(lane.target==write.first)lane.analysis.source=write.second;
-		notice="Committed. Subtitle undo restores the previous events.";Update();Notify();
-	}
+ explicit AudioTimingController39(agi::Context* context):c(context) {
+  countdown.Bind(wxEVT_TIMER,&AudioTimingController39::Tick,this);Prepare();wxEvtHandler::AddFilter(this);
+  connections.push_back(c->ass->AddCommitListener(&AudioTimingController39::FileChanged,this));
+  connections.push_back(c->audioController->AddPlaybackPositionListener([this](int ms){last_position=ms;}));
+ }
+ ~AudioTimingController39() override {countdown.Stop();wxEvtHandler::RemoveFilter(this);connections.clear();delete inspector;delete panel;}
+ int FilterEvent(wxEvent& event) override {
+  if(!Is39SessionActive())return Event_Skip;
+  if(event.GetEventType()==wxEVT_ACTIVATE_APP&&!static_cast<wxActivateEvent&>(event).GetActive()){c->audioController->Stop();return Event_Skip;}
+  if(event.GetEventType()!=wxEVT_CHAR_HOOK&&event.GetEventType()!=wxEVT_KEY_DOWN&&event.GetEventType()!=wxEVT_KEY_UP)return Event_Skip;
+  auto window=dynamic_cast<wxWindow*>(event.GetEventObject());
+  while(window&&window!=c->parent)window=window->GetParent();if(!window)return Event_Skip;
+  auto& key=static_cast<wxKeyEvent&>(event);bool down=event.GetEventType()!=wxEVT_KEY_UP;
+  if(down&&(key.AltDown()||key.ControlDown()||key.ShiftDown()))return Event_Skip;
+  return TimingKey(key.GetKeyCode(),down,c->audioController->GetPlaybackPosition(),false,false)?Event_Processed:Event_Skip;
+ }
+ bool Is39Mode() const override{return true;}
+ bool Is39SessionActive() const override{return session.State()==t39::SessionState::Countdown||session.State()==t39::SessionState::Ready||session.State()==t39::SessionState::Capturing;}
+ unsigned RhythmSerial() const override{return rhythm_serial;}
+ wxString GetWarningMessage() const override{return Get39Status();}
+ wxString Get39Status() const override {
+  if(session.State()==t39::SessionState::Countdown)return to_wx("39 Mode    "+std::to_string(session.Countdown())+"    F/J primary • D/K secondary");
+  if(session.State()==t39::SessionState::Capturing)return _("39 Mode • F/J primary • D/K secondary • Pause/stop to review");
+  return _("39 Mode • right-click audio to reopen session results");
+ }
+ TimeRange GetActiveLineRange() const override{return TimeRange(session.StartTime(),session.EndTime());}
+ TimeRange GetIdealVisibleTimeRange() const override{return TimeRange(session.StartTime(),std::min(session.EndTime(),session.StartTime()+5000));}
+ TimeRange GetPrimaryPlaybackRange() const override{return GetActiveLineRange();}
+ void GetMarkers(TimeRange const&,AudioMarkerVector&) const override{}
+ void GetLabels(TimeRange const&,std::vector<AudioLabel>&) const override{}
+ void GetRenderingStyles(AudioRenderingStyleRanges& ranges) const override{ranges.AddRange(session.StartTime(),session.EndTime(),AudioStyle_Selected);}
+ bool IsNearbyMarker(int,int,bool) const override{return false;}
+ std::vector<AudioMarker*> OnLeftClick(int,bool,bool,int,int) override{return {};}
+ std::vector<AudioMarker*> OnRightClick(int,bool,int,int) override{if(!Is39SessionActive())ShowResults();return {};}
+ void OnMarkerDrag(std::vector<AudioMarker*> const&,int,int) override{}
+ void AddLeadIn() override{} void AddLeadOut() override{} void ModifyLength(int,bool) override{} void ModifyStart(int) override{}
+ void Next(NextMode) override{if(!Is39SessionActive())c->selectionController->NextLine();}
+ void Prev() override{if(!Is39SessionActive())c->selectionController->PrevLine();}
+ void Revert() override{c->audioController->Stop();session.Discard();Update();Notify();}
+ void PlaybackStarting(int ms) override {
+  if(session.State()==t39::SessionState::Capturing)PlaybackStopped(c->audioController->GetPlaybackPosition());
+  else if(session.State()==t39::SessionState::Countdown)PlaybackStopped(session.StartTime());
+  session.Start(ms);last_position=ms;Notify();
+ }
+ void PlaybackStopped(int ms) override {countdown.Stop();if(session.Stop(ms)){last_position=ms;ShowResults();Notify();}}
+ void TimingFocusLost(int) override{} // widget focus changes do not end the session; app deactivation does
+ bool TimingKey(int key,bool down,int ms,bool control,bool shift) override {
+  if(!Is39SessionActive())return false;
+  if(key!='F'&&key!='J'&&key!='D'&&key!='K')return false;
+  if(down&&(control||shift))return false;
+  if(session.Key(key,down,ms)){if(down)++rhythm_serial;Notify();}return true;
+ }
+ void Get39Overlay(std::vector<Timing39Overlay>& out,int ms) const override {
+  for(int lane=0;lane<2;++lane)for(auto const& b:session.Preview(lane,ms))out.push_back({b.start,b.end,lane,{},b.gap,false});
+ }
+ void Commit() override{CommitResults(false);}
 };
 }
-
-std::unique_ptr<AudioTimingController> Create39TimingController(agi::Context* c) {return agi::make_unique<AudioTimingController39>(c);}
+std::unique_ptr<AudioTimingController> Create39TimingController(agi::Context* c){return agi::make_unique<AudioTimingController39>(c);}

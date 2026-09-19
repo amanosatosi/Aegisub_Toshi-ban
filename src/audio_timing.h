@@ -114,6 +114,7 @@ public:
 		bool gap, uncertain;
 	};
 	virtual bool Is39Mode() const { return false; }
+	virtual bool Is39SessionActive() const { return false; }
 	virtual bool TimingKey(int key, bool down, int ms, bool control, bool shift) { return false; }
 	virtual void PlaybackStarting(int ms) { }
 	virtual void PlaybackStopped(int ms) { }

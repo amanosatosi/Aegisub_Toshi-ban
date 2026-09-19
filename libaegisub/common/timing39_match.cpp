@@ -195,6 +195,7 @@ std::string Inspect(Analysis const& a,std::vector<TimingBlock> const& blocks,Mat
 	s<<"SOURCE: "<<a.source<<"\nSPAN SOURCE (karaoke-free): "<<a.span_source<<"\nSURFACE: "<<a.surface<<"\nNORMALIZED: "<<a.reading.normalized<<"\n";
 	for(size_t i=0;i<a.spans.size();++i) {auto const& x=a.spans[i];s<<"SPAN "<<i<<" source["<<x.begin<<","<<x.end<<") "<<x.display<<" | "<<x.original_reading<<" reading["<<x.reading_begin<<","<<x.reading_end<<") explicit="<<x.explicit_reading<<"\n";}
 	for(size_t i=0;i<a.words.size();++i) {auto const& w=a.words[i];s<<"WORD "<<i<<" ["<<w.reading<<"] "<<w.lemma<<" kind="<<static_cast<int>(w.kind)<<" certain="<<w.certain<<"\n";}
+	for(auto const& note:a.language_notes)s<<"LANGUAGE "<<note<<"\n";
 	for(size_t i=0;i<a.morae.size();++i) {auto const& m=a.morae[i];s<<"MORA "<<i<<" "<<m.text<<" reading["<<m.reading_begin<<","<<m.reading_end<<") logical["<<m.logical_begin<<","<<m.logical_end<<") span="<<m.span<<" lexeme="<<m.lexeme<<"\n";}
 	for(size_t i=1;i<a.morae.size();++i) s<<(a.boundaries[i].fixed?"FIXED ":"CANDIDATE ")<<i<<": "<<a.boundaries[i].reason<<"\n";
 	for(auto const& edges:a.graph) for(auto const& e:edges) s<<"EDGE "<<e.first<<"+"<<e.count<<" "<<e.reason<<" same-lexeme="<<e.features.same_lexeme<<" same-span="<<e.features.same_reading_span<<"\n";

@@ -634,8 +634,11 @@ void AudioController::PlayToEnd(int start_ms, double speed)
 
 void AudioController::Stop()
 {
-	if (!player) return;
-	if (timing_controller && IsPlaying()) timing_controller->PlaybackStopped(GetPlaybackPosition());
+	int stopped_at = GetPlaybackPosition();
+	if (!player) {
+		if (timing_controller) timing_controller->PlaybackStopped(stopped_at);
+		return;
+	}
 
 	player->Stop();
 	playback_mode = PM_NotPlaying;
@@ -644,6 +647,7 @@ void AudioController::Stop()
 		speed_provider->ResetStream();
 
 	AnnouncePlaybackStop();
+	if (timing_controller) timing_controller->PlaybackStopped(stopped_at);
 }
 
 bool AudioController::IsPlaying()

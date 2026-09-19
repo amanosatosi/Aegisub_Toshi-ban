@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <libaegisub/timing39_session.h>
 using namespace agi::timing39;
 namespace {

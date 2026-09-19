@@ -246,7 +246,8 @@ struct audio_play_toggle final : public validate_audio_open {
 	STR_HELP("Play selection, or stop playback if it's already playing")
 
 	void operator()(agi::Context *c) override {
-		if (c->audioController->IsPlaying())
+		auto timing = c->audioController->GetTimingController();
+		if (c->audioController->IsPlaying() || (timing && timing->Is39SessionActive()))
 			c->audioController->Stop();
 		else {
 			c->videoController->Stop();
@@ -264,7 +265,8 @@ struct audio_stop final : public Command {
 	CMD_TYPE(COMMAND_VALIDATE)
 
 	bool Validate(const agi::Context *c) override {
-		return c->audioController->IsPlaying();
+		auto timing = c->audioController->GetTimingController();
+		return c->audioController->IsPlaying() || (timing && timing->Is39SessionActive());
 	}
 
 	void operator()(agi::Context *c) override {

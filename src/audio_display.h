@@ -176,6 +176,7 @@ class AudioDisplay: public wxWindow {
 	struct Timing39Particle { float x, y, vx, vy; int age; };
 	std::vector<Timing39Particle> timing39_particles;
 	wxTimer timing39_effect_timer;
+	unsigned timing39_seen_serial = 0;
 	void On39Effects(wxTimerEvent&);
 
 	/// Paint the markers in a time range

@@ -57,6 +57,8 @@ struct Analysis {
 	std::vector<SourceSpan> spans;
 	ReadingModel reading;
 	std::vector<SpokenToken> words;
+	// Conservative structural/morphological alternatives, never substituted readings.
+	std::vector<std::string> language_notes;
 	std::vector<BaseMora> morae;
 	std::vector<BoundaryAnalysis> boundaries; // boundary BEFORE mora i
 	std::vector<std::vector<TimingGroupCandidate>> graph;

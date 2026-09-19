@@ -208,6 +208,34 @@ void Language(Analysis& a) {
 			(!best||e.reading.size()>best->reading.size() || (e.reading.size()==best->reading.size()&&source_support(p,p+e.reading.size(),e.lexeme->source)))) best=&e;
 		return best;
 	};
+	// Explicit ruby anchors delimit where uncertainty can spread, but adjacent
+	// anchors are a compound candidate, not automatically separate words.
+	auto anchor=[&](size_t p) {
+		if(p>=r.size())return false;
+		auto const& s=a.spans[a.reading.characters[p].span];
+		return s.explicit_reading && s.reading_begin==p;
+	};
+	auto plain=[&](size_t p,size_t n) {
+		if(p+n>r.size())return false;
+		for(size_t i=p;i<p+n;++i)if(a.spans[a.reading.characters[i].span].explicit_reading)return false;
+		return true;
+	};
+	struct Suffix {std::u32string text;WordKind kind;std::string reason;};
+	std::vector<Suffix> suffixes;
+	auto endings=[&](std::u32string const& stem,WordKind kind,std::string reason) {
+		for(auto tail:{U"",U"ない",U"なかった",U"ます",U"ました",U"ません",U"たい",U"たかった"})
+			suffixes.push_back({stem+tail,kind,reason});
+	};
+	// These recognize productive written okurigana, not dictionary identity.
+	for(char32_t c:std::u32string(U"うくぐすつぬぶむる"))suffixes.push_back({{c},WordKind::Verb,"dictionary-form godan/ichidan candidate"});
+	for(char32_t c:std::u32string(U"わかがさたなばまら"))endings({c},WordKind::Verb,"godan a-row stem / negative candidate");
+	for(char32_t c:std::u32string(U"いきぎしちにびみり"))endings({c},WordKind::Verb,"continuative stem / auxiliary candidate");
+	for(auto stem:{U"",U"え",U"け",U"げ",U"せ",U"て",U"ね",U"べ",U"め",U"れ"})endings(stem,WordKind::Verb,"ichidan or potential stem candidate");
+	for(auto form:{U"って",U"った",U"いて",U"いた",U"いで",U"いだ",U"して",U"した",U"んで",U"んだ",U"て",U"た"}) {
+		for(auto aux:{U"",U"いる",U"いた",U"いない",U"しまう",U"しまった",U"おく",U"ある",U"ほしい"})
+			suffixes.push_back({std::u32string(form)+aux,WordKind::Verb,"te/ta form with optional auxiliary candidate"});
+	}
+	for(auto form:{U"い",U"く",U"くて",U"かった",U"くない",U"くなかった",U"ければ"})suffixes.push_back({form,WordKind::Adjective,"i-adjective candidate"});
 	for(size_t p=0;p<r.size();) {
 		if(Separator(r[p])) { ++p; continue; }
 		auto e=lookup(p);
@@ -215,18 +243,42 @@ void Language(Analysis& a) {
 			a.words.push_back({p,p+e->reading.size(),Encode(e->reading),e->lexeme->source,e->lexeme->kind,true,source_support(p,p+e->reading.size(),e->lexeme->source)}); p+=e->reading.size(); continue;
 		}
 		// Particles are recognized in context, never from vowel identity.
-		bool previous=!a.words.empty() && a.words.back().end==p && a.words.back().certain;
+		bool previous=!a.words.empty() && a.words.back().end==p;
 		bool particle=false;
 		for(auto const& s:{U"けど",U"から",U"ので",U"の",U"を",U"が",U"と",U"に",U"で",U"は",U"わ",U"へ",U"も",U"さ"}) {
 			std::u32string part(s); if(r.compare(p,part.size(),part)!=0) continue;
-			bool next = p+part.size()==r.size() || lookup(p+part.size())!=nullptr;
-			if(previous && (next || part==U"を" || part==U"けど" || part==U"から")) {
+			bool next = p+part.size()==r.size() || lookup(p+part.size())!=nullptr || anchor(p+part.size());
+			bool context=previous && (a.words.back().certain || (plain(p,part.size()) && next));
+			if(context && (next || part==U"を" || part==U"けど" || part==U"から")) {
 				a.words.push_back({p,p+part.size(),Encode(part),Encode(part),WordKind::Particle,true}); p+=part.size(); particle=true; break;
 			}
 		}
 		if(particle) continue;
+		if(anchor(p)) {
+			size_t end=a.spans[a.reading.characters[p].span].reading_end;
+			while(anchor(end))end=a.spans[a.reading.characters[end].span].reading_end;
+			size_t suffix=0;WordKind kind=WordKind::Unknown;
+			std::vector<std::string> alternatives;
+			for(auto const& s:suffixes) {
+				if(s.text.empty()||!plain(end,s.text.size())||r.compare(end,s.text.size(),s.text)!=0)continue;
+				size_t after=end+s.text.size();
+				// Do not absorb a prefix of an unrecognized kana tail.
+				bool terminal=after==r.size()||anchor(after)||Separator(r[after])||std::u32string(U"のをがとにはへもで").find(r[after])!=std::u32string::npos;
+				if(!terminal)continue;
+				if(s.text.size()>suffix){suffix=s.text.size();kind=s.kind;alternatives.clear();}
+				if(s.text.size()==suffix)alternatives.push_back(s.reason);
+			}
+			// A one-character particle immediately before another anchor wins over
+			// the homographic continuative suffix (e.g. 黒 に 高鳴る).
+			if(suffix==1 && anchor(end+1) && std::u32string(U"のをがとにはへもで").find(r[end])!=std::u32string::npos){suffix=0;kind=WordKind::Unknown;alternatives.clear();}
+			end+=suffix;
+			a.words.push_back({p,end,Encode(r.substr(p,end-p)),"STRUCTURAL",kind,false,true});
+			a.language_notes.push_back(std::to_string(p)+".."+std::to_string(end)+": ruby compound candidate; lexical identity uncertain");
+			for(auto const& note:alternatives)a.language_notes.push_back("  alternative: "+note);
+			p=end;continue;
+		}
 		// Coalesce unknown characters, without protecting their boundaries.
-		if(!a.words.empty() && a.words.back().kind==WordKind::Unknown && a.words.back().end==p) {
+		if(!a.words.empty() && a.words.back().kind==WordKind::Unknown && a.words.back().lemma=="UNKNOWN" && a.words.back().end==p) {
 			a.words.back().end++; a.words.back().reading+=Encode({r[p]});
 		} else a.words.push_back({p,p+1,Encode({r[p]}),"UNKNOWN",WordKind::Unknown,false});
 		++p;
@@ -255,6 +307,11 @@ void TokenizeAndGate(Analysis& a) {
 		b={true,"unsupported phonological relationship"};
 		if(left.reading_end!=right.reading_begin) { b.reason="punctuation / spacing"; continue; }
 		bool same=left.lexeme!=unknown && left.lexeme==right.lexeme && a.words[left.lexeme].certain;
+		if(left.lexeme!=right.lexeme && left.lexeme!=unknown && right.lexeme!=unknown &&
+			((a.words[left.lexeme].kind==WordKind::Particle&&a.words[left.lexeme].certain) ||
+			 (a.words[right.lexeme].kind==WordKind::Particle&&a.words[right.lexeme].certain))) {
+			b.reason="source/context-supported particle boundary";continue;
+		}
 		if(left.lexeme!=right.lexeme && left.lexeme!=unknown && right.lexeme!=unknown && a.words[left.lexeme].certain && a.words[right.lexeme].certain) {
 			b.reason=(a.words[left.lexeme].kind==WordKind::Particle||a.words[right.lexeme].kind==WordKind::Particle) ? "high-confidence particle boundary" : "separate spoken lexical units"; continue;
 		}
