@@ -437,6 +437,8 @@ AudioController::AudioController(agi::Context *context)
 
 AudioController::~AudioController()
 {
+	// Destroy session UI before stopping the player during context teardown.
+	timing_controller.reset();
 	Stop();
 }
 

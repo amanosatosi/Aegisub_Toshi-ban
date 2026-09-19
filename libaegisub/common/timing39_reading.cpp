@@ -235,7 +235,10 @@ void Language(Analysis& a) {
 		for(auto aux:{U"",U"いる",U"いた",U"いない",U"しまう",U"しまった",U"おく",U"ある",U"ほしい"})
 			suffixes.push_back({std::u32string(form)+aux,WordKind::Verb,"te/ta form with optional auxiliary candidate"});
 	}
-	for(auto form:{U"い",U"く",U"くて",U"かった",U"くない",U"くなかった",U"ければ"})suffixes.push_back({form,WordKind::Adjective,"i-adjective candidate"});
+	for(char32_t stem:std::u32string(U"いきぎしちにびみりえけげせてねべめれ"))
+		for(auto tail:{U"る",U"て",U"た",U"ている",U"ていた",U"ていない",U"てしまう",U"られる",U"られない",U"させる"})
+			suffixes.push_back({std::u32string{stem}+tail,WordKind::Verb,"ichidan stem with inflection/auxiliary candidate"});
+	for(auto form:{U"い",U"く",U"くて",U"かった",U"くない",U"くなかった",U"ければ",U"しい",U"しく",U"しくて",U"しかった",U"しくない",U"しくなかった"})suffixes.push_back({form,WordKind::Adjective,"i-adjective candidate"});
 	for(size_t p=0;p<r.size();) {
 		if(Separator(r[p])) { ++p; continue; }
 		auto e=lookup(p);

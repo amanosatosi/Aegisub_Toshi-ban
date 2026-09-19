@@ -15,9 +15,13 @@ unknown kanji requires a supplied reading. Lexical identity is independent of
 ruby span identity. The matcher traverses only generated edges with exactly N
 blocks, retaining multiple paths and feature-level scores.
 
-Capture uses the audio player's media position and independent reusable lanes.
-Corrections change assignments, never timestamps. Line checkpoints isolate
-retakes and failures. The controller owns preview state until explicit commit.
+Timing39Session owns two independent full-session raw lanes and snapshots of
+candidate targets. Countdown arms recording automatically; the live path only
+records media-clock key events. Stop partitions copies at dialogue checkpoints,
+then runs one matcher per line/lane. Crossing blocks retain raw provenance and
+require review. A local retake has separate raw storage and replaces one result
+lane. Corrections own separate history; no operation rewrites original taps.
+All results remain preview state until explicit bulk commit.
 
 Serialization reuses AssKaraoke's logical ruby surface and empty syllables.
 Renderer inspection: libassmod/mangetsu `ass_render.c`,
@@ -29,8 +33,11 @@ points; new golden tests must exercise gaps, tag families and rounding.
 
 https://github.com/amanosatosi/libassmod/blob/mangetsu/libass/ass_render.c
 
-The audio display retains its waveform/spectrum renderer. Mode-specific input
-is restricted to its focused window. A nonmodal review panel exposes reading,
-paths, assignment movement, undo/redo, lane retake and diagnostics. Style mapping
+The audio display retains its waveform/spectrum renderer. A scoped wx event filter routes
+rhythm keys from project child widgets only during countdown/capture. Normal
+pause/stop controls finalize once. The results panel appears after stop, while
+reading, paths, movement, undo/redo and diagnostics live in an Inspector.
+Blank rounded blocks, a centered hit line and timer-driven particles use the
+existing waveform/spectrum renderer. Style mapping
 uses accumulated timestamp evidence, never style-name semantics; ambiguity
 requires explicit target selection before writing secondary capture.

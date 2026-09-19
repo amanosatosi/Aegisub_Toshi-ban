@@ -191,6 +191,8 @@ public:
   auto window=dynamic_cast<wxWindow*>(event.GetEventObject());
   while(window&&window!=c->parent)window=window->GetParent();if(!window)return Event_Skip;
   auto& key=static_cast<wxKeyEvent&>(event);bool down=event.GetEventType()!=wxEVT_KEY_UP;
+  int code=key.GetKeyCode();
+  if(down&&key.IsAutoRepeat()&&(code=='F'||code=='J'||code=='D'||code=='K'))return Event_Processed;
   if(down&&(key.AltDown()||key.ControlDown()||key.ShiftDown()))return Event_Skip;
   return TimingKey(key.GetKeyCode(),down,c->audioController->GetPlaybackPosition(),false,false)?Event_Processed:Event_Skip;
  }

@@ -40,6 +40,17 @@ TEST(Timing39, StrictRomajiAllOrNothing) {
 	EXPECT_EQ(Morae(Analyze("kyou")),Morae(Analyze(u8"きょう")));
 	EXPECT_EQ(u8"みく",Analyze(u8"<ミク|miku>").reading.normalized);
 }
+TEST(Timing39, ProductiveRubyOkuriganaKeepsUncertaintyLocal) {
+	for(auto const& text:{u8"<掴|つか>む",u8"<踊|おど>らなかった",u8"<食|た>べていた",u8"<泳|およ>いだ",u8"<眩|まぶ>しくない"}) {
+		auto a=Analyze(text);ASSERT_TRUE(a.error.empty())<<a.error;
+		ASSERT_EQ(1u,a.words.size())<<text;
+		EXPECT_EQ(a.reading.normalized,a.words[0].reading);
+		EXPECT_FALSE(a.language_certain);EXPECT_FALSE(a.language_notes.empty());
+	}
+	auto a=Analyze(u8"<凪|なぎ>の<彼方|かなた>");ASSERT_EQ(3u,a.words.size());
+	EXPECT_EQ(WordKind::Particle,a.words[1].kind);EXPECT_FALSE(a.language_certain);
+	a=Analyze(u8"<高|たか><鳴|な>る");ASSERT_EQ(1u,a.words.size());EXPECT_EQ(u8"たかなる",a.words[0].reading);
+}
 TEST(Timing39, ExplicitReadingAuthorityAndIndependentLexemes) {
 	for(auto const& c:std::vector<std::pair<std::string,std::string>>{{u8"<現在|イマ>",u8"いま"},{u8"<未来|あした>",u8"あした"},{u8"<宇宙|そら>",u8"そら"},{u8"<地球|ほし>",u8"ほし"},{u8"<0|ゼロ>",u8"ぜろ"}}) {
 		auto a=Analyze(c.first);EXPECT_TRUE(a.error.empty());EXPECT_EQ(c.second,a.reading.normalized);EXPECT_EQ(c.first,a.surface);ASSERT_EQ(1u,a.spans.size());EXPECT_TRUE(a.spans[0].explicit_reading);

@@ -5,38 +5,64 @@ retain their existing controllers, tag selectors and split behavior.
 
 ## Use
 
-1. Open audio and select a dialogue with sensible start/end checkpoints.
-2. Select **Audio → 39 Mode**. The modeless review window shows the source,
-   reading, morae and diagnostics. Click **Focus audio**, then **Space**.
-3. Alternate **F/J** for the primary voice and optionally **D/K** for another
-   voice. A fresh press takes ownership immediately. Releasing the old key does
-   nothing; releasing the current key starts a gap. Repeats are ignored.
-4. **Space** stops. Matching selects the best supported assignment automatically.
-   **Tab** or a right click on audio opens review. GREEN means a clear timing
-   choice, YELLOW means nearby legal alternatives, RED means no supported mapping.
-   Language confidence is reported separately in the inspection.
-5. Select an alternative path, or select the block after a divider and press
-   **Left/Right** to transfer one mora. Protected boundaries cannot be crossed.
-   Undo/Redo changes assignments only; raw timestamps remain unchanged. When a
-   correction redistributes a join across distant words, choose a complete path.
-6. Choose the relevant subtitle event for secondary capture if evidence cannot
-   identify it. Targets are labeled by their actual style/text for human review;
-   style names are never interpreted as roles.
-7. **Enter / Commit** writes both mapped lanes in one subtitle undo operation.
-   **R / Retake lane** clears only the selected lane and replays with 500 ms preroll.
-   **Capture both** explicitly restarts both lanes. Ordinary replay after capture
-   auditions the line. **Discard** clears the current checkpoint's preview.
+1. Open audio and select a group of timed lyric dialogues. Activate **Audio →
+   39 Mode**. With multiple selected rows, that selection is the explicit scope.
+   With only one selected row, the active style and overlapping Japanese/ruby or
+   existing karaoke evidence determine candidate targets after capture.
+2. The audio display shows **3, 2, 1**, one second each. Playback then starts
+   automatically at the first checkpoint minus the configured **Audio Lead IN**.
+   Both F/J and D/K are armed together. There is no opening review dialog.
+3. Perform continuously. A fresh **F/J** press starts the primary block and
+   immediately takes ownership from the other primary key. Releasing the old
+   key does not stop its replacement; releasing the current owner starts a gap.
+   **D/K** has exactly the same independent behavior for the secondary lane.
+   Repeated keydown events are ignored. No matching occurs during performance.
+4. Normal audio stop/toggle or **Ctrl+P / video play** finalizes the session.
+   Reaching the final selected checkpoint also stops; intermediate dialogues
+   never stop recording. In discovery mode playback can continue to audio end.
+5. The results dialog lists every target with **GREEN / YELLOW / RED**, its
+   times, style, and source. Choose **Commit all GREEN**, or inspect ambiguous
+   results, select their lane, mark reviewed, and **Commit reviewed GREEN /
+   YELLOW**. RED rows have no supported assignment and cannot be committed.
+   Language uncertainty is reported separately from timing confidence.
+6. **Inspector** contains explicit reading edits, alternate paths, assignments,
+   and detailed diagnostics. Select the block after a divider and use the arrow
+   buttons or Left/Right to transfer a mora. Protected dividers cannot move.
+   Assignment Undo/Redo never changes captured timestamps.
+7. **Retake selected lane** runs the countdown and that line's preroll again,
+   then returns to results. It replaces only the selected result/lane. Other
+   lines, the other lane, and the original full-session raw capture survive.
+   Canceling a retake countdown preserves the old result.
 
-Capture only intercepts rhythm keys in the focused audio window while armed and
-playing. Normal subtitle typing is unaffected. Focus loss, playback stop/restart,
-seek, Escape, checkpoint end and mode exit sanitize held keys. Escape preserves
-raw capture for review; Discard explicitly clears it. Other checkpoints remain
-available while the mode is open. Capture is not automatically committed.
+The active session routes unmodified rhythm keys across widgets belonging to
+this project window. Outside countdown/capture, typing and normal shortcuts are
+untouched. App deactivation stops and sanitizes capture; moving widget focus
+inside the app does not. Playback restart/seek finalizes the old session, and
+ordinary replay does not silently start a new recording. Right-click audio to
+reopen hidden results. Toggle 39 Mode off/on to start a fresh session. Subtitle
+edits/undo invalidate cached targets rather than retaining stale event pointers.
 
-The existing waveform or spectrogram scrolls beneath a centered turquoise
-(`#39C5BB`) hit line. Before resolution the overlay shows base morae or raw blocks,
-not a guessed grouping. Hit flashes and bounded lightweight particles update on
-a timer; painting never advances animation state.
+The existing waveform/spectrum scrolls beneath a centered turquoise `#39C5BB`
+hit line. Rounded captured blocks and gap outlines are **blank**: no kana,
+romaji, numbers, or labels inside them. Status/countdown lives above the lanes.
+Fresh accepted keydowns flash the hit line and emit a bounded particle burst;
+a timer advances effects and paint only reads them.
+
+### Session checkpoints
+
+`Timing39Session` owns the raw absolute media timestamps and follows
+Idle → Countdown → Ready → Capturing → Results. Stop resolves once. Dialogue
+start/end times partition copies of the recording, so a bad count cannot shift
+later lines. Inter-line silence stays in session raw data and is not copied
+into unrelated dialogue interiors. Blocks crossing checkpoints retain their
+original raw times; clipped local copies are flagged for review. Empty unused
+lanes do not generate fake lyric targets or sung blocks.
+
+Selection scope is trusted; fallback discovery is conservative. Non-active
+styles additionally need ruby or existing karaoke evidence. Opaque style names
+are never interpreted as main/backing. Timestamp evidence needs corroboration;
+unclear lane associations and overlapping targets require review. The results
+show the reason each target entered scope.
 
 ## Reading and language
 
@@ -57,7 +83,15 @@ accepts a complete source/ruby expression; applying it retains captured timing.
 The conservative vocabulary recognizes nouns, several verbs and inflected forms,
 auxiliaries and expressions used by the supplied regression corpus. Contextual
 particles include を, が, と, に, で, は/わ, へ, も, の, さ, けど, から and ので.
-They are not blindly identified inside known words. Unknown runs remain UNKNOWN.
+They are not blindly identified inside known words. Unfamiliar explicit ruby
+is localized to structural compound candidates rather than swallowing an entire
+sentence. Consecutive ruby anchors can remain one compound (高 + 鳴 + る);
+known lexical identity can span anchors (未 + 来). Written okurigana supports
+candidate godan/ichidan endings, negative and polite forms, te/ta forms,
+i-adjectives, and common auxiliary sequences. These are uncertain morphology
+candidates, not invented dictionary identities. Inspector preserves competing
+morphological explanations. Arbitrary all-kana unknowns remain conservative;
+this is not a complete Japanese morphological dictionary or parse lattice.
 Source spellings corroborate lexical identity, including identity spanning several
 ruby groups. A group containing multiple spoken words is not treated as one word.
 Artistic ruby is analyzed as the spoken reading even when the display is unrelated.
@@ -90,9 +124,8 @@ Lines over 512 morae are refused to bound memory use on weak hardware.
 
 `TimingLane` owns held keys, current owner, blocks and gaps. `TimingAssignment`
 maps a raw block index to a mora range. `AssignmentEditor` owns independent
-history. The controller caches each visited checkpoint's analysis/capture;
-text changes invalidate affected cached previews, while undo/deletion may require
-a full reload. Morphology and DP do not run during animation.
+history. The controller prepares cached target analyses before countdown and partitions
+the session only at stop. Text changes invalidate cached targets. Morphology and DP do not run during animation.
 
 ## Style evidence and serialization
 
