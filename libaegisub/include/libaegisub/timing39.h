@@ -32,6 +32,7 @@ struct SpokenToken {
 	std::string reading, lemma;
 	WordKind kind = WordKind::Unknown;
 	bool certain = false;
+	bool source_supported = false;
 };
 struct BaseMora {
 	std::string text;
@@ -44,6 +45,7 @@ struct BoundaryAnalysis {
 struct CandidateFeatures {
 	Join type = Join::Single;
 	bool same_lexeme = false, same_reading_span = false, uncertain_language = false;
+	bool source_supported = false;
 };
 struct TimingGroupCandidate {
 	size_t first, count;
@@ -116,6 +118,7 @@ struct MatchPath {
 struct ScoringModel {
 	std::array<double, 6> join_prior{{0, 0.25, 0.65, 0.85, 0.6, 1.0}};
 	double unknown_language = 0.25, different_span = 0.05, duration_fit = 0.65;
+	double source_support = -0.05;
 	double ambiguity_margin = 0.75;
 	size_t alternatives = 8;
 };

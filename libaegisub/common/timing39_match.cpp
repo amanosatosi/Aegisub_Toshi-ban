@@ -91,7 +91,8 @@ MatchResult Match(Analysis const& a,std::vector<TimingBlock> const& blocks,Scori
 				Score score;
 				score.prior=weights.join_prior[static_cast<size_t>(edge.features.type)];
 				if(edge.count>1) score.language=(edge.features.uncertain_language?weights.unknown_language:0) +
-					(!edge.features.same_reading_span&&!edge.features.same_lexeme?weights.different_span:0);
+					(!edge.features.same_reading_span&&!edge.features.same_lexeme?weights.different_span:0) +
+					(edge.features.source_supported?weights.source_support:0);
 				double duration=blocks[sung[used]].end-blocks[sung[used]].start;
 				// Log-ratio is scale independent and soft: singing is not metronomic.
 				score.duration=weights.duration_fit*std::pow(std::log(duration/(unit*edge.count)),2);

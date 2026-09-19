@@ -21,10 +21,12 @@ TEST(Timing39Karaoke, TagFamiliesAndDisplayArePreserved) {
 	}
 }
 TEST(Timing39Karaoke, AbsoluteRoundingDoesNotAccumulate) {
-	AssDialogue d;d.Start=1003;d.End=1303;d.Text=u8"みくみ";auto a=AnalyzeDialogue(d);
-	std::vector<TimingBlock> b{{1003,1107,false},{1107,1211,false},{1211,1303,false}};auto r=Match(a,b);std::string out,error;
-	ASSERT_TRUE(Serialize(d,a,b,r.paths[0].assignments,out,error));EXPECT_EQ(u8"{\\k10}み{\\k11}く{\\k9}み",out);
-	d.Text=out;AssKaraoke k(&d,false,false);EXPECT_EQ(1303,(k.end()-1)->start_time+(k.end()-1)->duration);
+	// Dialogue checkpoints are already rounded by agi::Time::operator int;
+	// capture endpoints retain media millisecond precision between them.
+	AssDialogue d;d.Start=1000;d.End=1300;d.Text=u8"みくみ";auto a=AnalyzeDialogue(d);
+	std::vector<TimingBlock> b{{1000,1104,false},{1104,1208,false},{1208,1300,false}};auto r=Match(a,b);std::string out,error;
+	ASSERT_TRUE(Serialize(d,a,b,r.paths[0].assignments,out,error))<<error;EXPECT_EQ(u8"{\\k10}み{\\k11}く{\\k9}み",out);
+	d.Text=out;AssKaraoke k(&d,false,false);EXPECT_EQ(1300,(k.end()-1)->start_time+(k.end()-1)->duration);
 }
 TEST(Timing39Karaoke, RedNeverWritesAndUnknownNeedsReading) {
 	AssDialogue d;d.Start=0;d.End=100;d.Text=u8"みく";auto a=AnalyzeDialogue(d);std::string out="unchanged",error;

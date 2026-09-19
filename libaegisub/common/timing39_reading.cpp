@@ -192,16 +192,27 @@ void Language(Analysis& a) {
 	struct Entry { std::u32string reading; Lexeme const* lexeme; };
 	std::vector<Entry> lex;
 	for(auto const& w:Lexicon()) lex.push_back({Decode(w.reading),&w});
+	auto source_support=[&](size_t begin,size_t end,std::string const& spelling) {
+		std::string display;
+		for(auto const& span:a.spans) {
+			if(span.reading_end<=begin || span.reading_begin>=end)continue;
+			// A ruby span covering several words is not assumed to be a word.
+			if(span.reading_begin<begin || span.reading_end>end)return false;
+			display+=span.display;
+		}
+		return display==spelling;
+	};
 	auto lookup=[&](size_t p)->Entry const* {
 		Entry const* best=nullptr;
-		for(auto const& e:lex) if(r.compare(p,e.reading.size(),e.reading)==0 && (!best||e.reading.size()>best->reading.size())) best=&e;
+		for(auto const& e:lex) if(r.compare(p,e.reading.size(),e.reading)==0 &&
+			(!best||e.reading.size()>best->reading.size() || (e.reading.size()==best->reading.size()&&source_support(p,p+e.reading.size(),e.lexeme->source)))) best=&e;
 		return best;
 	};
 	for(size_t p=0;p<r.size();) {
 		if(Separator(r[p])) { ++p; continue; }
 		auto e=lookup(p);
 		if(e) {
-			a.words.push_back({p,p+e->reading.size(),Encode(e->reading),e->lexeme->source,e->lexeme->kind,true}); p+=e->reading.size(); continue;
+			a.words.push_back({p,p+e->reading.size(),Encode(e->reading),e->lexeme->source,e->lexeme->kind,true,source_support(p,p+e->reading.size(),e->lexeme->source)}); p+=e->reading.size(); continue;
 		}
 		// Particles are recognized in context, never from vowel identity.
 		bool previous=!a.words.empty() && a.words.back().end==p && a.words.back().certain;
@@ -266,7 +277,7 @@ void TokenizeAndGate(Analysis& a) {
 			type=long_like?Join::WrittenLongVowel:Join::Vowel; reason=long_like?"written long-vowel-like sequence":"vowel adjacency within a known spoken lexeme";
 		} else continue;
 		b={false,reason};
-		a.graph[i-1].push_back({i-1,2,{type,same,left.span==right.span,!same},reason});
+		a.graph[i-1].push_back({i-1,2,{type,same,left.span==right.span,!same,same&&a.words[left.lexeme].source_supported},reason});
 	}
 }
 } // namespace

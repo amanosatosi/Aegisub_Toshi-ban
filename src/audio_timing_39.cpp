@@ -71,11 +71,19 @@ class AudioTimingController39 final : public AudioTimingController {
 		if(auto line=Current())reading->ChangeValue(to_wx(line->lanes[selected_lane].analysis.surface));
 		notice.clear();Update();AnnounceUpdatedPrimaryRange();Notify();
 	}
-	void FileChanged(int type,AssDialogue const*) {
+	void FileChanged(int type,AssDialogue const* changed) {
 		if(committing || !(type&(AssFile::COMMIT_DIAG_FULL|AssFile::COMMIT_DIAG_ADDREM))) return;
 		// Undo/deletion may replace dialogue objects. Never retain stale pointers.
 		if(c->audioController->IsPlaying()) c->audioController->Stop();
-		lines.clear();SelectLine();notice="Subtitle edit/undo reloaded the preview";Update();
+		if(changed && !(type&AssFile::COMMIT_DIAG_ADDREM)) {
+			for(auto it=lines.begin();it!=lines.end();) {
+				bool affected=it->first==changed;
+				for(auto const& lane:it->second.lanes)affected=affected||lane.target==changed;
+				if(affected)it=lines.erase(it);else ++it;
+			}
+		}
+		else lines.clear();
+		SelectLine();notice="Subtitle edit/undo reloaded affected previews";Update();
 	}
 	void Resolve(int mask) {
 		auto line=Current();if(!line)return;
