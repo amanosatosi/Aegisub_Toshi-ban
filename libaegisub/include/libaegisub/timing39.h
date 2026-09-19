@@ -14,7 +14,7 @@ enum class WordKind { Unknown, Noun, Verb, Adjective, Particle, Auxiliary, Expre
 enum class Join { Single, LongMark, Sokuon, Nasal, WrittenLongVowel, Vowel };
 
 struct SourceSpan {
-	size_t begin = 0, end = 0; // UTF-8 byte offsets in untouched source
+	size_t begin = 0, end = 0; // UTF-8 byte offsets in Analysis::span_source
 	std::string display, original_reading;
 	size_t reading_begin = 0, reading_end = 0; // normalized codepoint offsets
 	bool explicit_reading = false;
@@ -51,7 +51,7 @@ struct TimingGroupCandidate {
 	std::string reason;
 };
 struct Analysis {
-	std::string source, surface, logical_text, error;
+	std::string source, span_source, surface, logical_text, error;
 	std::vector<SourceSpan> spans;
 	ReadingModel reading;
 	std::vector<SpokenToken> words;

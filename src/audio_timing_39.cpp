@@ -72,7 +72,7 @@ class AudioTimingController39 final : public AudioTimingController {
 		notice.clear();Update();AnnounceUpdatedPrimaryRange();Notify();
 	}
 	void FileChanged(int type,AssDialogue const*) {
-		if(committing || !(type&AssFile::COMMIT_DIAG_FULL)) return;
+		if(committing || !(type&(AssFile::COMMIT_DIAG_FULL|AssFile::COMMIT_DIAG_ADDREM))) return;
 		// Undo/deletion may replace dialogue objects. Never retain stale pointers.
 		if(c->audioController->IsPlaying()) c->audioController->Stop();
 		lines.clear();SelectLine();notice="Subtitle edit/undo reloaded the preview";Update();
@@ -324,7 +324,7 @@ public:
 		// Structured diagnostics are retained with the line for regression data;
 		// no global weights are changed in response to a correction.
 		for(size_t i=0;i<2;++i) {auto& lane=line->lanes[i];if(lane.target&&!lane.editor.corrections.empty())c->ass->SetExtradataValue(*lane.target,"39-mode-correction",t39::Inspect(lane.analysis,line->capture.lanes[i].Blocks(),lane.match,&lane.editor));}
-		c->ass->Commit(_("39 Mode karaoke timing"),AssFile::COMMIT_DIAG_TEXT);
+		c->ass->Commit(_("39 Mode karaoke timing"),AssFile::COMMIT_DIAG_TEXT|AssFile::COMMIT_EXTRADATA);
 		committing=false;
 		for(auto const& write:writes)for(auto& lane:line->lanes)if(lane.target==write.first)lane.analysis.source=write.second;
 		notice="Committed. Subtitle undo restores the previous events.";Update();Notify();

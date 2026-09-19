@@ -144,7 +144,7 @@ struct Reader {
 	// Parse karaoke-free ASS. Tags remain byte-for-byte in the surface, but
 	// consume no reading position. Ruby spans do not imply lexical boundaries.
 	void Read(std::string const& source) {
-		a.source = source;
+		a.source = source; a.span_source = source;
 		for (size_t p=0; p<source.size();) {
 			if (source[p]=='{') {
 				auto end=source.find('}',p); if(end==std::string::npos) { a.error="Unclosed ASS override"; return; }

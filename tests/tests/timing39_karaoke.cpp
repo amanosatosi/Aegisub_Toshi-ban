@@ -2,6 +2,7 @@
 #include "timing39_karaoke.h"
 #include "ass_dialogue.h"
 #include "ass_karaoke.h"
+#include <iostream>
 using namespace agi::timing39;
 TEST(Timing39Karaoke, GoldenRubyAndGaps) {
 	AssDialogue d;d.Start=1000;d.End=1600;d.Text=u8"<現在|イマ>";
@@ -30,4 +31,29 @@ TEST(Timing39Karaoke, RedNeverWritesAndUnknownNeedsReading) {
 	EXPECT_FALSE(Serialize(d,a,{{0,100,false}},{{0,0,2}},out,error));EXPECT_EQ("unchanged",out);
 	d.Text=u8"魑魅魍魎";EXPECT_FALSE(AnalyzeDialogue(d).error.empty());
 	d.Text=u8"<宇宙|そら>";a=AnalyzeDialogue(d);EXPECT_EQ(u8"そら",a.reading.normalized);
+}
+
+TEST(Timing39Karaoke, RealLyricSerializationAndWorkedExamples) {
+	for(auto const& example:std::vector<std::pair<std::string,size_t>>{
+		{u8"<自分の価値に目を疑って|じぶんのかちにめをうたがって>",14},
+		{u8"<僕は始まった栄光のゴールを見たいのさ|ぼくわはじまったえいこうのごーるをみたいのさ>",21},
+		{u8"<いっせーのーで鳴り響いたスタートの合図|いっせーのーでなりひびいたすたーとのあいず>",18}}) {
+		AssDialogue d;d.Start=0;d.End=int(example.second)*100;d.Text=example.first;
+		auto a=AnalyzeDialogue(d);std::vector<TimingBlock> blocks;
+		for(size_t i=0;i<example.second;++i)blocks.push_back({int(i)*100,int(i+1)*100,false});
+		auto result=Match(a,blocks);ASSERT_FALSE(result.paths.empty())<<result.reason;
+		std::string out,error;ASSERT_TRUE(Serialize(d,a,blocks,result.paths[0].assignments,out,error))<<error;
+		AssDialogue output(d);output.Text=out;AssKaraoke parsed(&output,false,false);
+		EXPECT_EQ(example.second,parsed.size());EXPECT_EQ(out,parsed.GetText());
+		std::cout<<"39 MODE WORKED EXAMPLE (synthetic 100 ms blocks, not measured performance)\n"<<Inspect(a,blocks,result)<<"SERIALIZED: "<<out<<"\n";
+	}
+}
+
+TEST(Timing39Karaoke, MixedTagsEscapesAndLeadingPunctuation) {
+	AssDialogue d;d.Start=0;d.End=400;d.Text=u8"{\\i1}{\\kf20}み{\\ko20}く{\\i0}";
+	auto a=AnalyzeDialogue(d);std::vector<TimingBlock> b{{0,150,false},{150,350,false}};auto r=Match(a,b);std::string out,error;
+	ASSERT_TRUE(Serialize(d,a,b,r.paths[0].assignments,out,error))<<error;
+	EXPECT_EQ(u8"{\\kf15}{\\i1}み{\\ko20}く{\\i0}{\\ko5}",out);
+	d.Text=u8"「み」\\Nく";a=AnalyzeDialogue(d);r=Match(a,b);ASSERT_FALSE(r.paths.empty());
+	ASSERT_TRUE(Serialize(d,a,b,r.paths[0].assignments,out,error))<<error;EXPECT_NE(std::string::npos,out.find(u8"「み」\\N"));
 }
