@@ -114,6 +114,15 @@ TEST(Timing39, ResultsStatusStylesAreDistinct) {
 	EXPECT_NE(green.accent.red,yellow.accent.red);EXPECT_NE(yellow.accent.red,red.accent.red);
 	EXPECT_NE(green.role,yellow.role);EXPECT_NE(yellow.role,red.role);
 }
+TEST(Timing39, TimelineIntervalIndexVisitsOnlyVisibleOverlaps) {
+	agi::timing39::ui::TimelineIntervalIndex index;
+	index.Reset({{900,5000},{100,200},{300,400},{5100,5200}});EXPECT_EQ(4u,index.Size());
+	std::vector<std::pair<int,int>> visible;
+	index.Visit(350,950,[&](int start,int end){visible.emplace_back(start,end);});
+	EXPECT_EQ((std::vector<std::pair<int,int>>{{300,400},{900,5000}}),visible);
+	visible.clear();index.Visit(4500,4600,[&](int start,int end){visible.emplace_back(start,end);});
+	EXPECT_EQ((std::vector<std::pair<int,int>>{{900,5000}}),visible);
+}
 TEST(Timing39, DurationRanksOnlyLegalPaths) {
 	auto a=Analyze(u8"こーこー");auto blocks=Taps(3);blocks[0].end=200;blocks[1]={200,300,false};blocks[2]={300,400,false};
 	auto r=Match(a,blocks);ASSERT_FALSE(r.paths.empty());EXPECT_EQ(2u,r.paths[0].assignments[0].mora_count);

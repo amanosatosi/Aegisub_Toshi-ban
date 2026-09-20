@@ -54,8 +54,18 @@ void TimingLane::Finish(int ms) {
 }
 void TimingLane::Clear() {blocks.clear();held={{false,false}};owner=-1;enabled=false;}
 std::vector<TimingBlock> TimingLane::Preview(int ms) const {
-	auto result=blocks;
-	if(owner>=0 && !result.empty()) result.back().end=std::max(result.back().start,std::min(ms,checkpoint_end));
+	return Preview(ms,std::numeric_limits<int>::min(),std::numeric_limits<int>::max());
+
+}
+std::vector<TimingBlock> TimingLane::Preview(int ms,int visible_start,int visible_end) const {
+	std::vector<TimingBlock> result;
+	auto first=std::lower_bound(blocks.begin(),blocks.end(),visible_start,[](TimingBlock const& block,int value){return block.end<=value;});
+	if(owner>=0 && !blocks.empty() && first==blocks.end() && blocks.back().start<visible_end)first=blocks.end()-1;
+	for(auto at=first;at!=blocks.end()&&at->start<visible_end;++at) {
+		auto block=*at;
+		if(owner>=0 && at+1==blocks.end())block.end=std::max(block.start,std::min(ms,checkpoint_end));
+		if(block.end>visible_start)result.push_back(block);
+	}
 	return result;
 }
 

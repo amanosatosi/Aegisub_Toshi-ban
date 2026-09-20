@@ -901,7 +901,7 @@ void AudioDisplay::OnPaint(wxPaintEvent&)
 			PaintDialogTimeChangerOverlay(dc);
 			PaintMarkers(dc, updtime);
 			PaintLabels(dc, updtime);
-			Paint39Overlay(dc);
+			Paint39Overlay(dc, updtime);
 		}
 	}
 
@@ -1366,17 +1366,34 @@ void AudioDisplay::OnKeyUp(wxKeyEvent& event)
 	event.Skip();
 }
 
-void AudioDisplay::Paint39Overlay(wxDC &dc)
+void AudioDisplay::Paint39Overlay(wxDC &dc, TimeRange const& visible)
 {
 	auto timing = controller->GetTimingController();
 	if (!timing || !timing->Is39Mode()) return;
 	std::vector<AudioTimingController::Timing39Overlay> blocks;
-	timing->Get39Overlay(blocks, controller->GetPlaybackPosition());
-	int height = std::min(30, std::max(12, (audio_height - 22) / 3));
+	timing->Get39Overlay(blocks, controller->GetPlaybackPosition(), visible);
+	int reference_y=audio_top+20,reference_height=7;
+	int target_y=audio_top+30,target_height=10;
+	int lane_top=audio_top+43;
+	int height=std::min(26,std::max(6,(audio_height-46)/2));
 	for (auto const& block : blocks) {
 		int x = RelativeXFromTime(block.start), right = RelativeXFromTime(block.end);
 		if (right < 0 || x > GetClientSize().x) continue;
-		int y = audio_top + 22 + block.lane * (height + 3);
+		if(block.kind==AudioTimingController::Timing39OverlayKind::ReferenceDialogue) {
+			dc.SetPen(wxPen(wxColour(105,110,118),1));dc.SetBrush(wxBrush(wxColour(48,52,58)));
+			dc.DrawRectangle(x,reference_y,std::max(2,right-x),reference_height);
+			dc.DrawLine(x,reference_y-2,x,reference_y+reference_height+2);
+			dc.DrawLine(right,reference_y-2,right,reference_y+reference_height+2);
+			continue;
+		}
+		if(block.kind==AudioTimingController::Timing39OverlayKind::TargetLyric) {
+			dc.SetPen(wxPen(wxColour(57,197,187),2));dc.SetBrush(wxBrush(wxColour(28,76,73)));
+			dc.DrawRoundedRectangle(x,target_y,std::max(2,right-x),target_height,3);
+			dc.DrawLine(x,target_y-2,x,target_y+target_height+2);
+			dc.DrawLine(right,target_y-2,right,target_y+target_height+2);
+			continue;
+		}
+		int y = lane_top + block.lane * (height + 3);
 		wxColour accent = block.uncertain ? wxColour(235,190,65) : wxColour(57,197,187);
 		dc.SetPen(wxPen(block.gap ? wxColour(130,130,130) : accent, 1, block.gap ? wxPENSTYLE_DOT : wxPENSTYLE_SOLID));
 		dc.SetBrush(*wxTRANSPARENT_BRUSH);

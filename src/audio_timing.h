@@ -108,10 +108,11 @@ public:
 	/// Controllers which do not use slot previews leave this empty.
 	virtual void GetToshikiKTimingPreviewRanges(std::vector<ToshikiKTimingPreviewRange> &) const { }
 
+	enum class Timing39OverlayKind { ReferenceDialogue, TargetLyric, CapturedBlock };
 	struct Timing39Overlay {
 		int start, end, lane;
-		wxString text;
 		bool gap, uncertain;
+		Timing39OverlayKind kind;
 	};
 	virtual bool Is39Mode() const { return false; }
 	virtual bool Is39SessionActive() const { return false; }
@@ -119,7 +120,7 @@ public:
 	virtual void PlaybackStarting(int ms) { }
 	virtual void PlaybackStopped(int ms) { }
 	virtual void TimingFocusLost(int ms) { }
-	virtual void Get39Overlay(std::vector<Timing39Overlay>&, int ms) const { }
+	virtual void Get39Overlay(std::vector<Timing39Overlay>&, int ms, TimeRange const& visible) const { }
 	virtual wxString Get39Status() const { return {}; }
 	virtual unsigned RhythmSerial() const { return 0; }
 

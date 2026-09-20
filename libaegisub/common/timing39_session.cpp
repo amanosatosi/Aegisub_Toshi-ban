@@ -181,4 +181,7 @@ void Timing39Session::Discard() {
 std::vector<TimingBlock> Timing39Session::Preview(int lane, int ms) const {
 	return (IsRetake() ? retake_capture : capture).lanes[lane].Preview(ms);
 }
+std::vector<TimingBlock> Timing39Session::Preview(int lane, int ms, int visible_start, int visible_end) const {
+	return (IsRetake() ? retake_capture : capture).lanes[lane].Preview(ms,visible_start,visible_end);
+}
 } }

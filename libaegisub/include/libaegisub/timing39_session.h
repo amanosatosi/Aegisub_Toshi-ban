@@ -97,5 +97,6 @@ public:
 	std::vector<SessionResult> const& Results() const { return results; }
 	std::vector<TimingBlock> const& Raw(int lane) const { return capture.lanes[lane].Blocks(); }
 	std::vector<TimingBlock> Preview(int lane, int media_position) const;
+	std::vector<TimingBlock> Preview(int lane, int media_position, int visible_start, int visible_end) const;
 };
 } }

@@ -99,6 +99,7 @@ public:
 	bool Active() const { return owner >= 0; }
 	std::vector<TimingBlock> const& Blocks() const { return blocks; }
 	std::vector<TimingBlock> Preview(int ms) const;
+	std::vector<TimingBlock> Preview(int ms, int visible_start, int visible_end) const;
 };
 struct TimingCaptureSession {
 	std::array<TimingLane, 2> lanes{{TimingLane('F', 'J'), TimingLane('D', 'K')}};

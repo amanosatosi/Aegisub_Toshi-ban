@@ -4,6 +4,8 @@
 #include <libaegisub/timing39_session.h>
 #include <algorithm>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace agi { namespace timing39 { namespace ui {
 struct Rgb { unsigned char red, green, blue; };
@@ -62,4 +64,26 @@ inline std::string CompactResultReason(SessionResult const& result,int lane) {
 	if(!ambiguity.empty())text+="\n\n"+ambiguity;
 	return text;
 }
+
+// Start-sorted interval index with a monotonic prefix maximum. A visible-range
+// query can skip every definitely-finished event, while still finding a long
+// event which began well before the viewport. Painting never parses subtitles
+// or walks the complete event list.
+class TimelineIntervalIndex {
+	struct Entry { int start,end,prefix_max_end; };
+	std::vector<Entry> entries;
+public:
+	void Reset(std::vector<std::pair<int,int>> spans) {
+		entries.clear();entries.reserve(spans.size());
+		for(auto span:spans)if(span.second>span.first)entries.push_back({span.first,span.second,span.second});
+		std::stable_sort(entries.begin(),entries.end(),[](Entry const& a,Entry const& b){return a.start<b.start;});
+		int prefix=0;for(auto& entry:entries){prefix=std::max(prefix,entry.end);entry.prefix_max_end=prefix;}
+	}
+	template<typename Visitor> void Visit(int begin,int end,Visitor visitor) const {
+		if(end<=begin)return;
+		auto at=std::lower_bound(entries.begin(),entries.end(),begin,[](Entry const& entry,int value){return entry.prefix_max_end<=value;});
+		for(;at!=entries.end()&&at->start<end;++at)if(at->end>begin)visitor(at->start,at->end);
+	}
+	size_t Size() const {return entries.size();}
+};
 } } }

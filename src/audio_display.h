@@ -172,7 +172,7 @@ class AudioDisplay: public wxWindow {
 	/// Paint provisional Toshiki K-Timing slot ranges, when supplied by the
 	/// active timing controller.
 	void PaintToshikiKTimingPreview(wxDC &dc, TimeRange updtime);
-	void Paint39Overlay(wxDC &dc);
+	void Paint39Overlay(wxDC &dc, TimeRange const& visible);
 	struct Timing39Particle { float x, y, vx, vy; int age; };
 	std::vector<Timing39Particle> timing39_particles;
 	wxTimer timing39_effect_timer;

@@ -20,6 +20,7 @@
 #include <libaegisub/timing39_session.h>
 #include <algorithm>
 #include <map>
+#include <set>
 #include <wx/button.h>
 #include <wx/choice.h>
 #include <wx/dialog.h>
@@ -78,6 +79,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  t39::Timing39Session session;
  t39::SessionPlaybackStart full_start;
  std::map<uint64_t,AssDialogue*> events;
+ t39ui::TimelineIntervalIndex ordinary_boundaries,target_boundaries;
  std::vector<agi::signal::Connection> connections;
  wxTimer countdown;
  wxDialog *panel=nullptr,*inspector=nullptr;
@@ -117,14 +119,21 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   for(auto& line:c->ass->Events)all.push_back(&line);
   auto const& chosen=c->selectionController->GetSelectedSet();
   int media_end=int(provider->GetNumSamples()*1000/provider->GetSampleRate());
-  auto setup=t39::BuildSessionSetup(all,{chosen.begin(),chosen.end()},active,media_end);
-  full_start=setup.playback_start;
-  for(auto const& target:setup.targets)events[target.id]=all[target.id-1];
+   auto setup=t39::BuildSessionSetup(all,{chosen.begin(),chosen.end()},active,media_end);
+   full_start=setup.playback_start;
+   for(auto const& target:setup.targets)events[target.id]=all[target.id-1];
   if(full_start.time>=media_end) {
    notice="39 Mode start is outside the media; move the comment marker to a playable time";
-   c->frame->StatusTimeout(to_wx(notice));return;
-  }
-  session.Prepare(std::move(setup.targets),setup.explicit_scope,setup.active_style,full_start.time,setup.playback_end);
+    c->frame->StatusTimeout(to_wx(notice));return;
+   }
+   auto preview_targets=t39::DiscoverTargets(setup.targets,setup.explicit_scope,setup.active_style,full_start.time,setup.playback_end);
+   std::set<uint64_t> target_ids;std::vector<std::pair<int,int>> target_spans,ordinary_spans;
+   for(auto const& target:preview_targets){target_ids.insert(target.id);target_spans.emplace_back(target.start,target.end);}
+   for(size_t i=0;i<all.size();++i)if(!all[i]->Comment&&int(all[i]->End)>int(all[i]->Start)) {
+    if(!target_ids.count(i+1))ordinary_spans.emplace_back(int(all[i]->Start),int(all[i]->End));
+   }
+   target_boundaries.Reset(std::move(target_spans));ordinary_boundaries.Reset(std::move(ordinary_spans));
+   session.Prepare(std::move(setup.targets),setup.explicit_scope,setup.active_style,full_start.time,setup.playback_end);
   BeginCountdown();
  }
  void Tick(wxTimerEvent&) {
@@ -147,7 +156,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  void ShowResults(){if(!panel)MakePanel();Update();panel->Show();panel->Raise();}
  void FileChanged(int type,AssDialogue const*) {
   if(committing||!(type&(AssFile::COMMIT_DIAG_FULL|AssFile::COMMIT_DIAG_ADDREM)))return;
-  c->audioController->Stop();countdown.Stop();session.Discard();events.clear();
+   c->audioController->Stop();countdown.Stop();session.Discard();events.clear();ordinary_boundaries.Reset({});target_boundaries.Reset({});
   notice="Subtitle edit or undo invalidated the cached targets. Toggle 39 Mode to start a new session.";
   if(inspector)inspector->Hide();Update();Notify();
  }
@@ -323,7 +332,7 @@ public:
  void AddLeadIn() override{} void AddLeadOut() override{} void ModifyLength(int,bool) override{} void ModifyStart(int) override{}
  void Next(NextMode) override{if(!Is39SessionActive())c->selectionController->NextLine();}
  void Prev() override{if(!Is39SessionActive())c->selectionController->PrevLine();}
- void Revert() override{c->audioController->Stop();session.Discard();Update();Notify();}
+  void Revert() override{c->audioController->Stop();session.Discard();ordinary_boundaries.Reset({});target_boundaries.Reset({});Update();Notify();}
  void PlaybackStarting(int ms) override {
   if(session.State()==t39::SessionState::Capturing)PlaybackStopped(c->audioController->GetPlaybackPosition());
   else if(session.State()==t39::SessionState::Countdown)PlaybackStopped(session.StartTime());
@@ -337,9 +346,12 @@ public:
   if(down&&(control||shift))return false;
   if(session.Key(key,down,ms)){if(down)++rhythm_serial;Notify();}return true;
  }
- void Get39Overlay(std::vector<Timing39Overlay>& out,int ms) const override {
-  for(int lane=0;lane<2;++lane)for(auto const& b:session.Preview(lane,ms))out.push_back({b.start,b.end,lane,{},b.gap,false});
- }
+  void Get39Overlay(std::vector<Timing39Overlay>& out,int ms,TimeRange const& visible) const override {
+   ordinary_boundaries.Visit(visible.begin(),visible.end(),[&](int start,int end){out.push_back({start,end,0,false,false,Timing39OverlayKind::ReferenceDialogue});});
+   target_boundaries.Visit(visible.begin(),visible.end(),[&](int start,int end){out.push_back({start,end,0,false,false,Timing39OverlayKind::TargetLyric});});
+   for(int lane=0;lane<2;++lane)for(auto const& b:session.Preview(lane,ms,visible.begin(),visible.end()))
+    out.push_back({b.start,b.end,lane,b.gap,false,Timing39OverlayKind::CapturedBlock});
+  }
  void Commit() override{CommitResults(false);}
 };
 }
