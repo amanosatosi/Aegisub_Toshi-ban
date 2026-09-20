@@ -52,7 +52,8 @@ std::vector<Lexeme> const& Lexicon() {
 		{u8"病",u8"やまい",WordKind::Noun}, {u8"光",u8"ひかり",WordKind::Noun},
 		{u8"愛",u8"あい",WordKind::Noun}, {u8"声",u8"こえ",WordKind::Noun},
 		{u8"心",u8"こころ",WordKind::Noun}, {u8"夢",u8"ゆめ",WordKind::Noun},
-		{u8"ドア",u8"どあ",WordKind::Noun}, {u8"みく",u8"みく",WordKind::Noun}
+		{u8"ドア",u8"どあ",WordKind::Noun}, {u8"みく",u8"みく",WordKind::Noun},
+		{u8"繊細",u8"せんさい",WordKind::Adjective}
 	};
 	return words;
 }
@@ -220,6 +221,20 @@ void Language(Analysis& a) {
 		for(size_t i=p;i<p+n;++i)if(a.spans[a.reading.characters[i].span].explicit_reading)return false;
 		return true;
 	};
+	auto starts_auxiliary=[&](size_t p) {
+		for(auto form:{U"いる",U"いた",U"いない",U"いられる",U"いられない",U"いれば"}) {
+			std::u32string text(form);if(r.compare(p,text.size(),text)==0)return true;
+		}
+		return false;
+	};
+	auto negative_nai=[&](size_t p) {
+		if(!p || !plain(p,2) || r.compare(p,2,U"ない")!=0 || Separator(r[p-1]))return false;
+		// Productive negative morphology: suru, godan irrealis stems and
+		// ordinary i/e-row verb stems. This deliberately does not legalize an
+		// arbitrary na+i pair without a compatible preceding stem.
+		return std::u32string(U"しわかがさたなばまらいきぎじちぢにひびぴみりえけげせでてねべぺめれ")
+			.find(r[p-1])!=std::u32string::npos;
+	};
 	struct Suffix {std::u32string text;WordKind kind;std::string reason;};
 	std::vector<Suffix> suffixes;
 	auto endings=[&](std::u32string const& stem,WordKind kind,std::string reason) {
@@ -250,13 +265,19 @@ void Language(Analysis& a) {
 		bool particle=false;
 		for(auto const& s:{U"けど",U"から",U"ので",U"の",U"を",U"が",U"と",U"に",U"で",U"は",U"わ",U"へ",U"も",U"さ"}) {
 			std::u32string part(s); if(r.compare(p,part.size(),part)!=0) continue;
-			bool next = p+part.size()==r.size() || lookup(p+part.size())!=nullptr || anchor(p+part.size());
+			bool next = p+part.size()==r.size() || lookup(p+part.size())!=nullptr ||
+				anchor(p+part.size()) || starts_auxiliary(p+part.size());
 			bool context=previous && (a.words.back().certain || (plain(p,part.size()) && next));
 			if(context && (next || part==U"を" || part==U"けど" || part==U"から")) {
 				a.words.push_back({p,p+part.size(),Encode(part),Encode(part),WordKind::Particle,true}); p+=part.size(); particle=true; break;
 			}
 		}
 		if(particle) continue;
+		if(negative_nai(p)) {
+			a.words.push_back({p,p+2,u8"ない","NEGATIVE_NAI",WordKind::Auxiliary,true});
+			a.language_notes.push_back(std::to_string(p)+".."+std::to_string(p+2)+": productive negative ない; merged timing remains optional");
+			p+=2;continue;
+		}
 		if(anchor(p)) {
 			size_t end=a.spans[a.reading.characters[p].span].reading_end;
 			while(anchor(end))end=a.spans[a.reading.characters[end].span].reading_end;
@@ -301,31 +322,33 @@ void TokenizeAndGate(Analysis& a) {
 		for(size_t j=0;j<a.words.size();++j) if(a.words[j].begin<=i && a.words[j].end>=end) {word=j;break;}
 		a.morae.push_back({Encode(text),i,end,r[i].logical_begin,r[end-1].logical_end,r[i].span,word}); i=end;
 	}
-	a.boundaries.resize(a.morae.size()+1,{true,"line checkpoint"});
+	a.boundaries.resize(a.morae.size()+1,{true,"line checkpoint",BoundaryKind::Forbidden});
 	a.graph.resize(a.morae.size());
 	for(size_t i=0;i<a.morae.size();++i) {
-		a.graph[i].push_back({i,1,{},"base mora"});
+		a.graph[i].push_back({i,1,{Join::Single,false,false,false,false,CandidateStrength::Base},"base mora"});
 		if(!i) continue;
 		auto const& left=a.morae[i-1]; auto const& right=a.morae[i]; auto& b=a.boundaries[i];
-		b={true,"unsupported phonological relationship"};
-		if(left.reading_end!=right.reading_begin) { b.reason="punctuation / spacing"; continue; }
+		b={true,"unsupported phonological relationship",BoundaryKind::Unknown};
+		if(left.reading_end!=right.reading_begin) { b={true,"punctuation / spacing",BoundaryKind::Forbidden}; continue; }
 		bool same=left.lexeme!=unknown && left.lexeme==right.lexeme && a.words[left.lexeme].certain;
 		if(left.lexeme!=right.lexeme && left.lexeme!=unknown && right.lexeme!=unknown &&
 			((a.words[left.lexeme].kind==WordKind::Particle&&a.words[left.lexeme].certain) ||
 			 (a.words[right.lexeme].kind==WordKind::Particle&&a.words[right.lexeme].certain))) {
-			b.reason="source/context-supported particle boundary";continue;
+			b={true,"source/context-supported particle boundary",BoundaryKind::Forbidden};continue;
 		}
 		if(left.lexeme!=right.lexeme && left.lexeme!=unknown && right.lexeme!=unknown && a.words[left.lexeme].certain && a.words[right.lexeme].certain) {
-			b.reason=(a.words[left.lexeme].kind==WordKind::Particle||a.words[right.lexeme].kind==WordKind::Particle) ? "high-confidence particle boundary" : "separate spoken lexical units"; continue;
+			b={true,(a.words[left.lexeme].kind==WordKind::Particle||a.words[right.lexeme].kind==WordKind::Particle) ? "high-confidence particle boundary" : "separate spoken lexical units",BoundaryKind::Forbidden}; continue;
 		}
 		if(same) {
 			auto const& w=a.words[left.lexeme];
 			bool ending=false; for(auto const& l:Lexicon()) if(l.source==w.lemma && l.reading==w.reading && l.separate_ending) ending=true;
-			if(ending && right.reading_end==w.end) {b.reason="known verb/auxiliary ending: retain final mora";continue;}
+			if(ending && right.reading_end==w.end) {b={true,"known verb/auxiliary ending: retain final mora",BoundaryKind::Forbidden};continue;}
 		}
-		Join type; std::string reason;
+		Join type; std::string reason;CandidateStrength strength=CandidateStrength::Strong;
 		char v=Vowel(left.text);
-		if(right.text==u8"ー" && (v || left.text==u8"ー")) {type=Join::LongMark;reason="long mark continuation";}
+		bool negative=same && a.words[left.lexeme].lemma=="NEGATIVE_NAI";
+		if(negative && left.text==u8"な" && right.text==u8"い") {type=Join::Vowel;strength=CandidateStrength::Soft;reason="morphology-supported negative ない timing group (separate also legal)";}
+		else if(right.text==u8"ー" && (v || left.text==u8"ー")) {type=Join::LongMark;reason="long mark continuation";}
 		else if(right.text==u8"っ" && v) {type=Join::Sokuon;reason="supported preceding-mora sokuon grouping (separate also legal)";}
 		else if(right.text==u8"ん" && v) {type=Join::Nasal;reason="moraic nasal continuation";}
 		else if(v && (right.text==u8"あ"||right.text==u8"い"||right.text==u8"う"||right.text==u8"え"||right.text==u8"お")) {
@@ -335,9 +358,10 @@ void TokenizeAndGate(Analysis& a) {
 			// Unknown text retains long-vowel ambiguity, not arbitrary vowel joins.
 			if(!long_like && !same) continue;
 			type=long_like?Join::WrittenLongVowel:Join::Vowel; reason=long_like?"written long-vowel-like sequence":"vowel adjacency within a known spoken lexeme";
+			if(!long_like)strength=CandidateStrength::Soft;
 		} else continue;
-		b={false,reason};
-		a.graph[i-1].push_back({i-1,2,{type,same,left.span==right.span,!same,same&&a.words[left.lexeme].source_supported},reason});
+		b={false,reason,strength==CandidateStrength::Soft?BoundaryKind::Soft:BoundaryKind::Strong};
+		a.graph[i-1].push_back({i-1,2,{type,same,left.span==right.span,!same,same&&a.words[left.lexeme].source_supported,strength},reason});
 	}
 }
 } // namespace

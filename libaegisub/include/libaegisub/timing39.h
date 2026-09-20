@@ -12,6 +12,8 @@ constexpr size_t unknown = std::numeric_limits<size_t>::max();
 enum class Confidence { Green, Yellow, Red };
 enum class WordKind { Unknown, Noun, Verb, Adjective, Particle, Auxiliary, Expression };
 enum class Join { Single, LongMark, Sokuon, Nasal, WrittenLongVowel, Vowel };
+enum class BoundaryKind { Forbidden, Unknown, Strong, Soft };
+enum class CandidateStrength { Base, Strong, Soft };
 
 struct SourceSpan {
 	size_t begin = 0, end = 0; // UTF-8 byte offsets in Analysis::span_source
@@ -41,11 +43,13 @@ struct BaseMora {
 struct BoundaryAnalysis {
 	bool fixed = true;
 	std::string reason;
+	BoundaryKind kind = BoundaryKind::Forbidden;
 };
 struct CandidateFeatures {
 	Join type = Join::Single;
 	bool same_lexeme = false, same_reading_span = false, uncertain_language = false;
 	bool source_supported = false;
+	CandidateStrength strength = CandidateStrength::Strong;
 };
 struct TimingGroupCandidate {
 	size_t first, count;
@@ -121,6 +125,7 @@ struct ScoringModel {
 	std::array<double, 6> join_prior{{0, 0.25, 0.65, 0.85, 0.6, 1.0}};
 	double unknown_language = 0.25, different_span = 0.05, duration_fit = 0.65;
 	double source_support = -0.05;
+	double soft_candidate = 0.75;
 	double ambiguity_margin = 0.75;
 	size_t alternatives = 8;
 };

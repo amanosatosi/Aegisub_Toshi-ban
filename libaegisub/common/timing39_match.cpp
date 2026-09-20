@@ -92,7 +92,8 @@ MatchResult Match(Analysis const& a,std::vector<TimingBlock> const& blocks,Scori
 				score.prior=weights.join_prior[static_cast<size_t>(edge.features.type)];
 				if(edge.count>1) score.language=(edge.features.uncertain_language?weights.unknown_language:0) +
 					(!edge.features.same_reading_span&&!edge.features.same_lexeme?weights.different_span:0) +
-					(edge.features.source_supported?weights.source_support:0);
+					(edge.features.source_supported?weights.source_support:0) +
+					(edge.features.strength==CandidateStrength::Soft?weights.soft_candidate:0);
 				double duration=blocks[sung[used]].end-blocks[sung[used]].start;
 				// Log-ratio is scale independent and soft: singing is not metronomic.
 				score.duration=weights.duration_fit*std::pow(std::log(duration/(unit*edge.count)),2);
@@ -198,7 +199,7 @@ std::string Inspect(Analysis const& a,std::vector<TimingBlock> const& blocks,Mat
 	for(auto const& note:a.language_notes)s<<"LANGUAGE "<<note<<"\n";
 	for(size_t i=0;i<a.morae.size();++i) {auto const& m=a.morae[i];s<<"MORA "<<i<<" "<<m.text<<" reading["<<m.reading_begin<<","<<m.reading_end<<") logical["<<m.logical_begin<<","<<m.logical_end<<") span="<<m.span<<" lexeme="<<m.lexeme<<"\n";}
 	for(size_t i=1;i<a.morae.size();++i) s<<(a.boundaries[i].fixed?"FIXED ":"CANDIDATE ")<<i<<": "<<a.boundaries[i].reason<<"\n";
-	for(auto const& edges:a.graph) for(auto const& e:edges) s<<"EDGE "<<e.first<<"+"<<e.count<<" "<<e.reason<<" same-lexeme="<<e.features.same_lexeme<<" same-span="<<e.features.same_reading_span<<"\n";
+	for(auto const& edges:a.graph) for(auto const& e:edges) s<<"EDGE "<<e.first<<"+"<<e.count<<" "<<e.reason<<" strength="<<(e.features.strength==CandidateStrength::Soft?"SOFT":e.features.strength==CandidateStrength::Strong?"STRONG":"BASE")<<" same-lexeme="<<e.features.same_lexeme<<" same-span="<<e.features.same_reading_span<<"\n";
 	size_t taps=0;for(size_t i=0;i<blocks.size();++i) {auto const& b=blocks[i];if(!b.gap) ++taps;s<<"BLOCK "<<i<<" "<<b.start<<".."<<b.end<<" duration="<<b.end-b.start<<" gap="<<b.gap<<"\n";}
 	s<<"TAPS "<<taps<<" LANGUAGE "<<(result.language_certain?"known":"UNKNOWN/partial")<<" TIMING "<<(result.confidence==Confidence::Green?"GREEN":result.confidence==Confidence::Yellow?"YELLOW":"RED")<<" margin="<<result.margin<<" "<<result.reason<<"\n";
 	for(size_t p=0;p<result.paths.size();++p) {

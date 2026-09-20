@@ -65,6 +65,34 @@ TEST(Timing39, GrammarDeletesEdgesBeforeMatching) {
 	a=Analyze(u8"<今|いま>という<瞬間|しゅんかん>がいつだって<明日|あす>を<作る|つくる>から");EXPECT_FALSE(Has(a,u8"とい"));EXPECT_FALSE(Has(a,u8"がい"));
 	EXPECT_FALSE(Has(Analyze(u8"こ、う"),u8"こう"));EXPECT_FALSE(Has(Analyze(u8"ぼくわじまたえ"),u8"ぼく"));EXPECT_FALSE(Has(Analyze(u8"ぼくわじまたえ"),u8"たえ"));
 }
+TEST(Timing39, NegativeNaiIsASoftOptionalTimingGroup) {
+	for(auto const& text:{u8"しない",u8"できない",u8"わからない",u8"いらない"}) {
+		auto a=Analyze(text);ASSERT_TRUE(a.error.empty())<<text;ASSERT_TRUE(Has(a,u8"ない"))<<text;
+		bool soft=false;
+		for(auto const& edges:a.graph)for(auto const& e:edges)if(e.count==2&&a.morae[e.first].text==u8"な"&&a.morae[e.first+1].text==u8"い")soft=e.features.strength==CandidateStrength::Soft;
+		EXPECT_TRUE(soft)<<text;
+	}
+	auto a=Analyze(u8"<口|くち>に<出|だ>せやしない　「<忘|わす>れてしまうの？」");
+	ASSERT_EQ(17u,a.morae.size());ASSERT_TRUE(Has(a,u8"ない"));
+	auto match=Match(a,Taps(16));ASSERT_FALSE(match.paths.empty())<<match.reason;
+	bool represents_negative=false;
+	for(auto const& path:match.paths)for(auto const& x:path.assignments)
+		if(x.mora_count==2&&a.morae[x.first_mora].text==u8"な"&&a.morae[x.first_mora+1].text==u8"い")represents_negative=true;
+	EXPECT_TRUE(represents_negative);
+}
+TEST(Timing39, IndependentCandidatesAndGrammarProtectionCoexist) {
+	auto a=Analyze(u8"せんさい");
+	EXPECT_TRUE(Has(a,u8"せん"));EXPECT_TRUE(Has(a,u8"さい"));
+	auto match=Match(a,Taps(2));ASSERT_FALSE(match.paths.empty());
+	EXPECT_EQ(2u,match.paths[0].assignments.size());
+	EXPECT_EQ(2u,match.paths[0].assignments[0].mora_count);EXPECT_EQ(2u,match.paths[0].assignments[1].mora_count);
+	a=Analyze(u8"ただ<可|か><憐|れん>でいられるように");
+	EXPECT_FALSE(Has(a,u8"でい"));
+}
+TEST(Timing39, JapanesePunctuationNeverBecomesMorae) {
+	auto a=Analyze(u8"「<忘|わす>れてしまうの？」");
+	EXPECT_EQ((std::vector<std::string>{u8"わ",u8"す",u8"れ",u8"て",u8"し",u8"ま",u8"う",u8"の"}),Morae(a));
+}
 TEST(Timing39, ExactCountAndNamedGroups) {
 	auto a=Analyze(u8"ゴール");auto all=Match(a,Taps(3));ASSERT_EQ(Confidence::Green,all.confidence);for(auto const& x:all.paths[0].assignments)EXPECT_EQ(1u,x.mora_count);
 	auto merge=Match(a,Taps(2));ASSERT_FALSE(merge.paths.empty());EXPECT_EQ(2u,merge.paths[0].assignments[0].mora_count);
