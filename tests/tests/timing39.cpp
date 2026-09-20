@@ -73,6 +73,7 @@ TEST(Timing39, NegativeNaiIsASoftOptionalTimingGroup) {
 		for(auto const& edges:a.graph)for(auto const& e:edges)if(e.count==2&&a.morae[e.first].text==u8"な"&&a.morae[e.first+1].text==u8"い")soft=e.features.strength==CandidateStrength::Soft;
 		EXPECT_TRUE(soft)<<text;
 	}
+	EXPECT_FALSE(Has(Analyze(u8"かないます"),u8"ない"));
 	auto a=Analyze(u8"<口|くち>に<出|だ>せやしない　「<忘|わす>れてしまうの？」");
 	ASSERT_EQ(17u,a.morae.size());ASSERT_TRUE(Has(a,u8"ない"));
 	auto match=Match(a,Taps(16));ASSERT_FALSE(match.paths.empty())<<match.reason;

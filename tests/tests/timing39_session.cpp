@@ -66,6 +66,11 @@ TEST(Timing39Session, HarmlessSungOverhangsKeepMatchStatus) {
 		EXPECT_EQ(Confidence::Green,result.lanes[0].match.confidence);
 		EXPECT_EQ(Confidence::Green,result.GetConfidence())<<overhang;
 	}
+	auto gap=PartitionCapture({{50,150,true},{150,180,false}},100,200);
+	EXPECT_EQ(PartitionStatus::HarmlessClamp,gap.status);
+	SessionResult result;result.lane=0;result.lanes[0].capture=gap;
+	result.lanes[0].match=Match(Analyze(u8"み"),gap.blocks);
+	EXPECT_EQ(Confidence::Green,result.GetConfidence());
 }
 
 TEST(Timing39Session, PreviousLineSungTailIsNotANewSekaiMadeTap) {

@@ -229,6 +229,10 @@ void Language(Analysis& a) {
 	};
 	auto negative_nai=[&](size_t p) {
 		if(!p || !plain(p,2) || r.compare(p,2,U"ない")!=0 || Separator(r[p-1]))return false;
+		size_t after=p+2;
+		bool terminal=after==r.size() || anchor(after) || Separator(r[after]) ||
+			std::u32string(U"のをがとにはへもで").find(r[after])!=std::u32string::npos;
+		if(!terminal)return false;
 		// Productive negative morphology: suru, godan irrealis stems and
 		// ordinary i/e-row verb stems. This deliberately does not legalize an
 		// arbitrary na+i pair without a compatible preceding stem.
