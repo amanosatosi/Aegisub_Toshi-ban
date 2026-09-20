@@ -51,27 +51,6 @@ static const char *ambient_plane_key = "_aegi_perspective_ambient_plane";
 
 static const int BUTTON_ID_BASE = 1400;
 
-namespace {
-bool IsDistortSeparator(std::string const& text, size_t position, size_t& length) {
-	if (text[position] == ' ' || text[position] == '\r' || text[position] == '\n') {
-		length = 1;
-		return true;
-	}
-	if (position + 1 < text.size() && text[position] == '\\' && (text[position + 1] == 'N' || text[position + 1] == 'n')) {
-		length = 2;
-		return true;
-	}
-	if (position + 1 < text.size() && static_cast<unsigned char>(text[position]) == 0xC2 &&
-		static_cast<unsigned char>(text[position + 1]) == 0xA0)
-	{
-		length = 2;
-		return true;
-	}
-	length = 0;
-	return false;
-}
-}
-
 enum VisualToolPerspectiveFeatureType {
 	FEATURE_INNER = 0,
 	FEATURE_OUTER = 1,
@@ -254,6 +233,10 @@ void VisualToolPerspective::MakeFeatures() {
 	centerf = nullptr;
 	orgf = nullptr;
 	if (IsDistortMode()) {
+		centerf = new Feature(this, FEATURE_CENTER, 0);
+		centerf->type = DRAG_BIG_TRIANGLE;
+		centerf->layer = 1;
+		features.push_back(*centerf);
 		for (int i = 0; i < 4; ++i) {
 			inner_corners.push_back(new Feature(this, FEATURE_INNER, i));
 			inner_corners.back()->type = i == 0 ? DRAG_SMALL_SQUARE : DRAG_SMALL_CIRCLE;
@@ -414,7 +397,10 @@ void VisualToolPerspective::OnMouseEvent(wxMouseEvent &event) {
 
 void VisualToolPerspective::UpdateDrag(Feature *feature) {
 	if (IsDistortMode()) {
-		DistortToText(feature);
+		if (feature == centerf)
+			MoveDistortPosition(feature);
+		else
+			DistortToText(feature);
 		return;
 	}
 
@@ -551,6 +537,24 @@ void VisualToolPerspective::EndDrag(Feature *feature) {
 	SaveFeaturePositions();
 	if (!IsDistortMode())
 		SaveOuterToLines();
+}
+
+bool VisualToolPerspective::InitializeDrag(Feature *feature) {
+	if (!IsDistortMode() || feature != centerf)
+		return true;
+
+	distort_position_states.clear();
+	distort_drag_origin = ToScriptCoords(centerf->pos);
+	for (auto line : c->selectionController->GetSelectedSet()) {
+		if (FilterLockedLines() && IsLockedLine(line))
+			continue;
+		DistortPositionState state;
+		state.line = line;
+		state.position = GetLinePosition(line);
+		state.has_move = GetLineMove(line, state.move_start, state.move_end, state.t1, state.t2);
+		distort_position_states.push_back(state);
+	}
+	return true;
 }
 
 void VisualToolPerspective::WrapSetOverride(AssDialogue* line, std::string const& tag, float value, int precision, float defaultval) {
@@ -765,8 +769,11 @@ void VisualToolPerspective::SaveOuterToLines() {
 }
 
 void VisualToolPerspective::SetFeaturePositions() {
-	if (IsDistortMode())
+	if (IsDistortMode()) {
+		if (centerf && inner_corners.size() == 4)
+			centerf->pos = QuadMidpoint(FeaturePositions(inner_corners));
 		return;
+	}
 	centerf->pos = QuadMidpoint(FeaturePositions(inner_corners));
 	if (orgf != nullptr)
 		orgf->pos = FromScriptCoords(org);
@@ -880,6 +887,9 @@ void VisualToolPerspective::TextToDistort() {
 	// coordinate frame for Mangetsu's four distortion pins.
 	TextToPersp();
 	auto event_quad = FeaturePositions(inner_corners);
+	Vector2D move_delta = FromScriptCoords(GetLinePositionAtFrame(active_line)) - FromScriptCoords(pos);
+	for (auto& point : event_quad)
+		point = point + move_delta;
 	auto unit_bbox = GetFirstDistortUnitExtents();
 	Vector2D event_size = bbox.second - bbox.first;
 	if (event_size.X() > 0 && event_size.Y() > 0) {
@@ -899,62 +909,8 @@ void VisualToolPerspective::TextToDistort() {
 
 std::pair<Vector2D, Vector2D> VisualToolPerspective::GetFirstDistortUnitExtents() {
 	AssDialogue unit(*active_line);
-	auto blocks = active_line->ParseTags();
-	std::string unit_source;
-	std::string pending_blocks;
-	bool found_text = false;
-
-	for (auto& block : blocks) {
-		if (block->GetType() == AssBlockType::OVERRIDE || block->GetType() == AssBlockType::COMMENT) {
-			if (found_text && block->GetType() == AssBlockType::OVERRIDE) {
-				auto const& override_block = static_cast<AssDialogueBlockOverride const&>(*block);
-				if (std::any_of(override_block.Tags.begin(), override_block.Tags.end(), [](AssOverrideTag const& tag) {
-					return tag.Name == "\\distort" || tag.Name == "\\r";
-				})) {
-					unit.Text = unit_source;
-					return GetLineBaseExtents(&unit);
-				}
-			}
-			if (found_text)
-				pending_blocks += block->GetText();
-			else
-				unit_source += block->GetText();
-			continue;
-		}
-		if (block->GetType() == AssBlockType::DRAWING) {
-			if (!found_text) {
-				unit_source += block->GetText();
-				unit.Text = unit_source;
-				return GetLineBaseExtents(&unit);
-			}
-			break;
-		}
-
-		auto const& text = static_cast<AssDialogueBlockPlain&>(*block).text;
-		for (size_t position = 0; position < text.size();) {
-			size_t separator_length = 0;
-			if (IsDistortSeparator(text, position, separator_length)) {
-				if (found_text) {
-					unit.Text = unit_source;
-					return GetLineBaseExtents(&unit);
-				}
-				position += separator_length;
-				continue;
-			}
-			if (!pending_blocks.empty()) {
-				unit_source += pending_blocks;
-				pending_blocks.clear();
-			}
-			found_text = true;
-			unit_source += text[position++];
-		}
-	}
-
-	if (found_text) {
-		unit.Text = unit_source;
-		return GetLineBaseExtents(&unit);
-	}
-	return bbox;
+	unit.Text = GetMangetsuDistortUnitText(*active_line);
+	return GetLineBaseExtents(&unit);
 }
 
 bool VisualToolPerspective::DistortToText(Feature* feature) {
@@ -972,6 +928,27 @@ bool VisualToolPerspective::DistortToText(Feature* feature) {
 			continue;
 		SetMangetsuDistort(*line, distort_state, feature->index);
 	}
+	return true;
+}
+
+bool VisualToolPerspective::MoveDistortPosition(Feature* feature) {
+	if (!feature || feature != centerf)
+		return false;
+	Vector2D delta = ToScriptCoords(feature->pos) - distort_drag_origin;
+	for (auto const& state : distort_position_states) {
+		if (state.has_move) {
+			if (state.t1 > 0 || state.t2 > 0)
+				SetOverride(state.line, "\\move", agi::format("(%s,%s,%d,%d)",
+					(state.move_start + delta).Str(), (state.move_end + delta).Str(), state.t1, state.t2));
+			else
+				SetOverride(state.line, "\\move", agi::format("(%s,%s)",
+					(state.move_start + delta).Str(), (state.move_end + delta).Str()));
+		}
+		else
+			SetOverride(state.line, "\\pos", (state.position + delta).PStr());
+	}
+	TextToDistort();
+	SetFeaturePositions();
 	return true;
 }
 

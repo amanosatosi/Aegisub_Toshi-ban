@@ -25,6 +25,10 @@ struct MangetsuDistortState {
 };
 
 MangetsuDistortState GetMangetsuDistort(AssDialogue const& line);
+/// Build a copy of the first renderer-equivalent distortion unit. Internal
+/// spaces and NBSP are retained; hard breaks, style/distort changes and
+/// drawing chunks terminate the unit.
+std::string GetMangetsuDistortUnitText(AssDialogue const& line);
 std::string FormatMangetsuDistort(MangetsuDistortState const& state);
 bool SetMangetsuDistortCorner(MangetsuDistortState& state, size_t corner, Vector2D position);
 bool SetMangetsuDistort(AssDialogue& line, MangetsuDistortState const& state, int changed_corner = -1);

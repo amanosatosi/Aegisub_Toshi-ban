@@ -1,0 +1,83 @@
+// Copyright (c) 2026
+//
+// Permission to use, copy, modify, and distribute this software for any
+// purpose with or without fee is hereby granted, provided that the above
+// copyright notice and this permission notice appear in all copies.
+
+#pragma once
+
+#include "mangetsu_curved_text.h"
+#include "spline.h"
+#include "visual_feature.h"
+#include "visual_tool.h"
+
+#include <set>
+#include <string>
+
+class wxCommandEvent;
+class wxToolBar;
+
+enum VisualToolCurvedTextMode {
+	CT_EDIT_PATH = 0,
+	CT_MOVE_PATH,
+	CT_ALONG_OFFSET,
+	CT_NORMAL_OFFSET,
+	CT_MODE_LAST,
+	CT_CYCLE_ALIGNMENT = CT_MODE_LAST
+};
+
+enum CurvedTextFeatureRole {
+	CT_FEATURE_PATH,
+	CT_FEATURE_ALONG,
+	CT_FEATURE_NORMAL
+};
+
+struct VisualToolCurvedTextDraggableFeature final : public VisualDraggableFeature {
+	size_t curve = 0;
+	int point = 0;
+	CurvedTextFeatureRole role = CT_FEATURE_PATH;
+};
+
+class VisualToolCurvedText final : public VisualTool<VisualToolCurvedTextDraggableFeature> {
+	wxToolBar *toolBar = nullptr;
+	VisualToolCurvedTextMode mode = CT_EDIT_PATH;
+	Spline spline;
+	MangetsuCurvedTextState state;
+	Vector2D anchor;
+	bool editable = false;
+	bool provisional = false;
+	int feature_size = 4;
+	std::set<Feature *> box_added;
+	std::string move_original_path;
+	Vector2D move_start_local;
+
+	Vector2D LocalToScreen(Vector2D point) const;
+	Vector2D ScreenToLocal(Vector2D point) const;
+	std::string EncodePath() const;
+	bool EnsurePathTag();
+	bool SavePath();
+	bool HitTestPath(Vector2D screen_point) const;
+	float ClosestPathDistance(Vector2D local_point) const;
+	Vector2D PathPointAtDistance(float distance, Vector2D *tangent = nullptr) const;
+	void AddPathFeature(size_t curve);
+	void MakeFeatures();
+	void UpdateAlignmentTool();
+
+	void DoRefresh() override;
+	void OnFrameChanged() override { DoRefresh(); }
+	void Draw() override;
+	bool InitializeDrag(Feature *feature) override;
+	void UpdateDrag(Feature *feature) override;
+	bool InitializeHold() override;
+	void UpdateHold() override;
+
+	void AddTool(std::string const& command_name, int id);
+	void OnSubTool(wxCommandEvent& event);
+
+public:
+	VisualToolCurvedText(VideoDisplay *parent, agi::Context *context);
+	void SetToolbar(wxToolBar *toolBar) override;
+	void SetSubTool(int subtool) override;
+	int GetSubTool() override { return mode; }
+	void CycleAlignment();
+};

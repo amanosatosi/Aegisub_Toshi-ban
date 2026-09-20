@@ -242,6 +242,8 @@ Themes included in this release, with original authorship preserved.
  * Video panning
  * Line folding
  * Perspective tool
+ * Mangetsu Curved Text visual tool for `\ct` paths, Bezier handles, `\ctx`, `\cty`, and `\ctan`
+ * Mangetsu Distort visual tool with full runs across spaces/NBSP, six/eight-argument syntax, and a position triangle
  * Lua API additions
  * Stereo audio
 

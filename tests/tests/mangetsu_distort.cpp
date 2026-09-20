@@ -184,3 +184,39 @@ TEST(MangetsuDistort, EditingFirstScopeDoesNotRewriteLaterScopes) {
 	EXPECT_NE(std::string::npos, line.Text.get().find("\\distort(1.5,-0.25,1,1,0,1,0,0)"));
 	EXPECT_NE(std::string::npos, line.Text.get().find(later));
 }
+
+TEST(MangetsuDistort, UnitKeepsNormalSpacesAcrossTheWholeRun) {
+	auto line = MakeLine("{\\distort(1,0,1,1,0,1)}ONE TWO THREE FOUR");
+	EXPECT_EQ(line.Text.get(), GetMangetsuDistortUnitText(line));
+}
+
+TEST(MangetsuDistort, UnitKeepsMultipleSpacesAndNbsp) {
+	std::string text = "{\\distort(1,0,1,1,0,1)}ONE   TWO\xC2\xA0THREE";
+	EXPECT_EQ(text, GetMangetsuDistortUnitText(MakeLine(text)));
+}
+
+TEST(MangetsuDistort, UnitKeepsLeadingWhitespaceAdvance) {
+	std::string text = "{\\distort(1,0,1,1,0,1)}  \xC2\xA0ONE TWO";
+	EXPECT_EQ(text, GetMangetsuDistortUnitText(MakeLine(text)));
+}
+
+TEST(MangetsuDistort, UnitStopsAtEffectiveStyleChange) {
+	auto unit = GetMangetsuDistortUnitText(MakeLine("{\\distort(1,0,1,1,0,1)}ONE TWO{\\b1} THREE"));
+	EXPECT_EQ("{\\distort(1,0,1,1,0,1)}ONE TWO", unit);
+}
+
+TEST(MangetsuDistort, UnitStopsAtDistortChange) {
+	auto unit = GetMangetsuDistortUnitText(MakeLine(
+		"{\\distort(1,0,1,1,0,1)}ONE TWO{\\distort(1.2,0,1,1,0,1)} THREE"));
+	EXPECT_EQ("{\\distort(1,0,1,1,0,1)}ONE TWO", unit);
+}
+
+TEST(MangetsuDistort, UnitStopsAtHardLineBreak) {
+	auto unit = GetMangetsuDistortUnitText(MakeLine("{\\distort(1,0,1,1,0,1)}ONE TWO\\NTHREE FOUR"));
+	EXPECT_EQ("{\\distort(1,0,1,1,0,1)}ONE TWO", unit);
+}
+
+TEST(MangetsuDistort, TrailingWhitespaceContributesNoOutlineExtent) {
+	auto unit = GetMangetsuDistortUnitText(MakeLine("{\\distort(1,0,1,1,0,1)}ONE TWO   "));
+	EXPECT_EQ("{\\distort(1,0,1,1,0,1)}ONE TWO", unit);
+}

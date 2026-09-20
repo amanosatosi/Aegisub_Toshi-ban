@@ -99,6 +99,17 @@ class VisualToolPerspective final : public VisualTool<VisualToolPerspectiveDragg
 	std::vector<Feature *> outer_corners;
 	std::vector<Vector2D> distort_base_quad;
 	MangetsuDistortState distort_state;
+	struct DistortPositionState {
+		AssDialogue *line = nullptr;
+		Vector2D position;
+		Vector2D move_start;
+		Vector2D move_end;
+		int t1 = 0;
+		int t2 = 0;
+		bool has_move = false;
+	};
+	std::vector<DistortPositionState> distort_position_states;
+	Vector2D distort_drag_origin;
 
 	inline float screenZ() const;
 
@@ -109,6 +120,7 @@ class VisualToolPerspective final : public VisualTool<VisualToolPerspectiveDragg
     bool InnerToText();
 	void TextToDistort();
 	bool DistortToText(Feature* feature);
+	bool MoveDistortPosition(Feature* feature);
 	std::pair<Vector2D, Vector2D> GetFirstDistortUnitExtents();
 
     void WrapSetOverride(AssDialogue* line, std::string const& tag, float value, int precision, float defaultval=0);
@@ -117,6 +129,7 @@ class VisualToolPerspective final : public VisualTool<VisualToolPerspectiveDragg
 	void DoRefresh() override;
 	void Draw() override;
 	void OnDoubleClick() override;
+	bool InitializeDrag(Feature *feature) override;
 	void UpdateDrag(Feature *feature) override;
 	void EndDrag(Feature *feature) override;
     void MakeFeatures();

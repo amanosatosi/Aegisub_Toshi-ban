@@ -62,6 +62,50 @@ section below it.
 
 A later UI improvement can replace this with real disabled/gray dropdown items.
 
+## Video visual tools
+
+### Curved Text (`\ct`)
+
+The **Curved Text** video tool edits Mangetsu text-on-path data while the normal
+subtitle renderer remains responsible for shaping and preview. It does not split
+text into characters or create a second fake text renderer, so complex scripts
+such as Burmese remain unchanged.
+
+The default **Edit Path** mode exposes anchors, cubic Bezier controls and their
+control lines for `m`, `l` and `b` path commands. **Move Whole Path** translates
+all local path coordinates without changing `\pos` or `\move`. The other two
+modes edit `\ctx` along-path distance and perpendicular `\cty` offset. The
+compact alignment button cycles explicit `\ctan1`, `\ctan2` and `\ctan3`; when
+`\ctan` is absent, the renderer default derived from horizontal `\an` is shown
+without inserting a tag.
+
+`\ct` coordinates are local to the subtitle anchor. A `\pos` or frame-evaluated
+`\move` therefore moves the overlay with the subtitle without rewriting every
+path point. Lines without `\ct` show a provisional baseline sized from the line;
+opening the tool makes no subtitle change, and the tag is inserted only by the
+first edit. Unknown or malformed path commands are left untouched rather than
+being partially normalized. Static tags are edited; `\ct` inside `\t(...)` is
+not an editing target.
+
+### Mangetsu Distort (`\distort`)
+
+The **Mangetsu Distort** sub-mode edits the renderer's bilinear artistic
+deformation. It is not true projective perspective; the separate arch1t3cht
+Perspective mode remains available and keeps its existing ASS-tag approximation.
+
+The distortion source bounds now follow the first compactable same-style visual
+run across ordinary spaces, consecutive spaces and NBSP. Whitespace advances
+following glyphs but contributes no outline points of its own. Hard line breaks,
+effective style changes, `\distort` changes and vector-drawing chunks end the
+run. Both the historical six-argument form (implicit P0 `(0,0)`) and Mangetsu's
+eight-argument form are preserved. Editing P1/P2/P3 does not expand a legacy tag;
+editing P0 is the operation which requires the extended form.
+
+Distort mode shows four corner pins plus the restored triangle position handle.
+Dragging a corner edits only `\distort`; dragging the triangle translates
+`\pos`, or both endpoints of an existing `\move`, while leaving the normalized
+distortion values unchanged.
+
 ## Manual Checks
 
 - Select `Mangetsu` in the config while `mangetsu.dll`/`libmangetsu.so` is

@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <set>
 #include <utility>
 
 namespace {
@@ -44,6 +45,50 @@ bool IsRenderable(AssDialogueBlock const& block) {
 		return HasRenderableText(static_cast<AssDialogueBlockPlain const&>(block).text);
 	if (block.GetType() == AssBlockType::DRAWING)
 		return !static_cast<AssDialogueBlockDrawing const&>(block).text.empty();
+	return false;
+}
+
+bool OverrideSplitsDistortUnit(AssDialogueBlockOverride const& block) {
+	// These are event-level controls and do not change the effective glyph
+	// style used by renderer compaction. Every other static tag is treated as a
+	// style/run boundary, including \distort, \r, \p and nested transforms.
+	static std::set<std::string> const event_tags {
+		"\\pos", "\\move", "\\org", "\\clip", "\\iclip",
+		"\\an", "\\a", "\\q", "\\fad", "\\fade"
+	};
+	return std::any_of(block.Tags.begin(), block.Tags.end(), [&](AssOverrideTag const& tag) {
+		return !tag.Name.empty() && !event_tags.count(tag.Name);
+	});
+}
+
+bool IsHardBreak(std::string const& text, size_t position, size_t& length) {
+	if (text[position] == '\r' || text[position] == '\n') {
+		length = 1;
+		return true;
+	}
+	if (position + 1 < text.size() && text[position] == '\\' &&
+		(text[position + 1] == 'N' || text[position + 1] == 'n'))
+	{
+		length = 2;
+		return true;
+	}
+	length = 0;
+	return false;
+}
+
+bool IsInlineWhitespace(std::string const& text, size_t position, size_t& length) {
+	if (text[position] == ' ' || text[position] == '\t') {
+		length = 1;
+		return true;
+	}
+	if (position + 1 < text.size() &&
+		static_cast<unsigned char>(text[position]) == 0xC2 &&
+		static_cast<unsigned char>(text[position + 1]) == 0xA0)
+	{
+		length = 2;
+		return true;
+	}
+	length = 0;
 	return false;
 }
 
@@ -106,6 +151,62 @@ MangetsuDistortState GetMangetsuDistort(AssDialogue const& line) {
 			ApplyTag(state, tag);
 	}
 	return state;
+}
+
+std::string GetMangetsuDistortUnitText(AssDialogue const& line) {
+	auto blocks = line.ParseTags();
+	std::string unit_source;
+	std::string pending;
+	bool found_outline = false;
+
+	for (auto const& block : blocks) {
+		if (block->GetType() == AssBlockType::OVERRIDE) {
+			auto const& override_block = static_cast<AssDialogueBlockOverride const&>(*block);
+			if (found_outline && OverrideSplitsDistortUnit(override_block))
+				return unit_source;
+			(found_outline ? pending : unit_source) += block->GetText();
+			continue;
+		}
+		if (block->GetType() == AssBlockType::COMMENT) {
+			(found_outline ? pending : unit_source) += block->GetText();
+			continue;
+		}
+		if (block->GetType() == AssBlockType::DRAWING) {
+			if (found_outline)
+				return unit_source;
+			unit_source += block->GetText();
+			return unit_source;
+		}
+
+		auto const& text = static_cast<AssDialogueBlockPlain const&>(*block).text;
+		for (size_t position = 0; position < text.size();) {
+			size_t length = 0;
+			if (IsHardBreak(text, position, length)) {
+				if (found_outline)
+					return unit_source;
+				position += length;
+				unit_source.clear();
+				pending.clear();
+				continue;
+			}
+			if (IsInlineWhitespace(text, position, length)) {
+				if (found_outline)
+					pending.append(text, position, length);
+				else
+					unit_source.append(text, position, length);
+				position += length;
+				continue;
+			}
+			if (!pending.empty()) {
+				unit_source += pending;
+				pending.clear();
+			}
+			found_outline = true;
+			unit_source += text[position++];
+		}
+	}
+
+	return found_outline ? unit_source : line.Text.get();
 }
 
 std::string FormatMangetsuDistort(MangetsuDistortState const& state) {

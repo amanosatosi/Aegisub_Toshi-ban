@@ -187,7 +187,7 @@ static std::vector<AssOverrideTagProto> proto;
 static void load_protos() {
 	if (!proto.empty()) return;
 
-	proto.resize(256);
+	proto.resize(320);
 	int i = 0;
 
 	// Longer tag names must appear before shorter tag names
@@ -299,6 +299,11 @@ static void load_protos() {
 	proto[i++].Set("\\xblur", VariableDataType::FLOAT);
 	proto[i++].Set("\\yblur", VariableDataType::FLOAT);
 	proto[i++].Set("\\scale", VariableDataType::FLOAT);
+	// Mangetsu curved text. Keep these before shorter prefix tags such as \c.
+	proto[i++].Set("\\ctan", VariableDataType::INT);
+	proto[i++].Set("\\ctx", VariableDataType::FLOAT, AssParameterClass::ABSOLUTE_SIZE_X);
+	proto[i++].Set("\\cty", VariableDataType::FLOAT, AssParameterClass::ABSOLUTE_SIZE_Y);
+	proto[i++].Set("\\ct", VariableDataType::TEXT, AssParameterClass::DRAWING);
 	proto[i].name = "\\distort";
 	for (int parameter = 0; parameter < 6; ++parameter)
 		proto[i].AddParam(VariableDataType::FLOAT);
@@ -619,7 +624,7 @@ AssOverrideTag::operator std::string() const {
 	std::string result = Name;
 
 	// Determine if it needs parentheses
-	bool parentheses = Params.size() > 1;
+	bool parentheses = Params.size() > 1 || Name == "\\ct";
 	if (parentheses) result += "(";
 
 	// Add parameters

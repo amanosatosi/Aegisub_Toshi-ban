@@ -127,6 +127,8 @@ protected:
 
 	/// Get the line's position if it's set, or it's default based on style if not
 	Vector2D GetLinePosition(AssDialogue *diag);
+	/// Get the line's position at the displayed frame, interpolating \move.
+	Vector2D GetLinePositionAtFrame(AssDialogue *diag);
 	/// Get the line's origin if it's set, or Vector2D::Bad() if not
 	Vector2D GetLineOrigin(AssDialogue *diag);
 	bool GetLineMove(AssDialogue *diag, Vector2D &p1, Vector2D &p2, int &t1, int &t2);

@@ -26,6 +26,7 @@
 #include "../video_display.h"
 #include "../visual_tool_clip.h"
 #include "../visual_tool_cross.h"
+#include "../visual_tool_curved_text.h"
 #include "../visual_tool_drag.h"
 #include "../visual_tool_perspective.h"
 #include "../visual_tool_rotatexy.h"
@@ -104,6 +105,25 @@ namespace {
 		}
 	};
 
+	template<VisualToolCurvedTextMode M>
+	struct visual_tool_curved_text_command : public Command {
+		CMD_TYPE(COMMAND_VALIDATE | COMMAND_RADIO)
+
+		bool Validate(const agi::Context *c) override {
+			return !!c->project->VideoProvider();
+		}
+
+		bool IsActive(const agi::Context *c) override {
+			return c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)) && c->videoDisplay->GetSubTool() == M;
+		}
+
+		void operator()(agi::Context *c) override {
+			if (!c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)))
+				c->videoDisplay->SetTool(agi::make_unique<VisualToolCurvedText>(c->videoDisplay, c));
+			c->videoDisplay->SetSubTool(M);
+		}
+	};
+
 	template<VisualToolPerspectiveSetting M>
 	struct visual_tool_persp_mode : public Command {
 		CMD_TYPE(COMMAND_VALIDATE | COMMAND_RADIO)
@@ -163,6 +183,14 @@ namespace {
 		STR_HELP("Edit Mangetsu distortion or use arch1t3cht's ASS perspective tool")
 	};
 
+	struct visual_mode_curved_text final : public visual_tool_command<VisualToolCurvedText> {
+		CMD_NAME("video/tool/curved_text")
+		CMD_ICON(visual_curved_text)
+		STR_MENU("Curved Text")
+		STR_DISP("Curved Text")
+		STR_HELP("Edit Mangetsu \\ct text-on-path")
+	};
+
 	struct visual_mode_scale final : public visual_tool_command<VisualToolScale> {
 		CMD_NAME("video/tool/scale")
 		CMD_ICON(visual_scale)
@@ -212,10 +240,10 @@ namespace {
 
 	struct visual_mode_perspective_distort final : public visual_tool_persp_mode<PERSP_MODE_DISTORT> {
 		CMD_NAME("video/tool/perspective/distort")
-		CMD_ICON(visual_vector_clip)
+		CMD_ICON(visual_distort)
 		STR_MENU("Mangetsu Distort")
 		STR_DISP("Mangetsu Distort")
-		STR_HELP("Edit Mangetsu \\distort with four normalized quad handles")
+		STR_HELP("Edit Mangetsu \\distort with four quad handles and a position triangle")
 	};
 
 	struct visual_mode_perspective_arch1t3cht final : public visual_tool_persp_mode<PERSP_MODE_ARCH1T3CHT> {
@@ -224,6 +252,57 @@ namespace {
 		STR_MENU("Perspective (arch1t3cht)")
 		STR_DISP("Perspective (arch1t3cht)")
 		STR_HELP("Use the existing perspective quad based on ASS rotation, shear, scale and position tags")
+	};
+
+	struct visual_mode_curved_text_edit final : public visual_tool_curved_text_command<CT_EDIT_PATH> {
+		CMD_NAME("video/tool/curved_text/edit")
+		CMD_ICON(visual_curved_text_edit)
+		STR_MENU("Edit Path")
+		STR_DISP("Edit Path")
+		STR_HELP("Edit Mangetsu \\ct path nodes and Bezier controls")
+	};
+
+	struct visual_mode_curved_text_move final : public visual_tool_curved_text_command<CT_MOVE_PATH> {
+		CMD_NAME("video/tool/curved_text/move")
+		CMD_ICON(visual_curved_text_move)
+		STR_MENU("Move Whole Path")
+		STR_DISP("Move Whole Path")
+		STR_HELP("Move the local \\ct path without changing subtitle position")
+	};
+
+	struct visual_mode_curved_text_ctx final : public visual_tool_curved_text_command<CT_ALONG_OFFSET> {
+		CMD_NAME("video/tool/curved_text/ctx")
+		CMD_ICON(visual_curved_text_ctx)
+		STR_MENU("Along-Path Offset")
+		STR_DISP("Along-Path Offset")
+		STR_HELP("Drag text along the path by editing \\ctx")
+	};
+
+	struct visual_mode_curved_text_cty final : public visual_tool_curved_text_command<CT_NORMAL_OFFSET> {
+		CMD_NAME("video/tool/curved_text/cty")
+		CMD_ICON(visual_curved_text_cty)
+		STR_MENU("Normal Offset")
+		STR_DISP("Normal Offset")
+		STR_HELP("Drag text perpendicular to the path by editing \\cty")
+	};
+
+	struct visual_mode_curved_text_ctan final : public Command {
+		CMD_NAME("video/tool/curved_text/ctan")
+		CMD_ICON(visual_curved_text_ctan)
+		CMD_TYPE(COMMAND_VALIDATE)
+		STR_MENU("Cycle Curved Text Alignment")
+		STR_DISP("Curved Text Alignment")
+		STR_HELP("Cycle \\ctan start / center / end alignment")
+
+		bool Validate(const agi::Context *c) override {
+			return !!c->project->VideoProvider();
+		}
+
+		void operator()(agi::Context *c) override {
+			if (!c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)))
+				c->videoDisplay->SetTool(agi::make_unique<VisualToolCurvedText>(c->videoDisplay, c));
+			c->videoDisplay->SetSubTool(CT_CYCLE_ALIGNMENT);
+		}
 	};
 
 	// Perspective settings
@@ -402,6 +481,7 @@ namespace cmd {
 		reg(agi::make_unique<visual_mode_drag>());
 		reg(agi::make_unique<visual_mode_rotate_z>());
 		reg(agi::make_unique<visual_mode_rotate_xy>());
+		reg(agi::make_unique<visual_mode_curved_text>());
 		reg(agi::make_unique<visual_mode_perspective>());
 		reg(agi::make_unique<visual_mode_scale>());
 		reg(agi::make_unique<visual_mode_clip>());
@@ -417,6 +497,12 @@ namespace cmd {
 		reg(agi::make_unique<visual_mode_perspective_orgmode_nofax>());
 		reg(agi::make_unique<visual_mode_perspective_orgmode_keep>());
 		reg(agi::make_unique<visual_mode_perspective_orgmode_cycle>());
+
+		reg(agi::make_unique<visual_mode_curved_text_edit>());
+		reg(agi::make_unique<visual_mode_curved_text_move>());
+		reg(agi::make_unique<visual_mode_curved_text_ctx>());
+		reg(agi::make_unique<visual_mode_curved_text_cty>());
+		reg(agi::make_unique<visual_mode_curved_text_ctan>());
 
 		reg(agi::make_unique<visual_mode_vclip_drag>());
 		reg(agi::make_unique<visual_mode_vclip_line>());

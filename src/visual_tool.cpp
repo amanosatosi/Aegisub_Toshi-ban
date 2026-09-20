@@ -31,6 +31,7 @@
 #include "video_controller.h"
 #include "video_display.h"
 #include "visual_tool_clip.h"
+#include "visual_tool_curved_text.h"
 #include "visual_tool_drag.h"
 #include "visual_tool_perspective.h"
 #include "visual_tool_vector_clip.h"
@@ -432,6 +433,25 @@ Vector2D VisualToolBase::GetLinePosition(AssDialogue *diag) {
 	return Vector2D(x, y);
 }
 
+Vector2D VisualToolBase::GetLinePositionAtFrame(AssDialogue *diag) {
+	Vector2D start, end;
+	int t1 = 0, t2 = 0;
+	if (!GetLineMove(diag, start, end, t1, t2))
+		return GetLinePosition(diag);
+
+	int duration = diag->End - diag->Start;
+	if (t1 <= 0 && t2 <= 0) {
+		t1 = 0;
+		t2 = duration;
+	}
+	int time = c->videoController->TimeAtFrame(frame_number) - diag->Start;
+	if (time <= t1)
+		return start;
+	if (time >= t2 || t2 <= t1)
+		return end;
+	return start + (end - start) * (static_cast<float>(time - t1) / (t2 - t1));
+}
+
 Vector2D VisualToolBase::GetLineOrigin(AssDialogue *diag) {
 	auto blocks = diag->ParseTags();
 	return vec_or_bad(find_tag(blocks, "\\org"), 0, 1);
@@ -734,5 +754,6 @@ void VisualToolBase::SetOverride(AssDialogue* line, std::string const& tag, std:
 template class VisualTool<VisualDraggableFeature>;
 template class VisualTool<ClipCorner>;
 template class VisualTool<VisualToolDragDraggableFeature>;
+template class VisualTool<VisualToolCurvedTextDraggableFeature>;
 template class VisualTool<VisualToolPerspectiveDraggableFeature>;
 template class VisualTool<VisualToolVectorClipDraggableFeature>;
