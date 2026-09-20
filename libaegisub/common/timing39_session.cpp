@@ -31,9 +31,22 @@ PartitionedCapture PartitionCapture(std::vector<TimingBlock> const& raw, int sta
 	for (size_t i = 0; i < raw.size(); ++i) {
 		auto const& b = raw[i];
 		if (b.end <= start || b.start >= end) continue;
+		if (!b.gap && b.start < start) {
+			// A physical sung block belongs to exactly one dialogue: the one in
+			// which it began. Its tail remains visible in raw diagnostics but is
+			// not manufactured into a new local timing unit.
+			++out.preceding_sung_tails;
+			continue;
+		}
 		TimingBlock local{std::max(start, b.start), std::min(end, b.end), b.gap};
 		if (local.end <= local.start) continue;
-		if (!b.gap && (local.start != b.start || local.end != b.end)) out.clipped = true;
+		if (b.gap && (local.start != b.start || local.end != b.end))
+			out.status = std::max(out.status, PartitionStatus::HarmlessClamp);
+		else if (!b.gap && b.end > end) {
+			auto crossing = b.end - end;
+			out.status = std::max(out.status, crossing <= sung_checkpoint_clamp_tolerance_ms
+				? PartitionStatus::HarmlessClamp : PartitionStatus::AmbiguousSungCrossing);
+		}
 		out.blocks.push_back(local);
 		out.raw_indices.push_back(i);
 	}
@@ -67,7 +80,8 @@ Confidence SessionResult::GetConfidence() const {
 	if (lane < 0 || lane > 1) return Confidence::Yellow;
 	auto status = lanes[lane].match.confidence;
 	if (status == Confidence::Red) return status;
-	if (!reviewed && (association_ambiguous || overlap || lanes[lane].capture.clipped)) return Confidence::Yellow;
+	if (!reviewed && (association_ambiguous || overlap ||
+		lanes[lane].capture.status == PartitionStatus::AmbiguousSungCrossing)) return Confidence::Yellow;
 	return status;
 }
 void Timing39Session::Prepare(std::vector<SessionTarget> targets, bool selected, std::string style, int begin, int finish) {

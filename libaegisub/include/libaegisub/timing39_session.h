@@ -26,10 +26,17 @@ struct SessionTarget {
 	bool selected = false, lyric_evidence = false;
 	std::string discovery_reason;
 };
+// Sung blocks are owned by the dialogue in which they start. This prevents a
+// held note from being duplicated as a new tap merely because its tail crosses
+// the next dialogue start. Gaps are geometric context and may be clipped at
+// either checkpoint without affecting confidence.
+constexpr int sung_checkpoint_clamp_tolerance_ms = 50;
+enum class PartitionStatus { Clean, HarmlessClamp, AmbiguousSungCrossing };
 struct PartitionedCapture {
 	std::vector<TimingBlock> blocks;
 	std::vector<size_t> raw_indices;
-	bool clipped = false;
+	PartitionStatus status = PartitionStatus::Clean;
+	size_t preceding_sung_tails = 0;
 };
 PartitionedCapture PartitionCapture(std::vector<TimingBlock> const&, int start, int end);
 bool HasSungBlocks(std::vector<TimingBlock> const&);

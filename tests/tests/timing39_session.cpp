@@ -42,12 +42,48 @@ TEST(Timing39Session, FailedLineDoesNotShiftLaterLinesAndRetakeIsIsolated) {
 	EXPECT_EQ(primary_raw,s.Raw(0));EXPECT_EQ(secondary,s.Results()[0].lanes[1].capture.blocks);EXPECT_EQ(later,s.Results()[1].lanes[0].capture.blocks);
 	ASSERT_EQ(1u,s.retakes.size());EXPECT_EQ(1u,s.retakes[0].target);EXPECT_EQ(0,s.retakes[0].lane);
 }
-TEST(Timing39Session, CheckpointCrossingPreservesRawAndRequiresReview) {
-	Timing39Session s;s.Prepare({Target(1,100,200,u8"み"),Target(2,200,300,u8"く")},true,"opaque style",0,300);Start(s);
-	Tap(s,'F',150,250);s.Stop(300);ASSERT_EQ(2u,s.Results().size());
-	for(auto const& r:s.Results()){EXPECT_TRUE(r.lanes[0].capture.clipped);EXPECT_EQ(Confidence::Yellow,r.GetConfidence());}
-	EXPECT_EQ((TimingBlock{150,250,false}),s.Raw(0)[1]);
-	EXPECT_EQ((TimingBlock{150,200,false}),s.Results()[0].lanes[0].capture.blocks[1]);
+TEST(Timing39Session, MeaningfulSungCheckpointCrossingRequiresReviewOnlyForOwner) {
+	Timing39Session s;s.Prepare({Target(1,100,200,u8"み"),Target(2,200,320,u8"く")},true,"opaque style",0,320);Start(s);
+	Tap(s,'F',150,280);Tap(s,'J',290,310);s.Stop(320);ASSERT_EQ(2u,s.Results().size());
+	EXPECT_EQ(PartitionStatus::AmbiguousSungCrossing,s.Results()[0].lanes[0].capture.status);
+	EXPECT_EQ(Confidence::Yellow,s.Results()[0].GetConfidence());
+	EXPECT_EQ(1u,s.Results()[1].lanes[0].capture.preceding_sung_tails);
+	auto const& second=s.Results()[1].lanes[0].capture.blocks;
+	EXPECT_EQ(1u,std::count_if(second.begin(),second.end(),[](TimingBlock const& b){return !b.gap;}));
+	EXPECT_NE(second.end(),std::find(second.begin(),second.end(),TimingBlock{290,310,false}));
+	EXPECT_EQ(Confidence::Green,s.Results()[1].GetConfidence());
+	EXPECT_EQ((TimingBlock{150,280,false}),s.Raw(0)[1]);
+}
+
+TEST(Timing39Session, HarmlessSungOverhangsKeepMatchStatus) {
+	for(int overhang:{5,27,50}) {
+		auto capture=PartitionCapture({{100,180,false},{180,200+overhang,false}},100,200);
+		EXPECT_EQ(PartitionStatus::HarmlessClamp,capture.status);
+		ASSERT_EQ(2u,capture.blocks.size());
+		EXPECT_EQ((TimingBlock{180,200,false}),capture.blocks[1]);
+		SessionResult result;result.lane=0;result.lanes[0].capture=capture;
+		result.lanes[0].match=Match(Analyze(u8"みく"),capture.blocks);
+		EXPECT_EQ(Confidence::Green,result.lanes[0].match.confidence);
+		EXPECT_EQ(Confidence::Green,result.GetConfidence())<<overhang;
+	}
+}
+
+TEST(Timing39Session, PreviousLineSungTailIsNotANewSekaiMadeTap) {
+	auto capture=PartitionCapture({
+		{191937,192452,false},
+		{192640,192780,false},{192796,193124,false},{193140,193468,false},
+		{193484,193687,false},{193687,194155,false}
+	},192390,194200);
+	EXPECT_EQ(1u,capture.preceding_sung_tails);
+	EXPECT_EQ(PartitionStatus::Clean,capture.status);
+	ASSERT_EQ(5u,capture.blocks.size());
+	EXPECT_EQ(5u,std::count_if(capture.blocks.begin(),capture.blocks.end(),[](TimingBlock const& b){return !b.gap;}));
+	auto analysis=Analyze(u8"<世|せ><界|かい>まで");
+	ASSERT_EQ(5u,analysis.morae.size());
+	auto match=Match(analysis,capture.blocks);
+	EXPECT_EQ(Confidence::Green,match.confidence)<<match.reason;
+	ASSERT_EQ(1u,match.paths.size());
+	for(auto const& assignment:match.paths[0].assignments)EXPECT_EQ(1u,assignment.mora_count);
 }
 TEST(Timing39Session, ExplicitScopeAndConservativeDiscovery) {
 	auto selected=Target(1,100,200);selected.lyric_evidence=false;
