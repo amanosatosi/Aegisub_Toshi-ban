@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <libaegisub/timing39.h>
+#include "timing39_ui.h"
 #include <algorithm>
 using namespace agi::timing39;
 namespace {
@@ -104,8 +105,14 @@ TEST(Timing39, RealLyricsAndConfidence) {
 	auto a=Analyze(u8"自分の価値に目を疑って");ASSERT_TRUE(a.error.empty())<<a.error;ASSERT_EQ(14u,a.morae.size());auto r=Match(a,Taps(14));ASSERT_FALSE(r.paths.empty());for(auto const& x:r.paths[0].assignments)EXPECT_EQ(1u,x.mora_count);
 	a=Analyze(u8"<僕は始まった栄光のゴールを見たいのさ|ぼくわはじまったえいこうのごーるをみたいのさ>");ASSERT_EQ(22u,a.morae.size());r=Match(a,Taps(21));ASSERT_FALSE(r.paths.empty());EXPECT_EQ(21u,r.paths[0].assignments.size());
 	bool ground_truth=false;for(auto const& path:r.paths)for(auto const& x:path.assignments)if(x.first_mora==13&&x.mora_count==2)ground_truth=true;EXPECT_TRUE(ground_truth);EXPECT_EQ(2u,r.paths.front().assignments[13].mora_count);
-	a=Analyze(u8"<いっせーのーで鳴り響いたスタートの合図|いっせーのーでなりひびいたすたーとのあいず>");ASSERT_EQ(21u,a.morae.size());r=Match(a,Taps(18));ASSERT_GT(r.paths.size(),1u);EXPECT_EQ(18u,r.paths[0].assignments.size());EXPECT_EQ(Confidence::Yellow,r.confidence);EXPECT_FALSE(Has(a,u8"のあ"));
+	a=Analyze(u8"<いっせーのーで鳴り響いたスタートの合図|いっせーのーでなりひびいたすたーとのあいず>");ASSERT_EQ(21u,a.morae.size());r=Match(a,Taps(18));ASSERT_GT(r.paths.size(),1u);EXPECT_EQ(18u,r.paths[0].assignments.size());EXPECT_EQ(Confidence::Yellow,r.confidence);EXPECT_FALSE(r.ambiguous_mora_boundaries.empty());EXPECT_FALSE(agi::timing39::ui::CompactAmbiguity(a,r).empty());EXPECT_FALSE(Has(a,u8"のあ"));
 	auto more=Match(a,Taps(21));EXPECT_EQ(Confidence::Green,more.confidence);EXPECT_EQ(21u,a.morae.size());
+}
+TEST(Timing39, ResultsStatusStylesAreDistinct) {
+	using agi::timing39::ui::StatusStyle;
+	auto green=StatusStyle(Confidence::Green),yellow=StatusStyle(Confidence::Yellow),red=StatusStyle(Confidence::Red);
+	EXPECT_NE(green.accent.red,yellow.accent.red);EXPECT_NE(yellow.accent.red,red.accent.red);
+	EXPECT_NE(green.role,yellow.role);EXPECT_NE(yellow.role,red.role);
 }
 TEST(Timing39, DurationRanksOnlyLegalPaths) {
 	auto a=Analyze(u8"こーこー");auto blocks=Taps(3);blocks[0].end=200;blocks[1]={200,300,false};blocks[2]={300,400,false};

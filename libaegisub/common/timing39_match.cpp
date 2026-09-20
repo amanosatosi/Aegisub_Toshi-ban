@@ -120,6 +120,15 @@ MatchResult Match(Analysis const& a,std::vector<TimingBlock> const& blocks,Scori
 	result.confidence=result.margin<weights.ambiguity_margin?Confidence::Yellow:Confidence::Green;
 	result.reason=result.confidence==Confidence::Yellow?"Several legal paths remain close after language and duration scoring":"Clear preferred legal assignment";
 	if(result.confidence==Confidence::Yellow) {
+		auto has_boundary=[](MatchPath const& path,size_t boundary) {
+			return std::any_of(path.assignments.begin(),path.assignments.end(),[&](TimingAssignment const& x){return x.first_mora+x.mora_count==boundary;});
+		};
+		for(size_t boundary=1;boundary<m;++boundary) {
+			bool first=has_boundary(result.paths[0],boundary),disputed=false;
+			for(size_t i=1;i<result.paths.size() && result.paths[i].cost-result.paths[0].cost<weights.ambiguity_margin;++i)
+				disputed|=has_boundary(result.paths[i],boundary)!=first;
+			if(disputed)result.ambiguous_mora_boundaries.push_back(boundary);
+		}
 		for(size_t i=1;i<result.paths.size() && result.paths[i].cost-result.paths[0].cost<weights.ambiguity_margin;++i)
 			for(size_t j=1;j<n;++j) if(result.paths[i].assignments[j].first_mora!=result.paths[0].assignments[j].first_mora) result.uncertain_boundaries.push_back(j);
 		std::sort(result.uncertain_boundaries.begin(),result.uncertain_boundaries.end());

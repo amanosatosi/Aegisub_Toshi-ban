@@ -2,6 +2,7 @@
 #include "audio_timing.h"
 #include "timing39_karaoke.h"
 #include "timing39_session_setup.h"
+#include "timing39_ui.h"
 #include "frame_main.h"
 #include "video_controller.h"
 #include "ass_dialogue.h"
@@ -24,15 +25,54 @@
 #include <wx/dialog.h>
 #include <wx/eventfilter.h>
 #include <wx/listbox.h>
+#include <wx/settings.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 #include <wx/timer.h>
+#include <wx/vlbox.h>
 #include <wx/filedlg.h>
 #include <wx/ffile.h>
 
 namespace {
 namespace t39 = agi::timing39;
+namespace t39ui = agi::timing39::ui;
+
+class Timing39ResultsList final : public wxVListBox {
+	struct Row { wxString text; t39::Confidence status; };
+	std::vector<Row> items;
+	static wxColour Colour(t39ui::Rgb rgb) {return {rgb.red,rgb.green,rgb.blue};}
+	static wxColour Blend(wxColour base,wxColour tint,int tint_percent) {
+		auto channel=[&](int a,int b){return static_cast<unsigned char>((a*(100-tint_percent)+b*tint_percent)/100);};
+		return {channel(base.Red(),tint.Red()),channel(base.Green(),tint.Green()),channel(base.Blue(),tint.Blue())};
+	}
+	wxCoord OnMeasureItem(size_t) const override {return std::max<wxCoord>(28,GetCharHeight()+12);}
+	void OnDrawBackground(wxDC&,wxRect const&,size_t) const override { }
+	void OnDrawItem(wxDC& dc,wxRect const& rect,size_t item) const override {
+		auto visual=t39ui::StatusStyle(items[item].status);
+		auto accent=Colour(visual.accent);
+		auto window=wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
+		bool selected=IsSelected(item);
+		wxColour background;
+		if(selected)background=wxSystemSettings::GetColour(wxSYS_COLOUR_HIGHLIGHT);
+		else {
+			int luminance=(window.Red()*299+window.Green()*587+window.Blue()*114)/1000;
+			background=luminance>128?Colour(visual.tint):Blend(window,accent,18);
+		}
+		dc.SetPen(*wxTRANSPARENT_PEN);dc.SetBrush(wxBrush(background));dc.DrawRectangle(rect);
+		dc.SetBrush(wxBrush(accent));dc.DrawRectangle(rect.x,rect.y,6,rect.height);
+		dc.SetFont(GetFont());
+		dc.SetTextForeground(selected?wxSystemSettings::GetColour(wxSYS_COLOUR_HIGHLIGHTTEXT):wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT));
+		dc.SetClippingRegion(rect);
+		dc.DrawText(items[item].text,rect.x+13,rect.y+(rect.height-dc.GetCharHeight())/2);
+		dc.DestroyClippingRegion();
+	}
+public:
+	explicit Timing39ResultsList(wxWindow* parent):wxVListBox(parent,wxID_ANY) {SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));}
+	void ClearRows(){items.clear();SetItemCount(0);Refresh();}
+	void AppendRow(wxString text,t39::Confidence status){items.push_back({std::move(text),status});SetItemCount(items.size());}
+};
+
 class AudioTimingController39 final : public AudioTimingController, public wxEventFilter {
  agi::Context* c;
  t39::Timing39Session session;
@@ -41,15 +81,17 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  std::vector<agi::signal::Connection> connections;
  wxTimer countdown;
  wxDialog *panel=nullptr,*inspector=nullptr;
- wxListBox *rows=nullptr,*assignments=nullptr;
+ Timing39ResultsList *rows=nullptr;
+ wxListBox *assignments=nullptr;
  wxChoice *lane_choice=nullptr,*paths=nullptr;
  wxStaticText *status=nullptr;
+ wxButton *raw_toggle=nullptr;
  wxTextCtrl *reading=nullptr,*details=nullptr;
  size_t selected=0;
  int selected_lane=0,last_position=0;
  unsigned rhythm_serial=0;
  std::array<bool,4> physical_held{{false,false,false,false}};
- bool committing=false,refreshing=false;
+ bool committing=false,refreshing=false,show_full_session_raw=false;
  std::string notice;
  int Preroll() const {return std::max(0,int(OPT_GET("Audio/Lead/IN")->GetInt()));}
  void Notify(){AnnounceMarkerMoved();AnnounceLabelChanged();}
@@ -110,19 +152,51 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   if(inspector)inspector->Hide();Update();Notify();
  }
  void Update() {
-  if(!panel)return;refreshing=true;rows->Clear();
-  for(auto const& r:session.Results())rows->Append(to_wx(Color(r.GetConfidence())+(r.committed?" [committed] ":r.reviewed?" [reviewed] ":" ")+std::to_string(r.target.start)+"–"+std::to_string(r.target.end)+"  "+r.target.style+"  "+r.target.analysis.surface));
-  if(auto r=Current()) {
-   rows->SetSelection(int(selected));lane_choice->SetSelection(r->lane+1);
-   status->SetLabel(to_wx(notice.empty()?r->target.discovery_reason+"; "+r->lanes[selected_lane].match.reason:notice));
+   if(!panel)return;refreshing=true;rows->ClearRows();
+   for(auto const& r:session.Results())rows->AppendRow(to_wx(Color(r.GetConfidence())+(r.committed?" [committed] ":r.reviewed?" [reviewed] ":" ")+std::to_string(r.target.start)+"–"+std::to_string(r.target.end)+"  "+r.target.style+"  "+r.target.analysis.surface),r.GetConfidence());
+   if(auto r=Current()) {
+    rows->SetSelection(int(selected));lane_choice->SetSelection(r->lane+1);
+    status->SetLabel(to_wx(notice.empty()?r->target.discovery_reason+"\n"+t39ui::CompactResultReason(*r,selected_lane):notice));
   }else status->SetLabel(to_wx(notice.empty()?"No captured lyric targets. Toggle 39 Mode to start again.":notice));
   if(inspector)UpdateInspector();
   panel->Layout();refreshing=false;
  }
- std::string Group(t39::Analysis const& a,t39::TimingAssignment const& x) const {
+  std::string Group(t39::Analysis const& a,t39::TimingAssignment const& x) const {
   std::string out;for(size_t i=0;i<x.mora_count;++i)out+=a.morae[x.first_mora+i].text;return out;
- }
- void UpdateInspector() {
+  }
+  static std::string PartitionName(t39::PartitionedCapture const& capture) {
+   if(capture.status==t39::PartitionStatus::AmbiguousSungCrossing)return "ambiguous sung checkpoint crossing";
+   if(capture.status==t39::PartitionStatus::HarmlessClamp)return "harmless checkpoint clamp";
+   return "clean";
+  }
+  std::string InspectorSummary(t39::SessionResult const& r,t39::SessionLaneResult const& l) const {
+   std::string text=full_start.Describe();
+   text+="Primary session segments: "+std::to_string(session.Raw(0).size())+"\n";
+   text+="Secondary session segments: "+std::to_string(session.Raw(1).size())+"\n";
+   text+="Local segments: "+std::to_string(l.capture.blocks.size())+"\n";
+   text+="Local sung taps: "+std::to_string(t39ui::SungTapCount(l.capture))+"\n";
+   text+="Previous-line sung tails excluded: "+std::to_string(l.capture.preceding_sung_tails)+"\n";
+   text+="Partition: "+PartitionName(l.capture)+"\n\n";
+   text+=t39ui::CompactResultReason(r,selected_lane)+"\n\nMORAE\n";
+   for(size_t i=0;i<r.target.analysis.morae.size();++i)text+=std::to_string(i)+" ["+r.target.analysis.morae[i].text+"]\n";
+   text+="\nLOCAL BLOCKS\n";
+   for(size_t i=0;i<l.capture.blocks.size();++i){auto const& b=l.capture.blocks[i];text+=std::to_string(i)+" "+std::to_string(b.start)+".."+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");}
+   text+="\nRELEVANT CANDIDATES\n";
+   bool any=false;
+   for(auto const& edges:r.target.analysis.graph)for(auto const& edge:edges)if(edge.count>1){
+    any=true;std::string group;for(size_t i=0;i<edge.count;++i)group+=r.target.analysis.morae[edge.first+i].text;
+    text+="["+group+"] "+(edge.features.strength==t39::CandidateStrength::Soft?"SOFT ":"STRONG ")+edge.reason+"\n";
+   }
+   if(!any)text+="(none)\n";
+   text+="\nLOCAL RAW INDICES ";for(auto index:l.capture.raw_indices)text+=std::to_string(index)+" ";text+="\n";
+   if(show_full_session_raw) {
+    text+="\nSESSION RAW F/J\n";for(auto const& b:session.Raw(0))text+=std::to_string(b.start)+" "+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");
+    text+="SESSION RAW D/K\n";for(auto const& b:session.Raw(1))text+=std::to_string(b.start)+" "+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");
+    for(auto const& take:session.retakes){text+="RETAKE target="+std::to_string(take.target)+" lane="+std::to_string(take.lane)+"\n";for(auto const& b:take.raw)text+=std::to_string(b.start)+" "+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");}
+   }
+   return text;
+  }
+  void UpdateInspector() {
   auto r=Current();if(!r)return;auto& l=r->lanes[selected_lane];
   reading->ChangeValue(to_wx(r->target.analysis.surface));
   int divider=assignments->GetSelection();assignments->Clear();paths->Clear();
@@ -135,12 +209,8 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    std::string text;for(auto const& x:l.match.paths[i].assignments)text+="["+Group(r->target.analysis,x)+"]";
    paths->Append(to_wx(text));if(l.editor.Get()==l.match.paths[i].assignments)paths->SetSelection(int(i));
   }
-  std::string extra="\n"+full_start.Describe()+"SESSION RAW F/J\n";
-  for(int lane=0;lane<2;++lane){if(lane)extra+="SESSION RAW D/K\n";for(auto const& b:session.Raw(lane))extra+=std::to_string(b.start)+" "+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");}
-  for(auto const& take:session.retakes){extra+="RETAKE target="+std::to_string(take.target)+" lane="+std::to_string(take.lane)+"\n";for(auto const& b:take.raw)extra+=std::to_string(b.start)+" "+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");}
-  extra+="LOCAL RAW INDICES ";for(auto i:l.capture.raw_indices)extra+=std::to_string(i)+" ";
-  extra+=l.capture.clipped?"\nCLIPPED at dialogue checkpoint; review required\n":"\n";
-  details->ChangeValue(to_wx(t39::Inspect(r->target.analysis,l.capture.blocks,l.match,&l.editor)+extra));
+   if(raw_toggle)raw_toggle->SetLabel(show_full_session_raw ? _("Hide full session raw capture") : _("Show full session raw capture"));
+   details->ChangeValue(to_wx(InspectorSummary(*r,l)));
  }
  void Button(wxWindow* parent,wxSizer* s,wxString const& label,std::function<void()> fn) {
   auto b=new wxButton(parent,wxID_ANY,label);s->Add(b,0,wxALL,3);b->Bind(wxEVT_BUTTON,[fn](wxCommandEvent&){fn();});
@@ -148,7 +218,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  void MakePanel() {
   panel=new wxDialog(c->parent,wxID_ANY,_("39 Mode — session results"),wxDefaultPosition,wxSize(820,460),wxDEFAULT_DIALOG_STYLE|wxRESIZE_BORDER);
   auto root=new wxBoxSizer(wxVERTICAL);status=new wxStaticText(panel,wxID_ANY,"");root->Add(status,0,wxEXPAND|wxALL,8);
-  rows=new wxListBox(panel,wxID_ANY);root->Add(rows,1,wxEXPAND|wxALL,8);
+   rows=new Timing39ResultsList(panel);root->Add(rows,1,wxEXPAND|wxALL,8);
   auto select=new wxBoxSizer(wxHORIZONTAL);lane_choice=new wxChoice(panel,wxID_ANY);lane_choice->Append(_("Unresolved lane"));lane_choice->Append(_("F/J primary"));lane_choice->Append(_("D/K secondary"));select->Add(lane_choice,0,wxALL,3);
   Button(panel,select,_("Mark reviewed"),[this]{if(auto r=Current()){r->reviewed=r->lane>=0;notice=r->reviewed?"Selected line reviewed":"Choose its lane first";Update();}});
   Button(panel,select,_("Inspector"),[this]{ShowInspector();});
@@ -165,10 +235,13 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    inspector=new wxDialog(panel,wxID_ANY,_("39 Mode — selected line Inspector"),wxDefaultPosition,wxSize(800,650),wxDEFAULT_DIALOG_STYLE|wxRESIZE_BORDER);
    auto root=new wxBoxSizer(wxVERTICAL);reading=new wxTextCtrl(inspector,wxID_ANY);root->Add(reading,0,wxEXPAND|wxALL,6);
    Button(inspector,root,_("Apply explicit reading"),[this]{auto r=Current();if(!r)return;auto a=t39::Analyze(from_wx(reading->GetValue()));if(!a.error.empty()){notice=a.error;Update();return;}a.source=r->target.analysis.source;r->target.analysis=std::move(a);session.Rematch(selected,0);session.Rematch(selected,1);Update();});
-   paths=new wxChoice(inspector,wxID_ANY);root->Add(paths,0,wxEXPAND|wxALL,6);
+    root->Add(new wxStaticText(inspector,wxID_ANY,_("Advanced candidate paths (full line)")),0,wxLEFT|wxRIGHT|wxTOP,6);
+    paths=new wxChoice(inspector,wxID_ANY);root->Add(paths,0,wxEXPAND|wxALL,6);
    assignments=new wxListBox(inspector,wxID_ANY);root->Add(assignments,1,wxEXPAND|wxALL,6);
    auto edit=new wxBoxSizer(wxHORIZONTAL);Button(inspector,edit,_("← Mora"),[this]{Move(-1);});Button(inspector,edit,_("Mora →"),[this]{Move(1);});Button(inspector,edit,_("Undo"),[this]{History(false);});Button(inspector,edit,_("Redo"),[this]{History(true);});root->Add(edit,0);
-   details=new wxTextCtrl(inspector,wxID_ANY,"",wxDefaultPosition,wxSize(-1,240),wxTE_MULTILINE|wxTE_READONLY|wxTE_DONTWRAP);root->Add(details,1,wxEXPAND|wxALL,6);
+    details=new wxTextCtrl(inspector,wxID_ANY,"",wxDefaultPosition,wxSize(-1,240),wxTE_MULTILINE|wxTE_READONLY|wxTE_DONTWRAP);root->Add(details,1,wxEXPAND|wxALL,6);
+    raw_toggle=new wxButton(inspector,wxID_ANY,_("Show full session raw capture"));root->Add(raw_toggle,0,wxLEFT|wxRIGHT|wxBOTTOM,6);
+    raw_toggle->Bind(wxEVT_BUTTON,[this](wxCommandEvent&){show_full_session_raw=!show_full_session_raw;UpdateInspector();});
    Button(inspector,root,_("Save inspection"),[this]{wxFileDialog save(inspector,_("Save inspection"),"","39-mode.txt",_("Text files (*.txt)|*.txt"),wxFD_SAVE|wxFD_OVERWRITE_PROMPT);if(save.ShowModal()==wxID_OK){wxFFile f(save.GetPath(),"w");if(f.IsOpened())f.Write(details->GetValue(),wxConvUTF8);}});
    paths->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){auto r=Current();int p=paths->GetSelection();if(!r||p<0)return;auto& l=r->lanes[selected_lane];l.editor.Choose(r->target.analysis,l.match.paths[size_t(p)].assignments);r->reviewed=false;Update();});
    assignments->Bind(wxEVT_KEY_DOWN,[this](wxKeyEvent& e){if(e.GetKeyCode()==WXK_LEFT)Move(-1);else if(e.GetKeyCode()==WXK_RIGHT)Move(1);else e.Skip();});

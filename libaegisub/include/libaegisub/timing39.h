@@ -136,6 +136,7 @@ struct MatchResult {
 	std::string reason;
 	std::vector<MatchPath> paths;
 	std::vector<size_t> uncertain_boundaries;
+	std::vector<size_t> ambiguous_mora_boundaries;
 };
 MatchResult Match(Analysis const&, std::vector<TimingBlock> const&, ScoringModel const& = {});
 bool ValidAssignments(Analysis const&, std::vector<TimingBlock> const&, std::vector<TimingAssignment> const&);
