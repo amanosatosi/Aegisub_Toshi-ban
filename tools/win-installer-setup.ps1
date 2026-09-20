@@ -182,17 +182,11 @@ if (!(Test-Path SCXVid)) {
 	Invoke-WebRequestWithRetry -Uri $scxUrl -OutFile vapoursynth-scxvid-v1-win64.7z
 	7z x vapoursynth-scxvid-v1-win64.7z
 	Remove-Item vapoursynth-scxvid-v1-win64.7z
+	if (!(Test-Path "libscxvid.dll")) {
+		throw "SCXVid archive did not contain libscxvid.dll."
+	}
 	Set-Location $DepsDir
 }
-
-# WWXD
-if (!(Test-Path WWXD)) {
-	New-Item -ItemType Directory WWXD
-	$wwxdReleases = Invoke-WebRequest "https://api.github.com/repos/dubhater/vapoursynth-wwxd/releases/latest" -Headers $GitHeaders -UseBasicParsing | ConvertFrom-Json
-	$wwxdUrl = "https://github.com/dubhater/vapoursynth-wwxd/releases/download/" + $wwxdReleases.tag_name + "/libwwxd64.dll"
-	Invoke-WebRequestWithRetry -Uri $wwxdUrl -OutFile WWXD/libwwxd64.dll
-}
-
 
 # ffi-experiments
 if (!(Test-Path ffi-experiments)) {

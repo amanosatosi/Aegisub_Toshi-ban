@@ -205,18 +205,19 @@ def wrap_lwlibavsource(filename: str, cachedir: str | None = None, **kwargs: Any
     return clip, info_from_lwindex(cachefile)
 
 
-def make_keyframes(clip: vs.VideoNode, use_scxvid: bool = False,
+def make_keyframes(clip: vs.VideoNode, use_scxvid: bool = True,
                    resize_h: int = 360, resize_format: int = vs.GRAY8,
                    **kwargs: Any) -> List[int]:
     """
-    Generates a list of keyframes from a clip, using either WWXD or Scxvid.
+    Generates a list of keyframes from a clip using SCXVid.
 
     :param clip:             Clip to process.
-    :param use_scxvid:       Whether to use Scxvid. If False, the function uses WWXD.
+    :param use_scxvid:       Deprecated compatibility argument. Both True and False
+                             use SCXVid so old scripts safely migrate to it.
     :param resize_h:         Height to resize the clip to before processing.
     :param resize_format:    Format to convert the clip to before processing.
 
-    The remaining keyword arguments are passed on to the respective filter.
+    The remaining keyword arguments are passed on to SCXVid.
     """
 
     progress_set_message("Generating keyframes")
@@ -224,18 +225,14 @@ def make_keyframes(clip: vs.VideoNode, use_scxvid: bool = False,
 
     clip = core.resize.Bilinear(clip, width=resize_h * clip.width // clip.height, height=resize_h, format=resize_format)
 
-    if use_scxvid:
-        ensure_plugin("scxvid", "libscxvid", "To use the keyframe generation, the scxvid plugin for VapourSynth must be installed")
-        clip = core.scxvid.Scxvid(clip, **kwargs)
-    else:
-        ensure_plugin("wwxd", "libwwxd64", "To use the keyframe generation, the wwxdplugin for VapourSynth must be installed")
-        clip = core.wwxd.WWXD(clip, **kwargs)
+    ensure_plugin("scxvid", "libscxvid", "To use the keyframe generation, the scxvid plugin for VapourSynth must be installed")
+    clip = core.scxvid.Scxvid(clip, **kwargs)
 
     keyframes = {}
     done = 0
     def _cb(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
         nonlocal done
-        keyframes[n] = f.props._SceneChangePrev if use_scxvid else f.props.Scenechange # type: ignore
+        keyframes[n] = f.props._SceneChangePrev # type: ignore
         done += 1
         if done % max(1, clip.num_frames // 200) == 0:
             progress_set_progress(100 * done / clip.num_frames)
@@ -279,7 +276,7 @@ def get_keyframes(filename: str, clip: vs.VideoNode, fallback: str | List[int],
     """
     Looks for a keyframes file for the given filename.
     If no file was found, this function can generate a keyframe file for the given clip next
-    to the given filename using WWXD or Scxvid (see the make_keyframes docstring).
+    to the given filename using SCXVid (see the make_keyframes docstring).
     Whether or not keyframes are generated depends on the `generate` argument.
     Depending on the `generate` argument, the function will
     - always generate keyframes when no file was found

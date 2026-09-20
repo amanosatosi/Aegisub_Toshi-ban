@@ -9,4 +9,3 @@ DestDir: {app}\csri; Source: {#DEPS_DIR}\VSFilter\x64\VSFilter.dll; Flags: ignor
 DestDir: {app}\vapoursynth; Source: {#DEPS_DIR}\L-SMASH-Works\libvslsmashsource.dll; Flags: ignoreversion; Components: vapoursynth
 DestDir: {app}\vapoursynth; Source: {#DEPS_DIR}\BestSource\BestSource.dll; Flags: ignoreversion; Components: vapoursynth
 DestDir: {app}\vapoursynth; Source: {#DEPS_DIR}\SCXVid\libscxvid.dll; Flags: ignoreversion; Components: vapoursynth
-DestDir: {app}\vapoursynth; Source: {#DEPS_DIR}\WWXD\libwwxd64.dll; Flags: ignoreversion; Components: vapoursynth

@@ -75,7 +75,6 @@ Write-Output 'Copying - codecs\VapourSynth'
 Copy-New-Item $InstallerDepsDir\L-SMASH-Works\libvslsmashsource.dll  $PortableOutputDir\vapoursynth
 Copy-New-Item $InstallerDepsDir\BestSource\BestSource.dll  $PortableOutputDir\vapoursynth
 Copy-New-Item $InstallerDepsDir\SCXVid\libscxvid.dll  $PortableOutputDir\vapoursynth
-Copy-New-Item $InstallerDepsDir\WWXD\libwwxd64.dll  $PortableOutputDir\vapoursynth
 Write-Output 'Copying - codecs\VSFilter'
 Copy-New-Item $InstallerDepsDir\VSFilter\x64\VSFilter.dll  $PortableOutputDir\csri
 Write-Output 'Copying - runtimes\MS-CRT'
