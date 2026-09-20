@@ -6,6 +6,7 @@
 
 #include "visual_tool_curved_text.h"
 
+#include "video_display.h"
 #include "ass_dialogue.h"
 #include "command/command.h"
 #include "compat.h"
