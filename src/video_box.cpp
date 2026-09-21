@@ -47,7 +47,7 @@
 #include "video_display.h"
 #include "video_slider.h"
 
-#include <libaegisub/parser.h>
+#include <libaegisub/color.h>
 
 #include <boost/range/algorithm/binary_search.hpp>
 #include <algorithm>
@@ -76,10 +76,16 @@ agi::Color InitialFadeColor(std::string const& text, agi::ass::FadeSide side) {
 		(value.back() == 'a' || value.back() == 'A'))
 		value.resize(value.size() - 2);
 
-	agi::Color color;
-	if (!agi::parser::parse(color, value))
+	size_t pos = 0;
+	if (pos < value.size() && value[pos] == '&') ++pos;
+	if (pos < value.size() && (value[pos] == 'H' || value[pos] == 'h')) ++pos;
+	size_t const hex_start = pos;
+	while (pos < value.size() && std::isxdigit(static_cast<unsigned char>(value[pos]))) ++pos;
+	size_t const hex_length = pos - hex_start;
+	if (pos < value.size() && value[pos] == '&') ++pos;
+	if (pos != value.size() || (hex_length != 6 && hex_length != 8))
 		return agi::Color();
-	return color;
+	return agi::Color(value);
 }
 
 }
