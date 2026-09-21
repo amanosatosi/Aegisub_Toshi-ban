@@ -87,11 +87,44 @@ first edit. Unknown or malformed path commands are left untouched rather than
 being partially normalized. Static tags are edited; `\ct` inside `\t(...)` is
 not an editing target.
 
+### Mangetsu Perspective (`\perspective`)
+
+The Perspective visual tool now has three explicit, non-destructive submodes:
+
+- **Perspective** (default) edits Mangetsu's true projective
+  `\perspective(x0,y0,x1,y1,x2,y2,x3,y3)` corner pin.
+- **Distort** edits Mangetsu's separate bilinear `\distort` deformation.
+- **arch1t3ct** keeps the existing ASS rotation/shear/scale approximation.
+
+Perspective uses P0 top-left, P1 top-right, P2 bottom-right, and P3 bottom-left,
+exactly matching the renderer. Existing tags are read without conversion when
+switching modes. Selecting the mode is read-only; a line with no tag shows a
+provisional identity quad and receives `\perspective` only on the first corner
+edit. The solid quad distinguishes this mode from Distort's dashed quad and
+from the arch1t3ct compatibility controls.
+
+The triangle is the positioning-anchor handle. Dragging it updates `\pos`, or
+translates both endpoints of an existing `\move`, while leaving all eight
+perspective coordinates unchanged. A drag uses the visual-tool base class's
+single coalesced undo transaction.
+
+Existing tags use their literal local-to-anchor coordinates, so their overlay
+handles agree exactly with Mangetsu. For a new tag, the provisional source
+plane uses Aegisub's full-event metric/drawing extents, excludes
+border/blur/shadow, applies the visual tool's normal ASS local transform, and
+includes an active Distort warp before taking the source AABB. This is a close
+authoring approximation: Aegisub does not currently expose libassmod's exact
+post-shaping outline/control-point bounds to visual tools, and mixed-style
+events with multiple independently distorted runs may differ until a corner is
+placed. The video subtitle itself always comes from the selected real renderer;
+the overlay draws only handles and guides.
+
 ### Mangetsu Distort (`\distort`)
 
 The **Mangetsu Distort** sub-mode edits the renderer's bilinear artistic
-deformation. It is not true projective perspective; the separate arch1t3cht
-Perspective mode remains available and keeps its existing ASS-tag approximation.
+deformation. It is not true projective perspective; the separate Perspective
+mode authors `\perspective`, while arch1t3ct remains available with its existing
+ASS-tag approximation.
 
 The distortion source bounds now follow the first compactable same-style visual
 run across ordinary spaces, consecutive spaces and NBSP. Whitespace advances

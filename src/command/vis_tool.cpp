@@ -180,7 +180,7 @@ namespace {
 		CMD_ICON(visual_perspective)
 		STR_MENU("Perspective / Distort")
 		STR_DISP("Perspective / Distort")
-		STR_HELP("Edit Mangetsu distortion or use arch1t3cht's ASS perspective tool")
+		STR_HELP("Edit true Mangetsu perspective, bilinear distortion, or the arch1t3ct ASS approximation")
 	};
 
 	struct visual_mode_curved_text final : public visual_tool_command<VisualToolCurvedText> {
@@ -238,20 +238,28 @@ namespace {
 		}
 	};
 
+	struct visual_mode_perspective_true final : public visual_tool_persp_mode<PERSP_MODE_PERSPECTIVE> {
+		CMD_NAME("video/tool/perspective/true")
+		CMD_ICON(visual_perspective)
+		STR_MENU("Perspective")
+		STR_DISP("Perspective")
+		STR_HELP("True Mangetsu projective corner pin (\\perspective)")
+	};
+
 	struct visual_mode_perspective_distort final : public visual_tool_persp_mode<PERSP_MODE_DISTORT> {
 		CMD_NAME("video/tool/perspective/distort")
 		CMD_ICON(visual_distort)
-		STR_MENU("Mangetsu Distort")
-		STR_DISP("Mangetsu Distort")
-		STR_HELP("Edit Mangetsu \\distort with four quad handles and a position triangle")
+		STR_MENU("Distort")
+		STR_DISP("Distort")
+		STR_HELP("Mangetsu bilinear deformation (\\distort)")
 	};
 
 	struct visual_mode_perspective_arch1t3cht final : public visual_tool_persp_mode<PERSP_MODE_ARCH1T3CHT> {
 		CMD_NAME("video/tool/perspective/arch1t3cht")
-		CMD_ICON(visual_perspective)
-		STR_MENU("Perspective (arch1t3cht)")
-		STR_DISP("Perspective (arch1t3cht)")
-		STR_HELP("Use the existing perspective quad based on ASS rotation, shear, scale and position tags")
+		CMD_ICON(visual_perspective_plane)
+		STR_MENU("arch1t3ct")
+		STR_DISP("arch1t3ct")
+		STR_HELP("ASS-compatible perspective approximation")
 	};
 
 	struct visual_mode_curved_text_edit final : public visual_tool_curved_text_command<CT_EDIT_PATH> {
@@ -488,6 +496,7 @@ namespace cmd {
 		reg(agi::make_unique<visual_mode_vector_clip>());
 		reg(agi::make_unique<visual_motion_track>());
 
+		reg(agi::make_unique<visual_mode_perspective_true>());
 		reg(agi::make_unique<visual_mode_perspective_distort>());
 		reg(agi::make_unique<visual_mode_perspective_arch1t3cht>());
 		reg(agi::make_unique<visual_mode_perspective_plane>());

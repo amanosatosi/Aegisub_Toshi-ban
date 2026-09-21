@@ -84,7 +84,9 @@ VisualToolPerspective::VisualToolPerspective(VideoDisplay *parent, agi::Context 
 	if (optOuterLocked->GetBool()) settings |= PERSP_LOCK_OUTER;
 	if (optGrid->GetBool()) settings |= PERSP_GRID;
 	settings |= optOrgMode->GetInt();
-	settings |= optMode->GetInt() == PERSP_MODE_ARCH1T3CHT ? PERSP_MODE_ARCH1T3CHT : PERSP_MODE_DISTORT;
+	int saved_mode = optMode->GetInt();
+	settings |= saved_mode == PERSP_MODE_DISTORT || saved_mode == PERSP_MODE_ARCH1T3CHT ?
+		saved_mode : PERSP_MODE_PERSPECTIVE;
 
 	MakeFeatures();
 }
@@ -94,6 +96,7 @@ void VisualToolPerspective::SetToolbar(wxToolBar *toolBar) {
 
 	toolBar->AddSeparator();
 
+	AddTool("video/tool/perspective/true", PERSP_MODE_PERSPECTIVE);
 	AddTool("video/tool/perspective/distort", PERSP_MODE_DISTORT);
 	AddTool("video/tool/perspective/arch1t3cht", PERSP_MODE_ARCH1T3CHT);
 	toolBar->AddSeparator();
@@ -112,7 +115,7 @@ void VisualToolPerspective::SetToolbar(wxToolBar *toolBar) {
 
 void VisualToolPerspective::OnSubTool(wxCommandEvent &e) {
 	int id = e.GetId() - BUTTON_ID_BASE;
-	if (id == PERSP_MODE_DISTORT || id == PERSP_MODE_ARCH1T3CHT) {
+	if (id == PERSP_MODE_PERSPECTIVE || id == PERSP_MODE_DISTORT || id == PERSP_MODE_ARCH1T3CHT) {
 		SetSubTool((GetSubTool() & ~PERSP_MODE) | id);
 	} else if (id == PERSP_ORGMODE) {
 		cmd::call("video/tool/perspective/orgmode/cycle", c);
@@ -128,10 +131,11 @@ void VisualToolPerspective::SetSubTool(int subtool) {
 	for (int i = 1; i < PERSP_LAST; i <<= 1)
 		toolBar->ToggleTool(BUTTON_ID_BASE + i, i & subtool);
 	int mode = subtool & PERSP_MODE;
-	if (mode != PERSP_MODE_DISTORT && mode != PERSP_MODE_ARCH1T3CHT) {
-		mode = PERSP_MODE_DISTORT;
+	if (mode != PERSP_MODE_PERSPECTIVE && mode != PERSP_MODE_DISTORT && mode != PERSP_MODE_ARCH1T3CHT) {
+		mode = PERSP_MODE_PERSPECTIVE;
 		subtool = (subtool & ~PERSP_MODE) | mode;
 	}
+	toolBar->ToggleTool(BUTTON_ID_BASE + PERSP_MODE_PERSPECTIVE, mode == PERSP_MODE_PERSPECTIVE);
 	toolBar->ToggleTool(BUTTON_ID_BASE + PERSP_MODE_DISTORT, mode == PERSP_MODE_DISTORT);
 	toolBar->ToggleTool(BUTTON_ID_BASE + PERSP_MODE_ARCH1T3CHT, mode == PERSP_MODE_ARCH1T3CHT);
 
@@ -180,15 +184,23 @@ int VisualToolPerspective::GetSubTool() {
 }
 
 bool VisualToolPerspective::HasOuter() {
-	return !IsDistortMode() && GetSubTool() & PERSP_OUTER;
+	return (settings & PERSP_MODE) == PERSP_MODE_ARCH1T3CHT && GetSubTool() & PERSP_OUTER;
 }
 
 bool VisualToolPerspective::OuterLocked() {
 	return HasOuter() && (GetSubTool() & PERSP_LOCK_OUTER);
 }
 
+bool VisualToolPerspective::IsPerspectiveMode() const {
+	return (settings & PERSP_MODE) == PERSP_MODE_PERSPECTIVE;
+}
+
 bool VisualToolPerspective::IsDistortMode() const {
 	return (settings & PERSP_MODE) == PERSP_MODE_DISTORT;
+}
+
+bool VisualToolPerspective::IsMangetsuQuadMode() const {
+	return IsPerspectiveMode() || IsDistortMode();
 }
 
 int VisualToolPerspective::GetOrgMode() {
@@ -232,7 +244,7 @@ void VisualToolPerspective::MakeFeatures() {
 	outer_corners.clear();
 	centerf = nullptr;
 	orgf = nullptr;
-	if (IsDistortMode()) {
+	if (IsMangetsuQuadMode()) {
 		centerf = new Feature(this, FEATURE_CENTER, 0);
 		centerf->type = DRAG_BIG_TRIANGLE;
 		centerf->layer = 1;
@@ -283,6 +295,8 @@ void VisualToolPerspective::Draw() {
 		if (HasOuter()) {
 			gl.DrawDashedLine(outer_corners[i]->pos, outer_corners[(i + 1) % 4]->pos, 6);
 			gl.DrawLine(inner_corners[i]->pos, inner_corners[(i + 1) % 4]->pos);
+		} else if (IsPerspectiveMode()) {
+			gl.DrawLine(inner_corners[i]->pos, inner_corners[(i + 1) % 4]->pos);
 		} else {
 			gl.DrawDashedLine(inner_corners[i]->pos, inner_corners[(i + 1) % 4]->pos, 6);
 		}
@@ -290,7 +304,7 @@ void VisualToolPerspective::Draw() {
 
 	DrawAllFeatures();
 
-	if (!IsDistortMode() && GetSubTool() & PERSP_GRID) {
+	if (!IsMangetsuQuadMode() && GetSubTool() & PERSP_GRID) {
 		// Draw Grid - Copied and modified from visual_tool_rotatexy.cpp
 
 		// Number of lines on each side of each axis
@@ -396,9 +410,16 @@ void VisualToolPerspective::OnMouseEvent(wxMouseEvent &event) {
 };
 
 void VisualToolPerspective::UpdateDrag(Feature *feature) {
+	if (IsPerspectiveMode()) {
+		if (feature == centerf)
+			MoveQuadPosition(feature);
+		else
+			PerspectiveToText(feature);
+		return;
+	}
 	if (IsDistortMode()) {
 		if (feature == centerf)
-			MoveDistortPosition(feature);
+			MoveQuadPosition(feature);
 		else
 			DistortToText(feature);
 		return;
@@ -535,24 +556,24 @@ void VisualToolPerspective::UpdateDrag(Feature *feature) {
 
 void VisualToolPerspective::EndDrag(Feature *feature) {
 	SaveFeaturePositions();
-	if (!IsDistortMode())
+	if (!IsMangetsuQuadMode())
 		SaveOuterToLines();
 }
 
 bool VisualToolPerspective::InitializeDrag(Feature *feature) {
-	if (!IsDistortMode() || feature != centerf)
+	if (!IsMangetsuQuadMode() || feature != centerf)
 		return true;
 
-	distort_position_states.clear();
-	distort_drag_origin = ToScriptCoords(centerf->pos);
+	quad_position_states.clear();
+	quad_drag_origin = ToScriptCoords(centerf->pos);
 	for (auto line : c->selectionController->GetSelectedSet()) {
 		if (FilterLockedLines() && IsLockedLine(line))
 			continue;
-		DistortPositionState state;
+		QuadPositionState state;
 		state.line = line;
 		state.position = GetLinePosition(line);
 		state.has_move = GetLineMove(line, state.move_start, state.move_end, state.t1, state.t2);
-		distort_position_states.push_back(state);
+		quad_position_states.push_back(state);
 	}
 	return true;
 }
@@ -774,6 +795,11 @@ void VisualToolPerspective::SetFeaturePositions() {
 			centerf->pos = QuadMidpoint(FeaturePositions(inner_corners));
 		return;
 	}
+	if (IsPerspectiveMode()) {
+		if (centerf && active_line)
+			centerf->pos = FromScriptCoords(GetLinePositionAtFrame(active_line));
+		return;
+	}
 	centerf->pos = QuadMidpoint(FeaturePositions(inner_corners));
 	if (orgf != nullptr)
 		orgf->pos = FromScriptCoords(org);
@@ -907,6 +933,61 @@ void VisualToolPerspective::TextToDistort() {
 		inner_corners[i]->pos = distorted[i];
 }
 
+void VisualToolPerspective::TextToPerspective() {
+	if (!active_line)
+		return;
+
+	perspective_state = GetMangetsuPerspective(*active_line);
+	Vector2D anchor = GetLinePositionAtFrame(active_line);
+	if (perspective_state.enabled) {
+		for (size_t i = 0; i < inner_corners.size(); ++i)
+			inner_corners[i]->pos = FromScriptCoords(anchor + perspective_state.corners[i]);
+		return;
+	}
+
+	// A mode selection is read-only. Build a provisional identity plane from
+	// the same border/blur-independent base geometry used by the visual tools.
+	// If a bilinear warp is active, include it because the renderer orders
+	// \distort before \perspective.
+	if (GetMangetsuDistort(*active_line).enabled)
+		TextToDistort();
+	else
+		TextToPersp();
+
+	Vector2D top_left = ToScriptCoords(inner_corners[0]->pos);
+	Vector2D bottom_right = top_left;
+	for (auto const* corner : inner_corners) {
+		Vector2D point = ToScriptCoords(corner->pos);
+		top_left = Vector2D(std::min(top_left.X(), point.X()), std::min(top_left.Y(), point.Y()));
+		bottom_right = Vector2D(std::max(bottom_right.X(), point.X()), std::max(bottom_right.Y(), point.Y()));
+	}
+	auto provisional = MakeRect(top_left, bottom_right);
+	for (size_t i = 0; i < inner_corners.size(); ++i) {
+		inner_corners[i]->pos = FromScriptCoords(provisional[i]);
+		perspective_state.corners[i] = provisional[i] - anchor;
+	}
+}
+
+bool VisualToolPerspective::PerspectiveToText(Feature* feature) {
+	if (!feature || feature->group != FEATURE_INNER || !active_line)
+		return false;
+
+	Vector2D anchor = GetLinePositionAtFrame(active_line);
+	Vector2D local = ToScriptCoords(feature->pos) - anchor;
+	if (!SetMangetsuPerspectiveCorner(
+			perspective_state, static_cast<size_t>(feature->index), local)) {
+		TextToPerspective();
+		return false;
+	}
+
+	for (auto line : c->selectionController->GetSelectedSet()) {
+		if (FilterLockedLines() && IsLockedLine(line))
+			continue;
+		SetMangetsuPerspective(*line, perspective_state, feature->index);
+	}
+	return true;
+}
+
 std::pair<Vector2D, Vector2D> VisualToolPerspective::GetFirstDistortUnitExtents() {
 	AssDialogue unit(*active_line);
 	unit.Text = GetMangetsuDistortUnitText(*active_line);
@@ -931,11 +1012,11 @@ bool VisualToolPerspective::DistortToText(Feature* feature) {
 	return true;
 }
 
-bool VisualToolPerspective::MoveDistortPosition(Feature* feature) {
+bool VisualToolPerspective::MoveQuadPosition(Feature* feature) {
 	if (!feature || feature != centerf)
 		return false;
-	Vector2D delta = ToScriptCoords(feature->pos) - distort_drag_origin;
-	for (auto const& state : distort_position_states) {
+	Vector2D delta = ToScriptCoords(feature->pos) - quad_drag_origin;
+	for (auto const& state : quad_position_states) {
 		if (state.has_move) {
 			if (state.t1 > 0 || state.t2 > 0)
 				SetOverride(state.line, "\\move", agi::format("(%s,%s,%d,%d)",
@@ -947,13 +1028,18 @@ bool VisualToolPerspective::MoveDistortPosition(Feature* feature) {
 		else
 			SetOverride(state.line, "\\pos", (state.position + delta).PStr());
 	}
-	TextToDistort();
+	if (IsPerspectiveMode())
+		TextToPerspective();
+	else
+		TextToDistort();
 	SetFeaturePositions();
 	return true;
 }
 
 void VisualToolPerspective::DoRefresh() {
-	if (IsDistortMode())
+	if (IsPerspectiveMode())
+		TextToPerspective();
+	else if (IsDistortMode())
 		TextToDistort();
 	else
 		TextToPersp();
@@ -964,7 +1050,7 @@ void VisualToolPerspective::DoRefresh() {
 VisualToolPerspectiveDraggableFeature::VisualToolPerspectiveDraggableFeature(VisualToolPerspective *tool, int group, int index) : tool(tool), group(group), index(index) {}
 
 void VisualToolPerspectiveDraggableFeature::UpdateDrag(Vector2D d, bool single_axis) {
-	if (tool->IsDistortMode()) {
+	if (tool->IsMangetsuQuadMode()) {
 		VisualDraggableFeature::UpdateDrag(d, single_axis);
 		return;
 	}

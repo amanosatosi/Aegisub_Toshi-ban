@@ -304,6 +304,11 @@ static void load_protos() {
 	proto[i++].Set("\\ctx", VariableDataType::FLOAT, AssParameterClass::ABSOLUTE_SIZE_X);
 	proto[i++].Set("\\cty", VariableDataType::FLOAT, AssParameterClass::ABSOLUTE_SIZE_Y);
 	proto[i++].Set("\\ct", VariableDataType::TEXT, AssParameterClass::DRAWING);
+	proto[i].name = "\\perspective";
+	for (int parameter = 0; parameter < 8; ++parameter)
+		proto[i].AddParam(VariableDataType::FLOAT, parameter & 1 ?
+			AssParameterClass::ABSOLUTE_SIZE_Y : AssParameterClass::ABSOLUTE_SIZE_X);
+	++i;
 	proto[i].name = "\\distort";
 	for (int parameter = 0; parameter < 6; ++parameter)
 		proto[i].AddParam(VariableDataType::FLOAT);

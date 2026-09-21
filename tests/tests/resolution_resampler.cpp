@@ -207,6 +207,15 @@ TEST(resolution_resampler, preserves_positioned_gradient_reset_form) {
 		ResampleText("{\\pgrd()}Text", Settings(1920, 1080, 1280, 720)));
 }
 
+TEST(resolution_resampler, rescales_perspective_local_coordinates) {
+	auto result = ResampleText(
+		"{\\perspective(-300,-120,240,-90,330,180,-270,210)}Text",
+		Settings(1920, 1080, 1280, 720));
+	EXPECT_EQ(
+		"{\\perspective(-200,-80,160,-60,220,120,-180,140)}Text",
+		result);
+}
+
 TEST(resolution_resampler, preserves_mangetsu_non_spatial_parameters) {
 	std::string text =
 		"{\\scale125\\fsc110\\frs30\\xblur2.5\\yblur3.5"
