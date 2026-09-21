@@ -125,6 +125,7 @@ using AssSetFrameSizeFunc = void (*)(ASS_Renderer *, int, int);
 using AssSetStorageSizeFunc = void (*)(ASS_Renderer *, int, int);
 using AssRenderFrameAutoFunc = ASS_RenderResult (*)(ASS_Renderer *, ASS_Track *, long long, int *);
 using AssFreeImagesRGBAFunc = void (*)(ASS_ImageRGBA *);
+using AssCompositeImagesBGRAFunc = int (*)(ASS_ImageRGBA *, uint8_t *, int, int, int);
 #ifdef LIBASSMOD_FEATURE_TAG_IMAGE
 using AssClearTagImagesFunc = void (*)(ASS_Renderer *);
 using AssSetTagImageRGBAFunc = int (*)(ASS_Renderer *, const char *, ASS_TagImageFormat, int, int, int, const unsigned char *);
@@ -145,6 +146,7 @@ struct LibassModApi {
 	AssSetStorageSizeFunc ass_set_storage_size = nullptr;
 	AssRenderFrameAutoFunc ass_render_frame_auto = nullptr;
 	AssFreeImagesRGBAFunc ass_free_images_rgba = nullptr;
+	AssCompositeImagesBGRAFunc ass_composite_images_bgra = nullptr;
 #ifdef LIBASSMOD_FEATURE_TAG_IMAGE
 	AssClearTagImagesFunc ass_clear_tag_images = nullptr;
 	AssSetTagImageRGBAFunc ass_set_tag_image_rgba = nullptr;
@@ -341,6 +343,7 @@ bool LoadLibassModApi(AssCompatBackend &backend, std::string &error) {
 	LoadOptionalSymbol(backend, "ass_clear_tag_images", api.ass_clear_tag_images);
 	LoadOptionalSymbol(backend, "ass_set_tag_image_rgba", api.ass_set_tag_image_rgba);
 #endif
+	LoadOptionalSymbol(backend, "ass_composite_images_bgra", api.ass_composite_images_bgra);
 
 	UpdateLoadedLibraryPath(backend);
 	backend.library = api.ass_library_init();
@@ -1020,21 +1023,34 @@ void LibassModSubtitlesProvider::DrawSubtitles(VideoFrame &frame, double time) {
 		dst = flipped_up_down_view(dst);
 
 	if (render_result.use_rgba && render_result.imgs_rgba) {
-		for (ASS_ImageRGBA *img = render_result.imgs_rgba; img; img = img->next) {
-			auto srcview = interleaved_view(img->w, img->h, (rgba8_pixel_t*)img->rgba, img->stride);
-			auto dstview = subimage_view(dst, img->dst_x, img->dst_y, img->w, img->h);
+		bool composed = false;
+		if (api.ass_composite_images_bgra) {
+			int stride = frame.width * 4;
+			uint8_t *top_row = frame.data.data();
+			if (frame.flipped) {
+				top_row += static_cast<size_t>(frame.height - 1) * stride;
+				stride = -stride;
+			}
+			composed = api.ass_composite_images_bgra(
+				render_result.imgs_rgba, top_row, frame.width, frame.height, stride) == 0;
+		}
+		if (!composed) {
+			for (ASS_ImageRGBA *img = render_result.imgs_rgba; img; img = img->next) {
+				auto srcview = interleaved_view(img->w, img->h, (rgba8_pixel_t*)img->rgba, img->stride);
+				auto dstview = subimage_view(dst, img->dst_x, img->dst_y, img->w, img->h);
 
-			transform_pixels(dstview, srcview, dstview, [](const bgra8_pixel_t frame_px, const rgba8_pixel_t src_px) -> bgra8_pixel_t {
-				unsigned int alpha = src_px[3];
-				unsigned int inv_alpha = 255 - alpha;
+				transform_pixels(dstview, srcview, dstview, [](const bgra8_pixel_t frame_px, const rgba8_pixel_t src_px) -> bgra8_pixel_t {
+					unsigned int alpha = src_px[3];
+					unsigned int inv_alpha = 255 - alpha;
 
-				bgra8_pixel_t ret;
-				ret[0] = static_cast<unsigned char>(src_px[2] + (frame_px[0] * inv_alpha) / 255);
-				ret[1] = static_cast<unsigned char>(src_px[1] + (frame_px[1] * inv_alpha) / 255);
-				ret[2] = static_cast<unsigned char>(src_px[0] + (frame_px[2] * inv_alpha) / 255);
-				ret[3] = 0;
-				return ret;
-			});
+					bgra8_pixel_t ret;
+					ret[0] = static_cast<unsigned char>(src_px[2] + (frame_px[0] * inv_alpha) / 255);
+					ret[1] = static_cast<unsigned char>(src_px[1] + (frame_px[1] * inv_alpha) / 255);
+					ret[2] = static_cast<unsigned char>(src_px[0] + (frame_px[2] * inv_alpha) / 255);
+					ret[3] = 0;
+					return ret;
+				});
+			}
 		}
 	}
 	else {
