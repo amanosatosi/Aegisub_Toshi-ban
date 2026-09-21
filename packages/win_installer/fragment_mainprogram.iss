@@ -22,6 +22,7 @@ Name: "checkforupdates"; Description: "{cm:CheckForUpdates}"; GroupDescription: 
 [Files]
 ; main
 DestDir: {app}; Source: "{#BUILD_ROOT}\aegisub.exe"; Flags: ignoreversion; Components: main
+DestDir: {app}; Source: "{#DEPS_DIR}\assdraw\ASSDraw3.exe"; Flags: ignoreversion; Components: main
 DestDir: {app}; Source: "{#BUILD_ROOT}\libassmod.dll"; Flags: ignoreversion; Components: main
 DestDir: {app}; Source: "{#BUILD_ROOT}\mangetsu.dll"; Flags: ignoreversion skipifsourcedoesntexist; Components: main
 DestDir: {app}; Source: "{#BUILD_ROOT}\opencv-runtime\*.dll"; Flags: ignoreversion skipifsourcedoesntexist; Components: main

@@ -55,6 +55,7 @@
 namespace {
 	using cmd::Command;
 
+#ifdef _WIN32
 struct tool_assdraw final : public Command {
 	CMD_NAME("tool/assdraw")
 	CMD_ICON(assdraw)
@@ -62,10 +63,26 @@ struct tool_assdraw final : public Command {
 	STR_DISP("ASSDraw3")
 	STR_HELP("Launch the ASSDraw3 tool for vector drawing")
 
-	void operator()(agi::Context *) override {
-		wxExecute("\"" + config::path->Decode("?data/ASSDraw3.exe").string() + "\"");
+	void operator()(agi::Context *c) override {
+		auto const assdraw = config::path->Decode("?data/ASSDraw3.exe");
+		if (!agi::fs::FileExists(assdraw)) {
+			wxMessageBox(
+				_("ASSDraw3.exe could not be found.\n\nYour Aegisub Toshi-ban installation may be incomplete.\nPlease reinstall Aegisub Toshi-ban or restore ASSDraw3.exe."),
+				_("ASSDraw3"), wxOK | wxICON_ERROR | wxCENTER, c->parent);
+			return;
+		}
+
+		// Keep the executable and its arguments separate so Unicode paths and
+		// paths containing spaces do not pass through shell-style parsing.
+		wxString executable(assdraw.wstring());
+		wxChar *argv[] = {const_cast<wxChar *>(executable.c_str()), nullptr};
+		if (wxExecute(argv, wxEXEC_ASYNC) == 0) {
+			wxMessageBox(_("ASSDraw3.exe could not be started."), _("ASSDraw3"),
+				wxOK | wxICON_ERROR | wxCENTER, c->parent);
+		}
 	}
 };
+#endif
 
 struct tool_export final : public Command {
 	CMD_NAME("tool/export")
@@ -331,8 +348,7 @@ namespace cmd {
 		reg(agi::make_unique<tool_time_postprocess>());
 		reg(agi::make_unique<tool_translation_assistant>());
 #ifdef _WIN32
-		if (agi::fs::FileExists(config::path->Decode("?data/ASSDraw3.exe")))
-			reg(agi::make_unique<tool_assdraw>());
+		reg(agi::make_unique<tool_assdraw>());
 #endif
 		reg(agi::make_unique<tool_translation_assistant_commit>());
 		reg(agi::make_unique<tool_translation_assistant_preview>());

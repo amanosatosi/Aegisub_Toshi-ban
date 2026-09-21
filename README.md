@@ -23,6 +23,8 @@ Made for: **users first**
 1. Download the installer from Releases
 2. Install like a normal Windows app
 
+Windows installer and portable releases bundle the project's [ASSDraw fork](https://github.com/amanosatosi/assdraw) as `ASSDraw3.exe`; open it with Aegisub's existing ASSDraw command.
+
 > If something works in portable but not installer, please report it. I test both, but mistakes can happen.
 >  **Note:** The **wx master variant** of releases includes **experimental dark mode**. From my tests, it’s pretty stable, very small parts may still briefly appear in light mode.
 

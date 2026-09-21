@@ -14,6 +14,9 @@ if (!(Test-Path $DepsDir)) {
 	New-Item -ItemType Directory -Path $DepsDir
 }
 
+$AssDrawSetup = Join-Path $SourceRoot "tools\download-assdraw.ps1"
+& $AssDrawSetup -BuildRoot $BuildRoot -SourceRoot $SourceRoot
+
 $Env:BUILD_ROOT = $BuildRoot
 $Env:SOURCE_ROOT = $SourceRoot
 

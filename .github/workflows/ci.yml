@@ -187,6 +187,16 @@ jobs:
           meson setup build ${{ matrix.config.args }} -Dbuildtype=${{ matrix.config.buildtype }}
           meson configure build
 
+      - name: Acquire pinned ASSDraw release
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          .\tools\download-assdraw.ps1
+          -BuildRoot "${{ github.workspace }}\build"
+          -SourceRoot "${{ github.workspace }}"
+
       - name: Build
         run: meson compile -C build
       
@@ -218,6 +228,14 @@ jobs:
       - name: Generate Windows portable installer
         if: matrix.config.os == 'windows-latest'
         run: cd build && ninja win-portable
+
+      - name: Verify bundled ASSDraw packages
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        run: >-
+          .\tools\verify-assdraw-package.ps1
+          -BuildRoot "${{ github.workspace }}\build"
+          -SourceRoot "${{ github.workspace }}"
 
       - name: Verify Windows provider DLL packaging
         if: matrix.config.os == 'windows-latest'

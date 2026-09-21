@@ -50,6 +50,7 @@ Write-Output 'Make install'
 meson install --no-rebuild --destdir $InstallerDir
 Write-Output 'Gathering files'
 Copy-New-Item $InstallerDir\bin\aegisub.exe  $PortableOutputDir
+Copy-New-Item $InstallerDepsDir\assdraw\ASSDraw3.exe  $PortableOutputDir
 Copy-New-Item $InstallerDir\bin\libassmod.dll  $PortableOutputDir
 if (Test-Path "$InstallerDir\bin\mangetsu.dll") {
     Copy-New-Item $InstallerDir\bin\mangetsu.dll  $PortableOutputDir
@@ -114,6 +115,7 @@ Copy-New-Item $InstallerDepsDir\ffi-experiments\build\download-manager\DownloadM
 
 Write-Output 'Copying - portable-config'
 Copy-New-Item $SourceRoot\packages\win_installer\portable\config.json  $PortableOutputDir
+Copy-New-Item $SourceRoot\packages\win_installer\license.txt  $PortableOutputDir
 
 Write-Output 'Copying - themes'
 Copy-New-Items "$InstallerDir\share\aegisub\themes\*"  "$PortableOutputDir\themes\"  -Recurse
