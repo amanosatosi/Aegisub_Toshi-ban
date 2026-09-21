@@ -17,6 +17,7 @@ aegisub_src = files(
     'ass_parser.cpp',
     'ass_style.cpp',
     'ass_style_storage.cpp',
+    'ass_tag_edit.cpp',
     'async_video_provider.cpp',
     'audio_box.cpp',
     'audio_colorscheme.cpp',

@@ -63,8 +63,8 @@ class VideoBox final : public wxPanel {
 	bool HandleReadoutClick(wxString const& value);
 	bool CopyReadoutToClipboard(wxString const& value);
 	bool InsertReadoutIntoEditBox(wxString const& value);
-	bool GetSubsReadoutForPosition(wxPoint const& position, wxString &value, SubsReadoutKind *kind = nullptr);
-	bool SetFadeFromReadout(SubsReadoutKind kind, int milliseconds);
+	bool GetSubsReadoutForPosition(wxPoint const& position, wxString &value);
+	bool SetFadeFromHere(SubsReadoutKind kind, int milliseconds);
 	wxString NormalizeReadout(wxString const& value) const;
 
 public:

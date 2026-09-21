@@ -33,6 +33,7 @@
 
 #include "../ass_dialogue.h"
 #include "../ass_file.h"
+#include "../ass_tag_edit.h"
 #include "../compat.h"
 #include "../dialog_search_replace.h"
 #include "../dialogs.h"
@@ -44,8 +45,10 @@
 #include "../project.h"
 #include "../search_replace_engine.h"
 #include "../selection_controller.h"
+#include "../subs_edit_box.h"
 #include "../subs_controller.h"
 #include "../subtitle_format.h"
+#include "../text_selection_controller.h"
 #include "../utils.h"
 #include "../video_controller.h"
 
@@ -55,7 +58,6 @@
 #include <libaegisub/make_unique.h>
 
 #include <boost/range/algorithm/copy.hpp>
-#include <cctype>
 #include <wx/msgdlg.h>
 #include <wx/choicdlg.h>
 #include <wx/filedlg.h>
@@ -122,79 +124,50 @@ struct validate_nonempty_selection_video_loaded : public Command {
 	}
 };
 
-std::string set_line_alignment(std::string const& text, int an) {
-	std::string tag = agi::format("\\an%d", an);
-	std::string ret;
-	ret.reserve(text.size() + tag.size() + 2);
-
-	bool in_override = false;
-	bool block_is_override = false;
-	bool block_has_content = false;
-	std::string block;
-	for (size_t i = 0; i < text.size(); ++i) {
-		char ch = text[i];
-		if (!in_override) {
-			if (ch == '{') {
-				in_override = true;
-				block_is_override = i + 1 < text.size() && text[i + 1] == '\\';
-				block_has_content = false;
-				block = "{";
-			}
-			else {
-				ret += ch;
-			}
-			continue;
-		}
-
-		if (block_is_override && ch == '\\' && i + 3 < text.size() && text[i + 1] == 'a' && text[i + 2] == 'n' &&
-			text[i + 3] >= '1' && text[i + 3] <= '9')
-		{
-			i += 3;
-			continue;
-		}
-
-		if (ch == '}') {
-			if (!block_is_override || block_has_content)
-				ret += block + "}";
-			in_override = false;
-			continue;
-		}
-
-		block += ch;
-		if (!std::isspace(static_cast<unsigned char>(ch)))
-			block_has_content = true;
-	}
-
-	if (in_override)
-		ret += block;
-
-	if (ret.empty() || ret[0] != '{' || ret.size() < 2 || ret[1] != '\\')
-		return "{" + tag + "}" + ret;
-
-	auto block_end = ret.find('}');
-	if (block_end == std::string::npos)
-		return "{" + tag + "}" + ret;
-
-	ret.insert(1, tag);
-	return ret;
-}
-
 void SetSelectedLinesAlignment(agi::Context *c, int an) {
+	AssDialogue *active = c->selectionController->GetActiveLine();
 	auto const& sel = c->selectionController->GetSelectedSet();
-	if (sel.empty()) {
-		if (auto line = c->selectionController->GetActiveLine())
-			line->Text = set_line_alignment(line->Text.get(), an);
-		else
-			return;
+	if (!active && sel.empty())
+		return;
 
-		c->ass->Commit(_("set alignment"), AssFile::COMMIT_DIAG_TEXT, -1, c->selectionController->GetActiveLine());
+	int raw_start = 0;
+	int raw_end = 0;
+	bool restore_caret = false;
+	bool const active_is_target = active && (sel.empty() || sel.count(active));
+	if (active_is_target && c->subsEditBox && c->textSelectionController) {
+		int const display_start = c->textSelectionController->GetSelectionStart();
+		int const display_end = c->textSelectionController->GetSelectionEnd();
+		restore_caret = c->subsEditBox->MapDisplayRangeToRaw(
+			display_start, display_end, active->Text.get(), raw_start, raw_end);
 	}
+
+	int mapped_caret = 0;
+	auto edit_line = [&](AssDialogue *line) {
+		int const start = line == active && restore_caret ? raw_start : 0;
+		int const end = line == active && restore_caret ? raw_end : 0;
+		auto result = agi::ass::SetLineAlignment(line->Text.get(), an, start, end);
+		line->Text = result.text;
+		if (line == active)
+			mapped_caret = result.caret;
+	};
+
+	if (sel.empty())
+		edit_line(active);
 	else {
 		for (auto line : sel)
-			line->Text = set_line_alignment(line->Text.get(), an);
-
-		c->ass->Commit(_("set alignment"), AssFile::COMMIT_DIAG_TEXT, -1, sel.size() == 1 ? *sel.begin() : nullptr);
+			edit_line(line);
 	}
+
+	AssDialogue *commit_line = sel.empty() ? active :
+		(sel.size() == 1 ? *sel.begin() : nullptr);
+	c->ass->Commit(_("set alignment"), AssFile::COMMIT_DIAG_TEXT, -1, commit_line);
+
+	if (restore_caret) {
+		int const display_caret = c->subsEditBox->MapRawToDisplay(mapped_caret, active->Text.get());
+		c->subsEditBox->SetTextSelection(display_caret, display_caret);
+	}
+	if (c->subsEditBox)
+		c->subsEditBox->FocusTextCtrl();
 }
 
 struct subtitle_set_alignment final : public validate_nonempty_selection {
