@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <memory>
 #include <sstream>
@@ -90,6 +91,16 @@ double GetNumber(AssOverrideTag const& tag, double fallback) {
 	return tag.Params[0].Get<double>();
 }
 
+int GetPathAnchor(AssOverrideTag const& tag) {
+	if (!tag.IsValid() || tag.Params.empty() || tag.Params[0].omitted)
+		return 0;
+	auto raw = tag.Params[0].Get<std::string>();
+	char *end = nullptr;
+	long value = std::strtol(raw.c_str(), &end, 10);
+	return end != raw.c_str() && *end == '\0' && value >= 1 && value <= 9 ?
+		static_cast<int>(value) : 0;
+}
+
 void ApplyTag(MangetsuCurvedTextState& state, AssOverrideTag const& tag) {
 	if (tag.Name == "\\r") {
 		auto path = state.path;
@@ -114,9 +125,9 @@ void ApplyTag(MangetsuCurvedTextState& state, AssOverrideTag const& tag) {
 		state.normal_offset = GetNumber(tag, 0.0);
 		state.has_normal_offset = true;
 	}
-	else if (tag.Name == "\\ctan" && tag.IsValid()) {
-		int alignment = static_cast<int>(GetNumber(tag, 0.0));
-		if (alignment >= 1 && alignment <= 3) {
+	else if (tag.Name == "\\ctan" && tag.IsValid() && !state.has_alignment) {
+		int alignment = GetPathAnchor(tag);
+		if (alignment) {
 			state.alignment = alignment;
 			state.has_alignment = true;
 		}
@@ -142,6 +153,41 @@ bool SetStaticTag(AssDialogue& line, std::string const& name, std::string const&
 		}
 	}
 
+	if (effective_tag)
+		effective_tag->SetText(text);
+	else if (insertion_block)
+		insertion_block->AddTag(text);
+	else {
+		auto block = agi::make_unique<AssDialogueBlockOverride>();
+		block->AddTag(text);
+		blocks.insert(blocks.begin(), std::move(block));
+	}
+	line.UpdateText(blocks);
+	return true;
+}
+
+bool SetStaticAlignmentTag(AssDialogue& line, int value) {
+	auto blocks = line.ParseTags();
+	AssDialogueBlockOverride* insertion_block = nullptr;
+	AssOverrideTag* effective_tag = nullptr;
+	for (auto const& block : blocks) {
+		if (IsRenderable(*block))
+			break;
+		if (block->GetType() != AssBlockType::OVERRIDE)
+			continue;
+		auto& override_block = static_cast<AssDialogueBlockOverride&>(*block);
+		insertion_block = &override_block;
+		for (auto& tag : override_block.Tags) {
+			if (tag.Name == "\\r")
+				effective_tag = nullptr;
+			else if (tag.Name == "\\ctan" && tag.IsValid() && !effective_tag) {
+				if (GetPathAnchor(tag))
+					effective_tag = &tag;
+			}
+		}
+	}
+
+	std::string text = "\\ctan" + std::to_string(value);
 	if (effective_tag)
 		effective_tag->SetText(text);
 	else if (insertion_block)
@@ -429,7 +475,32 @@ bool SetMangetsuCurvedTextNormalOffset(AssDialogue& line, double value) {
 }
 
 bool SetMangetsuCurvedTextAlignment(AssDialogue& line, int value) {
-	if (value < 1 || value > 3)
+	if (value < 1 || value > 9)
 		return false;
-	return SetStaticTag(line, "\\ctan", "\\ctan" + std::to_string(value));
+	return SetStaticAlignmentTag(line, value);
+}
+
+bool RemoveMangetsuCurvedTextAlignment(AssDialogue& line) {
+	auto blocks = line.ParseTags();
+	bool removed = false;
+	for (auto const& block : blocks) {
+		if (block->GetType() != AssBlockType::OVERRIDE)
+			continue;
+		auto& tags = static_cast<AssDialogueBlockOverride&>(*block).Tags;
+		auto end = std::remove_if(tags.begin(), tags.end(), [&](AssOverrideTag const& tag) {
+			if (tag.Name != "\\ctan")
+				return false;
+			removed = true;
+			return true;
+		});
+		tags.erase(end, tags.end());
+	}
+	if (removed) {
+		blocks.erase(std::remove_if(blocks.begin(), blocks.end(), [](std::unique_ptr<AssDialogueBlock> const& block) {
+			return block->GetType() == AssBlockType::OVERRIDE &&
+				static_cast<AssDialogueBlockOverride const&>(*block).Tags.empty();
+		}), blocks.end());
+		line.UpdateText(blocks);
+	}
+	return removed;
 }

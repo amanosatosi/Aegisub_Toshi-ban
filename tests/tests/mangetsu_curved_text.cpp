@@ -27,6 +27,41 @@ TEST(MangetsuCurvedText, ParsesBalancedPathAndScalarTags) {
 	EXPECT_EQ(3, state.alignment);
 }
 
+TEST(MangetsuCurvedText, ParsesEveryNumpadAnchorAndReset) {
+	for (int value = 1; value <= 9; ++value) {
+		auto line = MakeLine("{\\ct(m -100 0 l 100 0)\\ctan" +
+			std::to_string(value) + "}TEXT");
+		auto state = GetMangetsuCurvedText(line);
+		EXPECT_TRUE(state.has_alignment);
+		EXPECT_EQ(value, state.alignment);
+	}
+	auto absent = GetMangetsuCurvedText(MakeLine("{\\ct(m -100 0 l 100 0)}TEXT"));
+	EXPECT_FALSE(absent.has_alignment);
+	EXPECT_EQ(0, absent.alignment);
+	auto first = GetMangetsuCurvedText(MakeLine("{\\ctan0\\ctan1.5\\ctan8junk\\ctan8\\ctan2}TEXT"));
+	EXPECT_TRUE(first.has_alignment);
+	EXPECT_EQ(8, first.alignment);
+	auto reset = GetMangetsuCurvedText(MakeLine("{\\ctan8\\r}TEXT"));
+	EXPECT_FALSE(reset.has_alignment);
+}
+
+TEST(MangetsuCurvedText, RecognizesTaAndKeepsLegacyAnchorAbsent) {
+	auto line = MakeLine("{\\an7\\ta2\\ct(m -100 0 l 100 0)}LONG\\Nshort");
+	auto blocks = line.ParseTags();
+	bool recognized_ta = false;
+	for (auto const& block : blocks) {
+		if (block->GetType() != AssBlockType::OVERRIDE)
+			continue;
+		for (auto const& tag : static_cast<AssDialogueBlockOverride const&>(*block).Tags)
+			recognized_ta |= tag.Name == "\\ta" && tag.IsValid();
+	}
+	EXPECT_TRUE(recognized_ta);
+	EXPECT_FALSE(GetMangetsuCurvedText(line).has_alignment);
+	ASSERT_TRUE(SetMangetsuCurvedTextPath(line, "m -200 0 l 200 0"));
+	EXPECT_EQ("{\\an7\\ta2\\ct(m -200 0 l 200 0)}LONG\\Nshort", line.Text.get());
+	EXPECT_FALSE(GetMangetsuCurvedText(line).has_alignment);
+}
+
 TEST(MangetsuCurvedText, SupportsMoveLineAndCubicButRejectsUnknownCommands) {
 	EXPECT_TRUE(IsSupportedMangetsuCurvedTextPath("m -300 0 l 300 0"));
 	EXPECT_TRUE(IsSupportedMangetsuCurvedTextPath("m -400 100 b -250 -200 250 -200 400 100"));
@@ -53,6 +88,29 @@ TEST(MangetsuCurvedText, ScalarAndAlignmentEditsDoNotRewritePath) {
 	ASSERT_TRUE(SetMangetsuCurvedTextNormalOffset(line, -13.5));
 	ASSERT_TRUE(SetMangetsuCurvedTextAlignment(line, 2));
 	EXPECT_EQ("{\\ct(m -300 0 l 300 0)\\bord2\\ctx42.25\\cty-13.5\\ctan2}TEXT", line.Text.get());
+}
+
+TEST(MangetsuCurvedText, AnchorEditsPreserveTaAndOtherOverrideTags) {
+	auto line = MakeLine("{\\an7\\ta2\\ctan5\\ctan9\\ct(m -300 0 l 300 0)\\bord2}LONG\\Nshort");
+	ASSERT_TRUE(SetMangetsuCurvedTextAlignment(line, 8));
+	EXPECT_EQ("{\\an7\\ta2\\ctan8\\ctan9\\ct(m -300 0 l 300 0)\\bord2}LONG\\Nshort",
+		line.Text.get());
+	ASSERT_TRUE(SetMangetsuCurvedTextPath(line, "m -200 0 l 200 0"));
+	EXPECT_EQ("{\\an7\\ta2\\ctan8\\ctan9\\ct(m -200 0 l 200 0)\\bord2}LONG\\Nshort",
+		line.Text.get());
+	ASSERT_TRUE(RemoveMangetsuCurvedTextAlignment(line));
+	EXPECT_EQ("{\\an7\\ta2\\ct(m -200 0 l 200 0)\\bord2}LONG\\Nshort",
+		line.Text.get());
+}
+
+TEST(MangetsuCurvedText, AnchorEditRespectsResetAndAnimatedTags) {
+	auto line = MakeLine("{\\ctan7\\r\\ta2\\t(0,1000,\\ctan3)\\ct(m 0 0 l 100 0)}TEXT");
+	ASSERT_TRUE(SetMangetsuCurvedTextAlignment(line, 5));
+	EXPECT_EQ("{\\ctan7\\r\\ta2\\t(0,1000,\\ctan3)\\ct(m 0 0 l 100 0)\\ctan5}TEXT",
+		line.Text.get());
+	ASSERT_TRUE(RemoveMangetsuCurvedTextAlignment(line));
+	EXPECT_EQ("{\\r\\ta2\\t(0,1000,\\ctan3)\\ct(m 0 0 l 100 0)}TEXT",
+		line.Text.get());
 }
 
 TEST(MangetsuCurvedText, MalformedEditFailsWithoutChangingLine) {

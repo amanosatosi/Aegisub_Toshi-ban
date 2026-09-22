@@ -24,6 +24,7 @@
 #include <limits>
 #include <vector>
 #include <wx/colour.h>
+#include <wx/menu.h>
 #include <wx/toolbar.h>
 
 namespace {
@@ -32,6 +33,8 @@ int const BUTTON_ID_RESET = 1520;
 int const BUTTON_ID_REVERSE = 1521;
 int const BUTTON_ID_REMOVE_CURVE = 1522;
 int const BUTTON_ID_ALIGNMENT = 1523;
+int const BUTTON_ID_ANCHOR_BASE = 1550;
+int const BUTTON_ID_ANCHOR_LEGACY = 1560;
 
 bool InBox(Vector2D top_left, Vector2D bottom_right, Vector2D point) {
 	return point.X() >= top_left.X() && point.X() <= bottom_right.X() &&
@@ -132,7 +135,7 @@ void VisualToolCurvedText::SetToolbar(wxToolBar *toolbar) {
 
 void VisualToolCurvedText::OnSubTool(wxCommandEvent& event) {
 	if (event.GetId() == BUTTON_ID_ALIGNMENT)
-		CycleAlignment();
+		ShowAlignmentMenu();
 	else if (event.GetId() == BUTTON_ID_RESET)
 		ResetStraight();
 	else if (event.GetId() == BUTTON_ID_REVERSE)
@@ -144,8 +147,8 @@ void VisualToolCurvedText::OnSubTool(wxCommandEvent& event) {
 }
 
 void VisualToolCurvedText::SetSubTool(int subtool) {
-	if (subtool == CT_CYCLE_ALIGNMENT) {
-		CycleAlignment();
+	if (subtool == CT_CHOOSE_ALIGNMENT) {
+		ShowAlignmentMenu();
 		return;
 	}
 	if (subtool == CT_RESET_STRAIGHT) {
@@ -184,27 +187,49 @@ void VisualToolCurvedText::UpdateModeTools() {
 void VisualToolCurvedText::UpdateAlignmentTool() {
 	if (!toolBar || !active_line)
 		return;
-	int effective = state.has_alignment ? state.alignment : ((GetLineAlignment(active_line) - 1) % 3 + 1);
-	wxString source = state.has_alignment ? _("explicit") : _("from \\an");
-	wxString help = wxString::Format(_("\\ctan%d (%s). Click to cycle start / center / end alignment."),
-		effective, source.c_str());
+	wxString help = state.has_alignment ?
+		wxString::Format(_("\\ctan%d is active. Choose a curve anchor."), state.alignment) :
+		_("Legacy curved baseline (no \\ctan). Choose a curve anchor.");
 	toolBar->SetToolShortHelp(BUTTON_ID_ALIGNMENT, help);
 	toolBar->SetToolLongHelp(BUTTON_ID_ALIGNMENT, help);
 }
 
-void VisualToolCurvedText::CycleAlignment() {
-	if (!active_line)
+void VisualToolCurvedText::ShowAlignmentMenu() {
+	if (!active_line || !toolBar)
 		return;
-	int current = state.has_alignment ? state.alignment : ((GetLineAlignment(active_line) - 1) % 3 + 1);
-	int next = current % 3 + 1;
-	if (SetMangetsuCurvedTextAlignment(*active_line, next)) {
-		state.alignment = next;
-		state.has_alignment = true;
-		Commit(_("curved text alignment"));
-		commit_id = -1;
-		UpdateAlignmentTool();
-		parent->Render();
+	wxMenu menu;
+	menu.AppendCheckItem(BUTTON_ID_ANCHOR_LEGACY,
+		_("Legacy baseline (no \\ctan)"))->Check(!state.has_alignment);
+	menu.AppendSeparator();
+	wxString rows[] = {_("Bottom"), _("Middle"), _("Top")};
+	wxString columns[] = {_("Start"), _("Center"), _("End")};
+	for (int row = 2; row >= 0; --row) {
+		for (int column = 0; column < 3; ++column) {
+			int value = row * 3 + column + 1;
+			wxString label = wxString::Format("%d  ", value) +
+				rows[row] + " / " + columns[column];
+			menu.AppendCheckItem(BUTTON_ID_ANCHOR_BASE + value, label)->Check(
+				state.has_alignment && state.alignment == value);
+		}
+		if (row)
+			menu.AppendSeparator();
 	}
+	menu.Bind(wxEVT_MENU, [this](wxCommandEvent& event) {
+		if (!active_line)
+			return;
+		bool changed = event.GetId() == BUTTON_ID_ANCHOR_LEGACY ?
+			RemoveMangetsuCurvedTextAlignment(*active_line) :
+			SetMangetsuCurvedTextAlignment(*active_line,
+				event.GetId() - BUTTON_ID_ANCHOR_BASE);
+		if (changed) {
+			state = GetMangetsuCurvedText(*active_line);
+			Commit(_("curved text alignment"));
+			commit_id = -1;
+			UpdateAlignmentTool();
+			parent->Render();
+		}
+	});
+	toolBar->PopupMenu(&menu);
 }
 
 void VisualToolCurvedText::ResetStraight() {

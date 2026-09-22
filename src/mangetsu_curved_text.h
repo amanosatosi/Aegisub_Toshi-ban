@@ -78,3 +78,4 @@ bool RemoveMangetsuCurvedTextPath(AssDialogue& line);
 bool SetMangetsuCurvedTextAlongOffset(AssDialogue& line, double value);
 bool SetMangetsuCurvedTextNormalOffset(AssDialogue& line, double value);
 bool SetMangetsuCurvedTextAlignment(AssDialogue& line, int value);
+bool RemoveMangetsuCurvedTextAlignment(AssDialogue& line);

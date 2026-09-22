@@ -322,9 +322,9 @@ namespace {
 		CMD_NAME("video/tool/curved_text/ctan")
 		CMD_ICON(visual_curved_text_ctan)
 		CMD_TYPE(COMMAND_VALIDATE)
-		STR_MENU("Cycle Curved Text Alignment")
+		STR_MENU("Choose Curved Text Anchor")
 		STR_DISP("Curved Text Alignment")
-		STR_HELP("Cycle \\ctan start / center / end alignment")
+		STR_HELP("Choose a nine-way \\ctan curve anchor or the legacy baseline")
 
 		bool Validate(const agi::Context *c) override {
 			return !!c->project->VideoProvider();
@@ -333,7 +333,7 @@ namespace {
 		void operator()(agi::Context *c) override {
 			if (!c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)))
 				c->videoDisplay->SetTool(agi::make_unique<VisualToolCurvedText>(c->videoDisplay, c));
-			c->videoDisplay->SetSubTool(CT_CYCLE_ALIGNMENT);
+			c->videoDisplay->SetSubTool(CT_CHOOSE_ALIGNMENT);
 		}
 	};
 

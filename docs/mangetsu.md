@@ -87,9 +87,26 @@ their named destructive geometry change.
 
 **Move Whole Path** translates all local path coordinates without changing
 `\pos` or `\move`. The other two modes edit `\ctx` along-path distance and
-perpendicular `\cty` offset. The compact alignment button cycles explicit
-`\ctan1`, `\ctan2` and `\ctan3`; when `\ctan` is absent, the renderer default
-derived from horizontal `\an` is shown without inserting a tag.
+perpendicular `\cty` offset. The compact anchor button opens a nine-choice
+`\ctan` menu, with the familiar numpad arrangement:
+
+```text
+7 8 9   text top on path
+4 5 6   text middle on path
+1 2 3   text bottom on path
+```
+
+The left, center, and right columns attach the text block to the path start,
+center, and end. A separate **Legacy baseline** choice removes `\ctan`.
+Opening the menu does not add one: without `\ctan`, existing baseline
+placement derived from horizontal `\an` remains in effect. The tool preserves
+unrelated override tags, including `\ta`.
+
+`\ta1` through `\ta9` independently control horizontal alignment between
+final visual lines: 1/4/7 mean left, 2/5/8 center, and 3/6/9 right. They do
+not change the event anchor controlled by `\an`. For example,
+`{\an7\ta2\ctan5\ct(m -300 0 l 300 0)}` keeps a top-left event anchor,
+centers shorter lines in the text block, and centers that block on the curve.
 
 `\ct` coordinates are local to the subtitle anchor. A `\pos` or frame-evaluated
 `\move` therefore moves the overlay with the subtitle without rewriting every

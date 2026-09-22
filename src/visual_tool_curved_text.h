@@ -26,7 +26,7 @@ enum VisualToolCurvedTextMode {
 	CT_ALONG_OFFSET,
 	CT_NORMAL_OFFSET,
 	CT_MODE_LAST,
-	CT_CYCLE_ALIGNMENT = CT_MODE_LAST,
+	CT_CHOOSE_ALIGNMENT = CT_MODE_LAST,
 	CT_RESET_STRAIGHT,
 	CT_REVERSE_PATH,
 	CT_REMOVE_CURVE
@@ -96,7 +96,7 @@ public:
 	void SetToolbar(wxToolBar *toolBar) override;
 	void SetSubTool(int subtool) override;
 	int GetSubTool() override { return mode; }
-	void CycleAlignment();
+	void ShowAlignmentMenu();
 	void ResetStraight();
 	void ReversePath();
 	void RemoveCurve();

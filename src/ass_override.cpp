@@ -320,6 +320,7 @@ static void load_protos() {
 	proto[i++].Set("\\ortho", VariableDataType::BOOL);
 	proto[i++].Set("\\z", VariableDataType::FLOAT, AssParameterClass::ABSOLUTE_SIZE_Y);
 	proto[i++].Set("\\tan", VariableDataType::INT);
+	proto[i++].Set("\\ta", VariableDataType::INT);
 	proto[i++].Set("\\kt", VariableDataType::INT, AssParameterClass::KARAOKE);
 
 	auto add_image = [&](char const *name) {
