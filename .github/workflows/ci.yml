@@ -13,7 +13,7 @@ on:
 jobs:
   build:
     name: ${{ matrix.config.name }}
-    runs-on: ${{ matrix.config.os }}
+    runs-on: ${{ matrix.config.runner || matrix.config.os }}
     env:
       # 39 Mode tests intentionally print Japanese lyrics/readings.
       # Force Python/Meson stdout/stderr to UTF-8 instead of Windows cp1252.
@@ -26,6 +26,7 @@ jobs:
         config:
           - name: Windows MSVC Release
             os: windows-latest
+            runner: windows-2022
             msvc: true
             buildtype: release
             args: >-
@@ -51,6 +52,7 @@ jobs:
               -Dwith_mangetsu=true
           - name: Windows MSVC Release (wx master)
             os: windows-latest
+            runner: windows-2022
             msvc: true
             buildtype: release
             args: >-
