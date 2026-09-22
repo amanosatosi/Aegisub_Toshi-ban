@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <libaegisub/timing39.h>
 #include "timing39_ui.h"
+#include "audio_display_cache.h"
 #include <algorithm>
 using namespace agi::timing39;
 namespace {
@@ -123,6 +124,44 @@ TEST(Timing39, TimelineIntervalIndexVisitsOnlyVisibleOverlaps) {
 	EXPECT_EQ((std::vector<std::pair<int,int>>{{300,400},{900,5000}}),visible);
 	visible.clear();index.Visit(4500,4600,[&](int start,int end){visible.emplace_back(start,end);});
 	EXPECT_EQ((std::vector<std::pair<int,int>>{{900,5000}}),visible);
+	index.Reset({{6000,6100}});visible.clear();
+	index.Visit(350,950,[&](int start,int end){visible.emplace_back(start,end);});
+	EXPECT_TRUE(visible.empty());
+	index.Visit(6000,6050,[&](int start,int end){visible.emplace_back(start,end);});
+	EXPECT_EQ((std::vector<std::pair<int,int>>{{6000,6100}}),visible);
+}
+TEST(Timing39, AudioStyleRangesKeepOnlyTransitionsAndFindVisibleStyle) {
+	using namespace audio_display_cache;
+	std::vector<StyleRange> ranges;
+	for (auto range : std::vector<StyleRange>{{0,0},{100,0},{200,1},{300,1},{400,2}})
+		AppendStyleTransition(ranges, range);
+	EXPECT_EQ((std::vector<StyleRange>{{0,0},{200,1},{400,2}}), ranges);
+	EXPECT_EQ(ranges.begin(), FirstStyleAt(ranges, -1));
+	EXPECT_EQ(ranges.begin(), FirstStyleAt(ranges, 199));
+	EXPECT_EQ(ranges.begin()+1, FirstStyleAt(ranges, 200));
+	EXPECT_EQ(ranges.begin()+2, FirstStyleAt(ranges, 999));
+}
+TEST(Timing39, AudioParticleBudgetNeverGrowsPastLimit) {
+	using namespace audio_display_cache;
+	size_t active = 0;
+	for (int hit=0; hit<1000; ++hit) {
+		auto retired = ParticlesToRetire(active);
+		EXPECT_LE(retired, active);
+		active = active - retired + particles_per_hit;
+		EXPECT_LE(active, particle_limit);
+	}
+}
+TEST(Timing39, VisibleCaptureVisitorMatchesPreviewWithoutFullSessionCopy) {
+	TimingLane lane('F','J');
+	lane.Begin(0,10000);
+	for (int i=0;i<100;++i) {
+		lane.KeyDown('F',i*100+10);
+		lane.KeyUp('F',i*100+60);
+	}
+	std::vector<TimingBlock> visible;
+	lane.VisitPreview(5050,4900,5100,[&](TimingBlock const& block){visible.push_back(block);});
+	EXPECT_EQ(lane.Preview(5050,4900,5100), visible);
+	EXPECT_LT(visible.size(), lane.Blocks().size());
 }
 TEST(Timing39, DurationRanksOnlyLegalPaths) {
 	auto a=Analyze(u8"こーこー");auto blocks=Taps(3);blocks[0].end=200;blocks[1]={200,300,false};blocks[2]={300,400,false};
