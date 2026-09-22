@@ -116,6 +116,38 @@ TEST(Timing39, ResultsStatusStylesAreDistinct) {
 	EXPECT_NE(green.accent.red,yellow.accent.red);EXPECT_NE(yellow.accent.red,red.accent.red);
 	EXPECT_NE(green.role,yellow.role);EXPECT_NE(yellow.role,red.role);
 }
+TEST(Timing39, ResultsLyricDisplayPreservesAuthoritativeRubyAndRomaji) {
+	using agi::timing39::ui::PrepareLyricDisplay;
+	for (auto const& source : {u8"<未|み><来|らい>",u8"<口|くち>に<出|だ>せやしない",u8"<彷|さまよ>って"}) {
+		auto prepared=PrepareLyricDisplay(Analyze(source));
+		EXPECT_EQ(std::string::npos,prepared.plain.find('<'));
+		EXPECT_EQ(std::string::npos,prepared.plain.find('|'));
+		EXPECT_EQ(std::string::npos,prepared.plain.find('>'));
+		EXPECT_FALSE(prepared.segments.empty());
+	}
+	auto future=PrepareLyricDisplay(Analyze(u8"<未|み><来|らい>"));
+	EXPECT_EQ(u8"未来",future.plain);
+	ASSERT_EQ(2u,future.segments.size());
+	EXPECT_EQ(u8"み",future.segments[0].ruby);EXPECT_EQ(u8"らい",future.segments[1].ruby);
+	auto mouth=PrepareLyricDisplay(Analyze(u8"<口|くち>に<出|だ>せやしない"));
+	EXPECT_EQ(u8"口に出せやしない",mouth.plain);
+	EXPECT_EQ(u8"くち",mouth.segments[0].ruby);
+	auto wander=PrepareLyricDisplay(Analyze(u8"<彷|さまよ>って"));
+	EXPECT_EQ(u8"彷って",wander.plain);EXPECT_EQ(u8"さまよ",wander.segments[0].ruby);
+	auto romaji=PrepareLyricDisplay(Analyze("Yume ni naru made"));
+	EXPECT_EQ("Yume ni naru made",romaji.plain);
+	for(auto const& segment:romaji.segments)EXPECT_TRUE(segment.ruby.empty());
+}
+TEST(Timing39, ResultsCandidateButtonsDescribeOnlyDisputedCuts) {
+ auto analysis=Analyze(u8"<いっせーのーで鳴り響いたスタートの合図|いっせーのーでなりひびいたすたーとのあいず>");
+ auto match=Match(analysis,Taps(18));
+	ASSERT_GE(match.paths.size(),2u);
+	for(size_t i=0;i<2;++i) {
+		auto label=agi::timing39::ui::CompactPathChoice(analysis,match,i);
+		EXPECT_FALSE(label.empty());
+		EXPECT_EQ(std::string::npos,label.find('['));
+	}
+}
 TEST(Timing39, TimelineIntervalIndexVisitsOnlyVisibleOverlaps) {
 	agi::timing39::ui::TimelineIntervalIndex index;
 	index.Reset({{900,5000},{100,200},{300,400},{5100,5200}});EXPECT_EQ(4u,index.Size());

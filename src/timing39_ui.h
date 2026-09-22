@@ -16,6 +16,42 @@ struct StatusVisual {
 	Rgb tint;
 };
 
+struct LyricSegment { std::string base, ruby; };
+struct LyricDisplay { std::string plain; std::vector<LyricSegment> segments; };
+
+// Prepared once for each result row. SourceSpan is the reading pipeline's
+// structured output, so explicit <display|reading> always wins over a lexicon.
+inline LyricDisplay PrepareLyricDisplay(Analysis const& analysis) {
+	LyricDisplay display;
+	for (auto const& span : analysis.spans) {
+		std::string base = span.display;
+		if (base == "\\N" || base == "\\n" || base == "\\h") base = " ";
+		bool non_ascii = std::any_of(base.begin(), base.end(),
+			[](unsigned char ch){return ch >= 0x80;});
+		std::string ruby = (span.explicit_reading || (non_ascii && base != span.original_reading))
+			? span.original_reading : std::string{};
+		display.plain += base;
+		display.segments.push_back({std::move(base), std::move(ruby)});
+	}
+	return display;
+}
+
+inline std::string CompactPathChoice(Analysis const& analysis, MatchResult const& match, size_t path) {
+	if (path >= match.paths.size()) return {};
+	std::string label;
+	for (auto boundary : match.ambiguous_mora_boundaries) {
+		if (!boundary || boundary >= analysis.morae.size()) continue;
+		bool cut = false;
+		for (auto const& assignment : match.paths[path].assignments)
+			if (assignment.first_mora + assignment.mora_count == boundary) { cut = true; break; }
+		if (!label.empty()) label += "  /  ";
+		label += analysis.morae[boundary-1].text;
+		label += cut ? " | " : "";
+		label += analysis.morae[boundary].text;
+	}
+	return label;
+}
+
 constexpr StatusVisual StatusStyle(Confidence status) {
 	return status == Confidence::Green ? StatusVisual{StatusRole::Green,{46,125,50},{232,245,233}} :
 		status == Confidence::Yellow ? StatusVisual{StatusRole::Amber,{183,121,31},{255,248,225}} :
