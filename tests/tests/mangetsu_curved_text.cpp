@@ -61,3 +61,86 @@ TEST(MangetsuCurvedText, MalformedEditFailsWithoutChangingLine) {
 	EXPECT_FALSE(SetMangetsuCurvedTextPath(line, "m 0 b broken"));
 	EXPECT_EQ(before, line.Text.get());
 }
+
+TEST(MangetsuCurvedText, CreatesAlignmentAwareDefaultPathWithoutManualSyntax) {
+	auto line = MakeLine("{\\pos(936,565)}testing");
+	auto path = MakeDefaultMangetsuCurvedTextPath(200, 5);
+	EXPECT_EQ("m -100 0 l 100 0", path);
+	ASSERT_TRUE(SetMangetsuCurvedTextPath(line, path));
+	EXPECT_EQ("{\\pos(936,565)\\ct(m -100 0 l 100 0)}testing", line.Text.get());
+	EXPECT_EQ("m 0 0 l 200 0", MakeDefaultMangetsuCurvedTextPath(200, 4));
+	EXPECT_EQ("m -200 0 l 0 0", MakeDefaultMangetsuCurvedTextPath(200, 6));
+}
+
+TEST(MangetsuCurvedText, SerializesStraightAndCurvedArcs) {
+	MangetsuCurvedTextArc straight {Vector2D(-100, 0), Vector2D(0, 0), Vector2D(100, 0)};
+	EXPECT_EQ("m -100 0 l 100 0", FormatMangetsuCurvedTextArc(straight));
+
+	MangetsuCurvedTextArc upward {Vector2D(-100, 0), Vector2D(0, -50), Vector2D(100, 0)};
+	EXPECT_EQ("m -100 0 b -33.33 -66.67 33.33 -66.67 100 0", FormatMangetsuCurvedTextArc(upward));
+
+	MangetsuCurvedTextArc downward {Vector2D(-100, 0), Vector2D(0, 50), Vector2D(100, 0)};
+	EXPECT_EQ("m -100 0 b -33.33 66.67 33.33 66.67 100 0", FormatMangetsuCurvedTextArc(downward));
+}
+
+TEST(MangetsuCurvedText, DiagonalArcRoundTripsItsVisualHandles) {
+	MangetsuCurvedTextArc source {Vector2D(-80, 20), Vector2D(15, -35), Vector2D(130, 90)};
+	MangetsuCurvedTextArc loaded;
+	ASSERT_TRUE(GetMangetsuCurvedTextArc(FormatMangetsuCurvedTextArc(source), loaded));
+	EXPECT_NEAR(source.start.X(), loaded.start.X(), .02);
+	EXPECT_NEAR(source.start.Y(), loaded.start.Y(), .02);
+	EXPECT_NEAR(source.bend.X(), loaded.bend.X(), .02);
+	EXPECT_NEAR(source.bend.Y(), loaded.bend.Y(), .02);
+	EXPECT_NEAR(source.end.X(), loaded.end.X(), .02);
+	EXPECT_NEAR(source.end.Y(), loaded.end.Y(), .02);
+}
+
+TEST(MangetsuCurvedText, LoadsToolGeneratedCubicButRejectsLossyArcSimplification) {
+	MangetsuCurvedTextArc arc;
+	ASSERT_TRUE(GetMangetsuCurvedTextArc(
+		"m -100 0 b -33.33 -66.67 33.33 -66.67 100 0", arc));
+	EXPECT_NEAR(0, arc.bend.X(), .02);
+	EXPECT_NEAR(-50, arc.bend.Y(), .02);
+	EXPECT_FALSE(GetMangetsuCurvedTextArc(
+		"m 0 0 b 10 80 90 -20 100 0", arc));
+}
+
+TEST(MangetsuCurvedText, ResetsAndReversesWithoutChangingPathEndpoints) {
+	std::string straight;
+	ASSERT_TRUE(ResetMangetsuCurvedTextPathStraight(
+		"m 0 0 l 40 20 b 60 30 80 30 100 0", straight));
+	EXPECT_EQ("m 0 0 l 100 0", straight);
+
+	std::string reversed;
+	ASSERT_TRUE(ReverseMangetsuCurvedTextPath(
+		"m 0 0 l 40 20 b 60 30 80 30 100 0", reversed));
+	EXPECT_EQ("m 100 0 b 80 30 60 30 40 20 l 0 0", reversed);
+}
+
+TEST(MangetsuCurvedText, RemoveCurvePreservesUnrelatedTagsTextAndTransforms) {
+	auto line = MakeLine("{\\pos(936,565)\\bord5\\ct(m -100 0 l 100 0)\\blur1\\t(\\ct(m 0 0 l 1 0))}testing");
+	ASSERT_TRUE(RemoveMangetsuCurvedTextPath(line));
+	EXPECT_EQ("{\\pos(936,565)\\bord5\\blur1\\t(\\ct(m 0 0 l 1 0))}testing", line.Text.get());
+	auto only_curve = MakeLine("{\\ct(m -10 0 l 10 0)}testing");
+	ASSERT_TRUE(RemoveMangetsuCurvedTextPath(only_curve));
+	EXPECT_EQ("testing", only_curve.Text.get());
+}
+
+TEST(MangetsuCurvedText, ComplexPathIsPreservedAndUsesAdvancedMode) {
+	auto path = "m -100 0 l -40 -20 0 -10 b 25 30 75 30 100 0";
+	MangetsuCurvedTextArc arc;
+	EXPECT_TRUE(IsSupportedMangetsuCurvedTextPath(path));
+	EXPECT_FALSE(GetMangetsuCurvedTextArc(path, arc));
+	auto line = MakeLine(std::string("{\\bord2\\ct(") + path + ")}မြန်မာစာ");
+	auto before = line.Text.get();
+	EXPECT_EQ(path, GetMangetsuCurvedText(line).path);
+	EXPECT_EQ(before, line.Text.get());
+}
+
+TEST(MangetsuCurvedText, FirstValidStaticPathWinsAcrossResets) {
+	auto line = MakeLine(
+		"{\\ct(l 0 0)\\ct(m -50 0 l 50 0)\\r\\ct(m -10 0 l 10 0)}TEXT");
+	EXPECT_EQ("m -50 0 l 50 0", GetMangetsuCurvedText(line).path);
+	ASSERT_TRUE(SetMangetsuCurvedTextPath(line, "m -75 0 l 75 0"));
+	EXPECT_EQ("{\\ct(l 0 0)\\ct(m -75 0 l 75 0)\\r\\ct(m -10 0 l 10 0)}TEXT", line.Text.get());
+}

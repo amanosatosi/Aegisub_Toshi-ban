@@ -71,21 +71,34 @@ subtitle renderer remains responsible for shaping and preview. It does not split
 text into characters or create a second fake text renderer, so complex scripts
 such as Burmese remain unchanged.
 
-The default **Edit Path** mode exposes anchors, cubic Bezier controls and their
-control lines for `m`, `l` and `b` path commands. **Move Whole Path** translates
-all local path coordinates without changing `\pos` or `\move`. The other two
-modes edit `\ctx` along-path distance and perpendicular `\cty` offset. The
-compact alignment button cycles explicit `\ctan1`, `\ctan2` and `\ctan3`; when
-`\ctan` is absent, the renderer default derived from horizontal `\an` is shown
-without inserting a tag.
+The default **Arc** mode is a visual authoring mode with start, end, and bend
+handles. The bend handle is the actual midpoint of the resulting curve; the
+tool converts it to a cubic ASS Bezier internally, so users do not need to type
+`m`, `l`, or `b` commands. Straight paths and the quadratic-style cubics created
+by the tool load back into the same three-handle representation.
+
+**Path** mode exposes anchors, cubic Bezier controls and their control lines for
+arbitrary `m`, `l` and `b` paths. Adjacent insert/remove controls reuse the
+vector-clip conventions for splitting segments, deleting nodes, and converting
+a Bezier to a line by removing a control. Complex paths are never simplified
+just by opening the tool or switching modes. **Reset Straight**, **Reverse
+Path**, and **Remove Curve** are explicit actions; only those buttons perform
+their named destructive geometry change.
+
+**Move Whole Path** translates all local path coordinates without changing
+`\pos` or `\move`. The other two modes edit `\ctx` along-path distance and
+perpendicular `\cty` offset. The compact alignment button cycles explicit
+`\ctan1`, `\ctan2` and `\ctan3`; when `\ctan` is absent, the renderer default
+derived from horizontal `\an` is shown without inserting a tag.
 
 `\ct` coordinates are local to the subtitle anchor. A `\pos` or frame-evaluated
 `\move` therefore moves the overlay with the subtitle without rewriting every
-path point. Lines without `\ct` show a provisional baseline sized from the line;
-opening the tool makes no subtitle change, and the tag is inserted only by the
-first edit. Unknown or malformed path commands are left untouched rather than
-being partially normalized. Static tags are edited; `\ct` inside `\t(...)` is
-not an editing target.
+path point. When the tool is activated on a line without `\ct`, it immediately
+creates a straight baseline from the measured text width. The baseline begins,
+centers, or ends at the anchor according to horizontal `\an`, which keeps the
+initial placement intuitive. Unknown path commands are left untouched rather
+than being partially normalized. Static tags are edited; `\ct` inside
+`\t(...)` is not an editing target.
 
 ### Mangetsu Perspective (`\perspective`)
 

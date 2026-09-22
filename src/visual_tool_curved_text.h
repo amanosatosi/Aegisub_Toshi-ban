@@ -18,16 +18,25 @@ class wxCommandEvent;
 class wxToolBar;
 
 enum VisualToolCurvedTextMode {
-	CT_EDIT_PATH = 0,
+	CT_ARC = 0,
+	CT_EDIT_PATH,
+	CT_INSERT_PATH_POINT,
+	CT_REMOVE_PATH_POINT,
 	CT_MOVE_PATH,
 	CT_ALONG_OFFSET,
 	CT_NORMAL_OFFSET,
 	CT_MODE_LAST,
-	CT_CYCLE_ALIGNMENT = CT_MODE_LAST
+	CT_CYCLE_ALIGNMENT = CT_MODE_LAST,
+	CT_RESET_STRAIGHT,
+	CT_REVERSE_PATH,
+	CT_REMOVE_CURVE
 };
 
 enum CurvedTextFeatureRole {
 	CT_FEATURE_PATH,
+	CT_FEATURE_ARC_START,
+	CT_FEATURE_ARC_BEND,
+	CT_FEATURE_ARC_END,
 	CT_FEATURE_ALONG,
 	CT_FEATURE_NORMAL
 };
@@ -40,12 +49,14 @@ struct VisualToolCurvedTextDraggableFeature final : public VisualDraggableFeatur
 
 class VisualToolCurvedText final : public VisualTool<VisualToolCurvedTextDraggableFeature> {
 	wxToolBar *toolBar = nullptr;
-	VisualToolCurvedTextMode mode = CT_EDIT_PATH;
+	VisualToolCurvedTextMode mode = CT_ARC;
 	Spline spline;
 	MangetsuCurvedTextState state;
+	MangetsuCurvedTextArc arc;
 	Vector2D anchor;
 	bool editable = false;
-	bool provisional = false;
+	bool simple_arc = false;
+	AssDialogue *removed_line = nullptr;
 	int feature_size = 4;
 	std::set<Feature *> box_added;
 	std::string move_original_path;
@@ -56,12 +67,17 @@ class VisualToolCurvedText final : public VisualTool<VisualToolCurvedTextDraggab
 	std::string EncodePath() const;
 	bool EnsurePathTag();
 	bool SavePath();
+	bool SaveArc();
 	bool HitTestPath(Vector2D screen_point) const;
+	bool FindClosestCurve(Vector2D local_point, Spline::iterator& curve, float& t);
 	float ClosestPathDistance(Vector2D local_point) const;
 	Vector2D PathPointAtDistance(float distance, Vector2D *tangent = nullptr) const;
 	void AddPathFeature(size_t curve);
+	void AddArcFeature(CurvedTextFeatureRole role, Vector2D position, DraggableFeatureType type);
 	void MakeFeatures();
 	void UpdateAlignmentTool();
+	void UpdateModeTools();
+	void DeletePathFeature(Feature *feature);
 
 	void DoRefresh() override;
 	void OnFrameChanged() override { DoRefresh(); }
@@ -76,8 +92,12 @@ class VisualToolCurvedText final : public VisualTool<VisualToolCurvedTextDraggab
 
 public:
 	VisualToolCurvedText(VideoDisplay *parent, agi::Context *context);
+	void OnAttached() override { DoRefresh(); }
 	void SetToolbar(wxToolBar *toolBar) override;
 	void SetSubTool(int subtool) override;
 	int GetSubTool() override { return mode; }
 	void CycleAlignment();
+	void ResetStraight();
+	void ReversePath();
+	void RemoveCurve();
 };

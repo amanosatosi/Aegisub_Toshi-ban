@@ -188,7 +188,7 @@ namespace {
 		CMD_ICON(visual_curved_text)
 		STR_MENU("Curved Text")
 		STR_DISP("Curved Text")
-		STR_HELP("Edit Mangetsu \\ct text-on-path")
+		STR_HELP("Create and edit Mangetsu \\ct text-on-path visually")
 	};
 
 	struct visual_mode_scale final : public visual_tool_command<VisualToolScale> {
@@ -262,12 +262,36 @@ namespace {
 		STR_HELP("ASS-compatible perspective approximation")
 	};
 
+	struct visual_mode_curved_text_arc final : public visual_tool_curved_text_command<CT_ARC> {
+		CMD_NAME("video/tool/curved_text/arc")
+		CMD_ICON(visual_curved_text)
+		STR_MENU("Arc")
+		STR_DISP("Arc")
+		STR_HELP("Edit the curved baseline with start, bend and end handles")
+	};
+
 	struct visual_mode_curved_text_edit final : public visual_tool_curved_text_command<CT_EDIT_PATH> {
 		CMD_NAME("video/tool/curved_text/edit")
 		CMD_ICON(visual_curved_text_edit)
-		STR_MENU("Edit Path")
-		STR_DISP("Edit Path")
+		STR_MENU("Path")
+		STR_DISP("Path")
 		STR_HELP("Edit Mangetsu \\ct path nodes and Bezier controls")
+	};
+
+	struct visual_mode_curved_text_insert final : public visual_tool_curved_text_command<CT_INSERT_PATH_POINT> {
+		CMD_NAME("video/tool/curved_text/insert")
+		CMD_ICON(visual_vector_clip_insert)
+		STR_MENU("Insert Path Point")
+		STR_DISP("Insert Path Point")
+		STR_HELP("Split the nearest curved-text line or Bezier segment")
+	};
+
+	struct visual_mode_curved_text_remove_point final : public visual_tool_curved_text_command<CT_REMOVE_PATH_POINT> {
+		CMD_NAME("video/tool/curved_text/remove_point")
+		CMD_ICON(visual_vector_clip_remove)
+		STR_MENU("Remove Path Point")
+		STR_DISP("Remove Path Point")
+		STR_HELP("Remove a curved-text node or convert a Bezier by removing a control")
 	};
 
 	struct visual_mode_curved_text_move final : public visual_tool_curved_text_command<CT_MOVE_PATH> {
@@ -310,6 +334,54 @@ namespace {
 			if (!c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)))
 				c->videoDisplay->SetTool(agi::make_unique<VisualToolCurvedText>(c->videoDisplay, c));
 			c->videoDisplay->SetSubTool(CT_CYCLE_ALIGNMENT);
+		}
+	};
+
+	struct visual_mode_curved_text_reset final : public Command {
+		CMD_NAME("video/tool/curved_text/reset")
+		CMD_ICON(visual_vector_clip_line)
+		CMD_TYPE(COMMAND_VALIDATE)
+		STR_MENU("Reset Straight")
+		STR_DISP("Reset Straight")
+		STR_HELP("Keep the curved-text endpoints and remove all curvature")
+
+		bool Validate(const agi::Context *c) override { return !!c->project->VideoProvider(); }
+		void operator()(agi::Context *c) override {
+			if (!c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)))
+				c->videoDisplay->SetTool(agi::make_unique<VisualToolCurvedText>(c->videoDisplay, c));
+			c->videoDisplay->SetSubTool(CT_RESET_STRAIGHT);
+		}
+	};
+
+	struct visual_mode_curved_text_reverse final : public Command {
+		CMD_NAME("video/tool/curved_text/reverse")
+		CMD_ICON(arrow_sort)
+		CMD_TYPE(COMMAND_VALIDATE)
+		STR_MENU("Reverse Path")
+		STR_DISP("Reverse Path")
+		STR_HELP("Reverse the curved-text baseline direction without changing its shape")
+
+		bool Validate(const agi::Context *c) override { return !!c->project->VideoProvider(); }
+		void operator()(agi::Context *c) override {
+			if (!c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)))
+				c->videoDisplay->SetTool(agi::make_unique<VisualToolCurvedText>(c->videoDisplay, c));
+			c->videoDisplay->SetSubTool(CT_REVERSE_PATH);
+		}
+	};
+
+	struct visual_mode_curved_text_remove final : public Command {
+		CMD_NAME("video/tool/curved_text/remove")
+		CMD_ICON(visual_vector_clip_remove)
+		CMD_TYPE(COMMAND_VALIDATE)
+		STR_MENU("Remove Curve")
+		STR_DISP("Remove Curve")
+		STR_HELP("Remove static \\ct paths without changing any unrelated tags or text")
+
+		bool Validate(const agi::Context *c) override { return !!c->project->VideoProvider(); }
+		void operator()(agi::Context *c) override {
+			if (!c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)))
+				c->videoDisplay->SetTool(agi::make_unique<VisualToolCurvedText>(c->videoDisplay, c));
+			c->videoDisplay->SetSubTool(CT_REMOVE_CURVE);
 		}
 	};
 
@@ -507,11 +579,17 @@ namespace cmd {
 		reg(agi::make_unique<visual_mode_perspective_orgmode_keep>());
 		reg(agi::make_unique<visual_mode_perspective_orgmode_cycle>());
 
+		reg(agi::make_unique<visual_mode_curved_text_arc>());
 		reg(agi::make_unique<visual_mode_curved_text_edit>());
+		reg(agi::make_unique<visual_mode_curved_text_insert>());
+		reg(agi::make_unique<visual_mode_curved_text_remove_point>());
 		reg(agi::make_unique<visual_mode_curved_text_move>());
 		reg(agi::make_unique<visual_mode_curved_text_ctx>());
 		reg(agi::make_unique<visual_mode_curved_text_cty>());
 		reg(agi::make_unique<visual_mode_curved_text_ctan>());
+		reg(agi::make_unique<visual_mode_curved_text_reset>());
+		reg(agi::make_unique<visual_mode_curved_text_reverse>());
+		reg(agi::make_unique<visual_mode_curved_text_remove>());
 
 		reg(agi::make_unique<visual_mode_vclip_drag>());
 		reg(agi::make_unique<visual_mode_vclip_line>());

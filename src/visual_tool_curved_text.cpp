@@ -28,7 +28,10 @@
 
 namespace {
 int const BUTTON_ID_BASE = 1500;
-int const BUTTON_ID_ALIGNMENT = 1510;
+int const BUTTON_ID_RESET = 1520;
+int const BUTTON_ID_REVERSE = 1521;
+int const BUTTON_ID_REMOVE_CURVE = 1522;
+int const BUTTON_ID_ALIGNMENT = 1523;
 
 bool InBox(Vector2D top_left, Vector2D bottom_right, Vector2D point) {
 	return point.X() >= top_left.X() && point.X() <= bottom_right.X() &&
@@ -64,7 +67,6 @@ bool VisualToolCurvedText::EnsurePathTag() {
 		return false;
 	state.has_path = true;
 	state.path = EncodePath();
-	provisional = false;
 	return true;
 }
 
@@ -76,7 +78,19 @@ bool VisualToolCurvedText::SavePath() {
 		return false;
 	state.path = path;
 	state.has_path = true;
-	provisional = false;
+	simple_arc = GetMangetsuCurvedTextArc(path, arc);
+	return true;
+}
+
+bool VisualToolCurvedText::SaveArc() {
+	if (!active_line || !editable || !simple_arc)
+		return false;
+	auto path = FormatMangetsuCurvedTextArc(arc);
+	if (!SetMangetsuCurvedTextPath(*active_line, path))
+		return false;
+	state.path = path;
+	state.has_path = true;
+	spline.DecodeFromAss(path);
 	return true;
 }
 
@@ -89,7 +103,20 @@ void VisualToolCurvedText::AddTool(std::string const& command_name, int id) {
 void VisualToolCurvedText::SetToolbar(wxToolBar *toolbar) {
 	toolBar = toolbar;
 	toolBar->AddSeparator();
+	AddTool("video/tool/curved_text/arc", CT_ARC);
 	AddTool("video/tool/curved_text/edit", CT_EDIT_PATH);
+	AddTool("video/tool/curved_text/insert", CT_INSERT_PATH_POINT);
+	AddTool("video/tool/curved_text/remove_point", CT_REMOVE_PATH_POINT);
+	toolBar->AddSeparator();
+	auto add_action = [&](char const *name, int id) {
+		auto command = cmd::get(name);
+		int icon_size = OPT_GET("App/Toolbar Icon Size")->GetInt();
+		toolBar->AddTool(id, command->StrDisplay(c), command->Icon(icon_size), command->GetTooltip("Video"));
+	};
+	add_action("video/tool/curved_text/reset", BUTTON_ID_RESET);
+	add_action("video/tool/curved_text/reverse", BUTTON_ID_REVERSE);
+	add_action("video/tool/curved_text/remove", BUTTON_ID_REMOVE_CURVE);
+	toolBar->AddSeparator();
 	AddTool("video/tool/curved_text/move", CT_MOVE_PATH);
 	AddTool("video/tool/curved_text/ctx", CT_ALONG_OFFSET);
 	AddTool("video/tool/curved_text/cty", CT_NORMAL_OFFSET);
@@ -100,12 +127,18 @@ void VisualToolCurvedText::SetToolbar(wxToolBar *toolbar) {
 	toolBar->Bind(wxEVT_TOOL, &VisualToolCurvedText::OnSubTool, this);
 	toolBar->Realize();
 	toolBar->Show(true);
-	SetSubTool(CT_EDIT_PATH);
+	SetSubTool(mode);
 }
 
 void VisualToolCurvedText::OnSubTool(wxCommandEvent& event) {
 	if (event.GetId() == BUTTON_ID_ALIGNMENT)
 		CycleAlignment();
+	else if (event.GetId() == BUTTON_ID_RESET)
+		ResetStraight();
+	else if (event.GetId() == BUTTON_ID_REVERSE)
+		ReversePath();
+	else if (event.GetId() == BUTTON_ID_REMOVE_CURVE)
+		RemoveCurve();
 	else
 		SetSubTool(event.GetId() - BUTTON_ID_BASE);
 }
@@ -115,13 +148,37 @@ void VisualToolCurvedText::SetSubTool(int subtool) {
 		CycleAlignment();
 		return;
 	}
-	if (!toolBar || subtool < CT_EDIT_PATH || subtool >= CT_MODE_LAST)
+	if (subtool == CT_RESET_STRAIGHT) {
+		ResetStraight();
 		return;
-	for (int value = CT_EDIT_PATH; value < CT_MODE_LAST; ++value)
-		toolBar->ToggleTool(BUTTON_ID_BASE + value, value == subtool);
+	}
+	if (subtool == CT_REVERSE_PATH) {
+		ReversePath();
+		return;
+	}
+	if (subtool == CT_REMOVE_CURVE) {
+		RemoveCurve();
+		return;
+	}
+	if (!toolBar || subtool < CT_ARC || subtool >= CT_MODE_LAST)
+		return;
+	if (subtool == CT_ARC && state.has_path && !simple_arc) {
+		mode = CT_EDIT_PATH;
+		UpdateModeTools();
+		parent->Render();
+		return;
+	}
 	mode = static_cast<VisualToolCurvedTextMode>(subtool);
+	UpdateModeTools();
 	MakeFeatures();
 	parent->Render();
+}
+
+void VisualToolCurvedText::UpdateModeTools() {
+	if (!toolBar)
+		return;
+	for (int value = CT_ARC; value < CT_MODE_LAST; ++value)
+		toolBar->ToggleTool(BUTTON_ID_BASE + value, value == mode);
 }
 
 void VisualToolCurvedText::UpdateAlignmentTool() {
@@ -144,9 +201,54 @@ void VisualToolCurvedText::CycleAlignment() {
 		state.alignment = next;
 		state.has_alignment = true;
 		Commit(_("curved text alignment"));
+		commit_id = -1;
 		UpdateAlignmentTool();
 		parent->Render();
 	}
+}
+
+void VisualToolCurvedText::ResetStraight() {
+	if (!active_line || !state.has_path)
+		return;
+	std::string path;
+	if (!ResetMangetsuCurvedTextPathStraight(state.path, path) ||
+		!SetMangetsuCurvedTextPath(*active_line, path))
+		return;
+	removed_line = nullptr;
+	Commit(_("reset curved text path"));
+	commit_id = -1;
+	DoRefresh();
+	parent->Render();
+}
+
+void VisualToolCurvedText::ReversePath() {
+	if (!active_line || !state.has_path)
+		return;
+	std::string path;
+	if (!ReverseMangetsuCurvedTextPath(state.path, path) ||
+		!SetMangetsuCurvedTextPath(*active_line, path))
+		return;
+	removed_line = nullptr;
+	Commit(_("reverse curved text path"));
+	commit_id = -1;
+	DoRefresh();
+	parent->Render();
+}
+
+void VisualToolCurvedText::RemoveCurve() {
+	if (!active_line || !RemoveMangetsuCurvedTextPath(*active_line))
+		return;
+	removed_line = active_line;
+	state = MangetsuCurvedTextState();
+	spline.clear();
+	features.clear();
+	sel_features.clear();
+	active_feature = nullptr;
+	editable = false;
+	simple_arc = false;
+	Commit(_("remove curved text path"));
+	commit_id = -1;
+	parent->Render();
 }
 
 void VisualToolCurvedText::DoRefresh() {
@@ -155,25 +257,51 @@ void VisualToolCurvedText::DoRefresh() {
 	active_feature = nullptr;
 	spline.clear();
 	editable = false;
-	provisional = false;
+	simple_arc = false;
 	if (!active_line)
 		return;
 
 	anchor = GetLinePositionAtFrame(active_line);
 	state = GetMangetsuCurvedText(*active_line);
-	std::string path = state.path;
 	if (!state.has_path) {
+		if (active_line == removed_line) {
+			UpdateAlignmentTool();
+			return;
+		}
 		auto extents = GetLineBaseExtents(active_line);
-		float half_width = std::max(25.f, (extents.second.X() - extents.first.X()) / 2.f);
-		path = "m " + Vector2D(-half_width, 0).Str(' ') + " l " + Vector2D(half_width, 0).Str(' ');
-		provisional = true;
+		double width = extents.second.X() - extents.first.X();
+		// GetLineBaseExtents deliberately reports unscaled text metrics. Curved
+		// layout distances follow shaped advances, so account for legacy fscx
+		// here; Mangetsu's top-level \scale scales both text and path together.
+		Vector2D text_scale;
+		GetLineScale(active_line, text_scale);
+		width *= text_scale.X() / 100.0;
+		int path_alignment = state.has_alignment ? state.alignment : GetLineAlignment(active_line);
+		auto path = MakeDefaultMangetsuCurvedTextPath(width, path_alignment);
+		if (!SetMangetsuCurvedTextPath(*active_line, path)) {
+			UpdateAlignmentTool();
+			return;
+		}
+		state.path = path;
+		state.has_path = true;
+		Commit(_("create curved text path"));
+		commit_id = -1;
 	}
-	if (!IsSupportedMangetsuCurvedTextPath(path)) {
+	else
+		removed_line = nullptr;
+
+	if (!IsSupportedMangetsuCurvedTextPath(state.path)) {
+		mode = CT_EDIT_PATH;
+		UpdateModeTools();
 		UpdateAlignmentTool();
 		return;
 	}
-	spline.DecodeFromAss(path);
+	spline.DecodeFromAss(state.path);
 	editable = !spline.empty();
+	simple_arc = GetMangetsuCurvedTextArc(state.path, arc);
+	if (mode == CT_ARC && !simple_arc)
+		mode = CT_EDIT_PATH;
+	UpdateModeTools();
 	MakeFeatures();
 	UpdateAlignmentTool();
 }
@@ -217,13 +345,27 @@ void VisualToolCurvedText::AddPathFeature(size_t index) {
 	features.push_back(*feature.release());
 }
 
+void VisualToolCurvedText::AddArcFeature(CurvedTextFeatureRole role, Vector2D position, DraggableFeatureType type) {
+	auto feature = agi::make_unique<Feature>();
+	feature->role = role;
+	feature->pos = LocalToScreen(position);
+	feature->type = type;
+	feature->layer = role == CT_FEATURE_ARC_BEND ? 2 : 1;
+	features.push_back(*feature.release());
+}
+
 void VisualToolCurvedText::MakeFeatures() {
 	features.clear();
 	sel_features.clear();
 	active_feature = nullptr;
 	if (!editable)
 		return;
-	if (mode == CT_EDIT_PATH) {
+	if (mode == CT_ARC && simple_arc) {
+		AddArcFeature(CT_FEATURE_ARC_START, arc.start, DRAG_SMALL_CIRCLE);
+		AddArcFeature(CT_FEATURE_ARC_END, arc.end, DRAG_SMALL_CIRCLE);
+		AddArcFeature(CT_FEATURE_ARC_BEND, arc.bend, DRAG_BIG_CIRCLE);
+	}
+	else if (mode == CT_EDIT_PATH || mode == CT_INSERT_PATH_POINT || mode == CT_REMOVE_PATH_POINT) {
 		for (size_t index = 0; index < spline.size(); ++index)
 			AddPathFeature(index);
 	}
@@ -250,7 +392,7 @@ void VisualToolCurvedText::Draw() {
 		return;
 	wxColour line_color = to_wx(line_color_primary_opt->GetColor());
 	wxColour secondary = to_wx(line_color_secondary_opt->GetColor());
-	gl.SetLineColour(line_color, provisional ? .55f : .9f, 2);
+	gl.SetLineColour(line_color, .9f, 2);
 	for (auto const& curve : spline) {
 		if (curve.type == SplineCurve::POINT)
 			continue;
@@ -266,10 +408,12 @@ void VisualToolCurvedText::Draw() {
 	}
 
 	gl.SetLineColour(secondary, .85f, 1);
-	for (auto const& curve : spline) {
-		if (curve.type == SplineCurve::BICUBIC) {
-			gl.DrawDashedLine(LocalToScreen(curve.p1), LocalToScreen(curve.p2), 6);
-			gl.DrawDashedLine(LocalToScreen(curve.p3), LocalToScreen(curve.p4), 6);
+	if (mode == CT_EDIT_PATH || mode == CT_INSERT_PATH_POINT || mode == CT_REMOVE_PATH_POINT) {
+		for (auto const& curve : spline) {
+			if (curve.type == SplineCurve::BICUBIC) {
+				gl.DrawDashedLine(LocalToScreen(curve.p1), LocalToScreen(curve.p2), 6);
+				gl.DrawDashedLine(LocalToScreen(curve.p3), LocalToScreen(curve.p4), 6);
+			}
 		}
 	}
 
@@ -290,13 +434,31 @@ void VisualToolCurvedText::Draw() {
 }
 
 bool VisualToolCurvedText::InitializeDrag(Feature *feature) {
-	return editable && feature;
+	if (!editable || !feature)
+		return false;
+	if (mode == CT_REMOVE_PATH_POINT && feature->role == CT_FEATURE_PATH) {
+		DeletePathFeature(feature);
+		return false;
+	}
+	return true;
 }
 
 void VisualToolCurvedText::UpdateDrag(Feature *feature) {
 	if (!feature || !editable)
 		return;
-	if (feature->role == CT_FEATURE_PATH) {
+	if (feature->role == CT_FEATURE_ARC_START || feature->role == CT_FEATURE_ARC_BEND ||
+		feature->role == CT_FEATURE_ARC_END)
+	{
+		Vector2D position = ScreenToLocal(feature->pos);
+		if (feature->role == CT_FEATURE_ARC_START)
+			arc.start = position;
+		else if (feature->role == CT_FEATURE_ARC_BEND)
+			arc.bend = position;
+		else
+			arc.end = position;
+		SaveArc();
+	}
+	else if (feature->role == CT_FEATURE_PATH) {
 		spline.MovePoint(spline.begin() + feature->curve, feature->point, ScreenToLocal(feature->pos));
 		SavePath();
 	}
@@ -324,6 +486,20 @@ void VisualToolCurvedText::UpdateDrag(Feature *feature) {
 bool VisualToolCurvedText::InitializeHold() {
 	if (!editable)
 		return false;
+	if (mode == CT_INSERT_PATH_POINT) {
+		Spline::iterator curve;
+		float t = 0.f;
+		if (!FindClosestCurve(ScreenToLocal(mouse_pos), curve, t))
+			return false;
+		auto split = curve->Split(t);
+		*curve = split.first;
+		spline.insert(std::next(curve), split.second);
+		SavePath();
+		MakeFeatures();
+		Commit(_("insert curved text path point"));
+		parent->Render();
+		return false;
+	}
 	if (mode == CT_EDIT_PATH) {
 		box_added.clear();
 		return true;
@@ -334,6 +510,35 @@ bool VisualToolCurvedText::InitializeHold() {
 		return true;
 	}
 	return false;
+}
+
+void VisualToolCurvedText::DeletePathFeature(Feature *feature) {
+	if (!feature || feature->curve >= spline.size())
+		return;
+	auto curve = spline.begin() + feature->curve;
+	if (curve->type == SplineCurve::BICUBIC && (feature->point == 1 || feature->point == 2)) {
+		curve->type = SplineCurve::LINE;
+		curve->p2 = curve->p4;
+	}
+	else {
+		if (spline.size() <= 2)
+			return;
+		auto next = std::next(curve);
+		if (next != spline.end()) {
+			if (curve->type == SplineCurve::POINT) {
+				next->p1 = next->EndPoint();
+				next->type = SplineCurve::POINT;
+			}
+			else
+				next->p1 = curve->p1;
+		}
+		spline.erase(curve);
+	}
+	if (SavePath()) {
+		MakeFeatures();
+		Commit(_("remove curved text path point"));
+		parent->Render();
+	}
 }
 
 void VisualToolCurvedText::UpdateHold() {
@@ -379,6 +584,24 @@ bool VisualToolCurvedText::HitTestPath(Vector2D screen_point) const {
 			return true;
 	}
 	return false;
+}
+
+bool VisualToolCurvedText::FindClosestCurve(Vector2D local_point, Spline::iterator& best_curve, float& best_t) {
+	best_curve = spline.end();
+	best_t = 0.f;
+	float best_distance = std::numeric_limits<float>::infinity();
+	for (auto curve = spline.begin(); curve != spline.end(); ++curve) {
+		if (curve->type == SplineCurve::POINT)
+			continue;
+		float t = curve->GetClosestParam(local_point);
+		float distance = (curve->GetPoint(t) - local_point).SquareLen();
+		if (distance < best_distance) {
+			best_distance = distance;
+			best_curve = curve;
+			best_t = t;
+		}
+	}
+	return best_curve != spline.end();
 }
 
 float VisualToolCurvedText::ClosestPathDistance(Vector2D local_point) const {
