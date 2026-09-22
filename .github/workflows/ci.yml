@@ -187,13 +187,12 @@ jobs:
           meson setup build ${{ matrix.config.args }} -Dbuildtype=${{ matrix.config.buildtype }}
           meson configure build
 
-      - name: Acquire pinned ASSDraw release
+      - name: Build current ASSDraw master from source
         if: matrix.config.os == 'windows-latest'
+        id: assdraw
         shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
-          .\tools\download-assdraw.ps1
+          .\tools\build-assdraw.ps1
           -BuildRoot "${{ github.workspace }}\build"
           -SourceRoot "${{ github.workspace }}"
 

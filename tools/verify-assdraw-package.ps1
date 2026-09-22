@@ -10,9 +10,16 @@ param (
 $ErrorActionPreference = 'Stop'
 $BuildRoot = (Resolve-Path -LiteralPath $BuildRoot).Path
 $SourceRoot = (Resolve-Path -LiteralPath $SourceRoot).Path
-$Metadata = Get-Content -LiteralPath (Join-Path $SourceRoot 'packages\win_installer\assdraw.json') -Raw | ConvertFrom-Json
-$ExpectedHash = ([string]$Metadata.sha256).ToLowerInvariant()
 $TemporaryRoot = if ($Env:RUNNER_TEMP) { $Env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
+$DependencyExe = Join-Path $BuildRoot 'installer-deps\assdraw\ASSDraw3.exe'
+$PortableDir = Join-Path $BuildRoot 'aegisub-portable'
+$PortableExe = Join-Path $PortableDir 'ASSDraw3.exe'
+$PortableZip = Join-Path $BuildRoot 'aegisub-portable-64.zip'
+
+if (!(Test-Path -LiteralPath $DependencyExe -PathType Leaf)) {
+    throw "Staged ASSDraw executable is missing: $DependencyExe"
+}
+$ExpectedHash = (Get-FileHash -LiteralPath $DependencyExe -Algorithm SHA256).Hash.ToLowerInvariant()
 
 function Assert-FileHashMatches {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -26,12 +33,22 @@ function Assert-FileHashMatches {
     }
 }
 
-$DependencyExe = Join-Path $BuildRoot 'installer-deps\assdraw\ASSDraw3.exe'
-$PortableDir = Join-Path $BuildRoot 'aegisub-portable'
-$PortableExe = Join-Path $PortableDir 'ASSDraw3.exe'
-$PortableZip = Join-Path $BuildRoot 'aegisub-portable-64.zip'
+function Assert-WindowsExecutable {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $Stream = [IO.File]::OpenRead($Path)
+    try {
+        if ($Stream.ReadByte() -ne 0x4d -or $Stream.ReadByte() -ne 0x5a) {
+            throw "$Path is not a Windows executable (missing MZ header)."
+        }
+    }
+    finally {
+        $Stream.Dispose()
+    }
+}
 
 Assert-FileHashMatches -Path $DependencyExe
+Assert-WindowsExecutable -Path $DependencyExe
 Assert-FileHashMatches -Path $PortableExe
 
 $DependencyPayload = @(Get-ChildItem -LiteralPath (Split-Path $DependencyExe) -File)
@@ -68,6 +85,19 @@ if ($ZipList -notmatch '(?im)^.*aegisub-portable\\ASSDraw3\.exe\s*$') {
 }
 if ($ZipList -match '(?i)ASSDraw3\.chm|tools[\\/]assdraw') {
     throw 'Portable archive contains an unsupported ASSDraw CHM or nested tools/assdraw payload.'
+}
+
+$ZipExtractRoot = Join-Path $TemporaryRoot ("assdraw-zip-verify-" + [guid]::NewGuid().ToString('N'))
+try {
+    New-Item -ItemType Directory -Path $ZipExtractRoot -Force | Out-Null
+    & 7z e $PortableZip 'aegisub-portable\ASSDraw3.exe' "-o$ZipExtractRoot" -y | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not extract ASSDraw3.exe from the portable archive.'
+    }
+    Assert-FileHashMatches -Path (Join-Path $ZipExtractRoot 'ASSDraw3.exe')
+}
+finally {
+    Remove-Item -LiteralPath $ZipExtractRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 $Dumpbin = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
@@ -160,5 +190,5 @@ finally {
     Remove-Item -LiteralPath $InstallSmokeRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "Verified ASSDraw $($Metadata.version) in dependency staging, portable staging/archive, and the installed/uninstalled application."
+Write-Output "Verified staged ASSDraw SHA256 $ExpectedHash in portable staging/archive and the installed/uninstalled application."
 Write-Output "ASSDraw imports: $($Imports -join ', ')"

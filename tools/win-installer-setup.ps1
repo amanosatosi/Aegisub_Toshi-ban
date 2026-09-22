@@ -14,8 +14,15 @@ if (!(Test-Path $DepsDir)) {
 	New-Item -ItemType Directory -Path $DepsDir
 }
 
-$AssDrawSetup = Join-Path $SourceRoot "tools\download-assdraw.ps1"
-& $AssDrawSetup -BuildRoot $BuildRoot -SourceRoot $SourceRoot
+$AssDrawDir = Join-Path $DepsDir "assdraw"
+$AssDrawExe = Join-Path $AssDrawDir "ASSDraw3.exe"
+if (!(Test-Path -LiteralPath $AssDrawExe -PathType Leaf)) {
+	throw "Bundled ASSDraw is missing at $AssDrawExe. Run tools\build-assdraw.ps1 before Windows packaging."
+}
+$AssDrawPayload = @(Get-ChildItem -LiteralPath $AssDrawDir -File)
+if ($AssDrawPayload.Count -ne 1 -or $AssDrawPayload[0].Name -cne "ASSDraw3.exe") {
+	throw "Bundled ASSDraw staging must contain ASSDraw3.exe and no other runtime files."
+}
 
 $Env:BUILD_ROOT = $BuildRoot
 $Env:SOURCE_ROOT = $SourceRoot
