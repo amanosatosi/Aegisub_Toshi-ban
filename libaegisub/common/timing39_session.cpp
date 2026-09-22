@@ -1,6 +1,7 @@
 // Copyright (c) 2026, JibunSenyou contributors. ISC license.
 #include <libaegisub/timing39_session.h>
 #include <algorithm>
+#include <limits>
 
 namespace agi { namespace timing39 {
 SessionPlaybackStart FindSessionPlaybackStart(std::vector<SessionStartEvent> const& events) {
@@ -54,6 +55,20 @@ PartitionedCapture PartitionCapture(std::vector<TimingBlock> const& raw, int sta
 	if (!HasSungBlocks(out.blocks)) { out.blocks.clear(); out.raw_indices.clear(); }
 	return out;
 }
+std::vector<TimingBlock> ShiftCapture(std::vector<TimingBlock> const& raw, int correction_ms) {
+	std::vector<TimingBlock> adjusted;
+	adjusted.reserve(raw.size());
+	for (auto block : raw) {
+		auto shift = [correction_ms](int value) {
+			return int(std::max<int64_t>(0, std::min<int64_t>(std::numeric_limits<int>::max(),
+				int64_t(value) + correction_ms)));
+		};
+		block.start = shift(block.start);
+		block.end = shift(block.end);
+		adjusted.push_back(block);
+	}
+	return adjusted;
+}
 std::vector<SessionTarget> DiscoverTargets(std::vector<SessionTarget> const& candidates,
 	bool explicit_scope, std::string const& active_style, int start, int end) {
 	std::vector<SessionTarget> out;
@@ -80,8 +95,11 @@ Confidence SessionResult::GetConfidence() const {
 	if (lane < 0 || lane > 1) return Confidence::Yellow;
 	auto status = lanes[lane].match.confidence;
 	if (status == Confidence::Red) return status;
-	if (!reviewed && (association_ambiguous || overlap ||
-		lanes[lane].capture.status == PartitionStatus::AmbiguousSungCrossing)) return Confidence::Yellow;
+	if (lanes[lane].capture.status == PartitionStatus::AmbiguousSungCrossing) return Confidence::Yellow;
+	if (!reviewed && (association_ambiguous || overlap)) return Confidence::Yellow;
+	if (resolution == ResolutionSource::UserSelected && !manual_invalidated &&
+		ValidAssignments(target.analysis, lanes[lane].capture.blocks, lanes[lane].editor.Get()))
+		return Confidence::Green;
 	return status;
 }
 void Timing39Session::Prepare(std::vector<SessionTarget> targets, bool selected, std::string style, int begin, int finish) {
@@ -99,24 +117,96 @@ bool Timing39Session::Start(int ms) {
 	start = ms; captured_end = ms;
 	auto& raw = IsRetake() ? retake_capture : capture;
 	for (int lane = 0; lane < 2; ++lane) {
-		if (!IsRetake() || lane == retake_lane) raw.lanes[lane].Begin(ms, end);
+		if (!IsRetake() || lane == retake_lane)
+			raw.lanes[lane].Begin(IsRetake() ? results[retake_result].target.start : ms, end);
 		else raw.lanes[lane].Clear();
 	}
+	retake_held = {{false,false}}; armed_owner = -1; retake_boundary_started = false;
 	state = SessionState::Capturing; return true;
 }
 bool Timing39Session::Key(int key, bool down, int ms) {
 	if (state != SessionState::Capturing) return false;
 	int lane = key == 'F' || key == 'J' ? 0 : key == 'D' || key == 'K' ? 1 : -1;
 	if (lane < 0 || (IsRetake() && lane != retake_lane)) return false;
+	if (IsRetake()) {
+		int boundary = results[retake_result].target.start;
+		if (ms < boundary && !retake_boundary_started) {
+			int index = lane == 0 ? (key == 'F' ? 0 : 1) : (key == 'D' ? 0 : 1);
+			retake_held[index] = down;
+			if (down) armed_owner = index;
+			else if (armed_owner == index) armed_owner = retake_held[1-index] ? 1-index : -1;
+			return true;
+		}
+		Advance(ms);
+	}
 	auto& raw = IsRetake() ? retake_capture : capture;
 	return down ? raw.lanes[lane].KeyDown(key, ms) : raw.lanes[lane].KeyUp(key, ms);
+}
+void Timing39Session::Advance(int ms) {
+	if (!IsRetake() || state != SessionState::Capturing || retake_boundary_started ||
+		ms < results[retake_result].target.start) return;
+	retake_boundary_started = true;
+	if (armed_owner >= 0 && retake_held[armed_owner]) {
+		int key = retake_lane == 0 ? (armed_owner ? 'J' : 'F') : (armed_owner ? 'K' : 'D');
+		retake_capture.lanes[retake_lane].KeyDown(key, results[retake_result].target.start);
+	}
+	retake_held = {{false,false}}; armed_owner = -1;
+}
+char Timing39Session::ArmedOwner() const {
+	if (!IsRetake() || state != SessionState::Capturing || retake_boundary_started || armed_owner < 0) return 0;
+	return char(retake_lane == 0 ? (armed_owner ? 'J' : 'F') : (armed_owner ? 'K' : 'D'));
 }
 void Timing39Session::Rematch(size_t row, int lane) {
 	if (row >= results.size() || lane < 0 || lane > 1) return;
 	auto& r = results[row]; auto& l = r.lanes[lane];
 	l.match = Match(r.target.analysis, l.capture.blocks);
 	l.editor.Reset(l.match.paths.empty() ? std::vector<TimingAssignment>{} : l.match.paths[0].assignments);
-	r.reviewed = false; r.committed = false;
+	r.reviewed = false; r.committed = false; r.manual_invalidated = false;
+	r.resolution = ResolutionSource::Automatic;
+}
+bool Timing39Session::ChooseAssignment(size_t row, int lane, size_t path) {
+	if (state != SessionState::Results || row >= results.size() || lane < 0 || lane > 1) return false;
+	auto& r = results[row]; auto& l = r.lanes[lane];
+	if (r.committed) return false;
+	if (path >= l.match.paths.size() || l.match.confidence == Confidence::Red) return false;
+	auto const& chosen = l.match.paths[path].assignments;
+	if (!ValidAssignments(r.target.analysis, l.capture.blocks, chosen)) return false;
+	if (chosen != l.editor.Get()) l.editor.Choose(r.target.analysis, chosen);
+	r.lane = lane; r.reviewed = true; r.manual_invalidated = false;
+	r.resolution = ResolutionSource::UserSelected;
+	return true;
+}
+bool Timing39Session::SetTimingCorrection(int correction_ms) {
+	if (state != SessionState::Results || correction_ms < -2000 || correction_ms > 2000 ||
+		std::any_of(results.begin(), results.end(), [](SessionResult const& r){return r.committed;})) return false;
+	if (correction_ms == timing_correction_ms) return true;
+	timing_correction_ms = correction_ms;
+	std::array<std::vector<TimingBlock>, 2> adjusted{{
+		ShiftCapture(Raw(0), correction_ms), ShiftCapture(Raw(1), correction_ms)}};
+	for (auto& r : results) {
+		bool previous_manual = r.resolution == ResolutionSource::UserSelected;
+		r.manual_invalidated = false;
+		for (int lane = 0; lane < 2; ++lane) {
+			auto& l = r.lanes[lane];
+			auto const* source = &adjusted[lane];
+			std::vector<TimingBlock> adjusted_retake;
+			for (auto take = retakes.rbegin(); take != retakes.rend(); ++take)
+				if (take->target == r.target.id && take->lane == lane) {
+					adjusted_retake = ShiftCapture(take->raw, correction_ms);
+					source = &adjusted_retake;
+					break;
+				}
+			l.capture = PartitionCapture(*source, r.target.start, r.target.end);
+			l.match = Match(r.target.analysis, l.capture.blocks);
+			if (previous_manual && r.lane == lane &&
+				ValidAssignments(r.target.analysis, l.capture.blocks, l.editor.Get())) continue;
+			if (previous_manual && r.lane == lane) {
+				r.manual_invalidated = true; r.resolution = ResolutionSource::Automatic; r.reviewed = false;
+			}
+			l.editor.Reset(l.match.paths.empty() ? std::vector<TimingAssignment>{} : l.match.paths[0].assignments);
+		}
+	}
+	return true;
 }
 void Timing39Session::Resolve() {
 	auto targets = DiscoverTargets(candidates, explicit_scope, active_style, start, captured_end);
@@ -162,20 +252,30 @@ bool Timing39Session::Stop(int ms) {
 		auto& result = results[retake_result];
 		auto const& blocks = raw.lanes[retake_lane].Blocks();
 		retakes.push_back({result.target.id, retake_lane, blocks});
-		result.lanes[retake_lane].capture = PartitionCapture(blocks, result.target.start, result.target.end);
-		Rematch(retake_result, retake_lane); retake_result = unknown;
+		result.lanes[retake_lane].capture = PartitionCapture(
+			ShiftCapture(blocks, timing_correction_ms), result.target.start, result.target.end);
+		Rematch(retake_result, retake_lane);
+		result.resolution = ResolutionSource::Retake;
+		retake_result = unknown;
 	}
 	else Resolve();
 	state = SessionState::Results; return true;
 }
 bool Timing39Session::Retake(size_t row, int lane, int preroll) {
-	if (state != SessionState::Results || row >= results.size() || lane < 0 || lane > 1) return false;
+	if (state != SessionState::Results || row >= results.size() || lane < 0 || lane > 1 || results[row].committed) return false;
 	retake_result = row; retake_lane = lane;
 	start = std::max(0, results[row].target.start - std::max(0, preroll)); end = results[row].target.end;
 	countdown = 3; state = SessionState::Countdown; return true;
 }
+bool Timing39Session::CancelRetake() {
+	if (!IsRetake()) return false;
+	retake_result = unknown; retake_capture = {}; retake_held = {{false,false}};
+	armed_owner = -1; retake_boundary_started = false; countdown = 0;
+	state = SessionState::Results; return true;
+}
 void Timing39Session::Discard() {
 	capture = {}; retake_capture = {}; candidates.clear(); results.clear(); retakes.clear();
+	timing_correction_ms = 0; retake_held = {{false,false}}; armed_owner = -1; retake_boundary_started = false;
 	retake_result = unknown; countdown = 0; state = SessionState::Idle;
 }
 std::vector<TimingBlock> Timing39Session::Preview(int lane, int ms) const {

@@ -39,6 +39,7 @@ struct PartitionedCapture {
 	size_t preceding_sung_tails = 0;
 };
 PartitionedCapture PartitionCapture(std::vector<TimingBlock> const&, int start, int end);
+std::vector<TimingBlock> ShiftCapture(std::vector<TimingBlock> const&, int correction_ms);
 bool HasSungBlocks(std::vector<TimingBlock> const&);
 std::vector<SessionTarget> DiscoverTargets(std::vector<SessionTarget> const&, bool explicit_scope,
 	std::string const& active_style, int start, int end);
@@ -48,11 +49,14 @@ struct SessionLaneResult {
 	MatchResult match;
 	AssignmentEditor editor;
 };
+enum class ResolutionSource { Automatic, UserSelected, Retake };
 struct SessionResult {
 	SessionTarget target;
 	std::array<SessionLaneResult, 2> lanes;
 	int lane = 0;
 	bool association_ambiguous = false, overlap = false, reviewed = false, committed = false;
+	bool manual_invalidated = false;
+	ResolutionSource resolution = ResolutionSource::Automatic;
 	Confidence GetConfidence() const;
 };
 struct SessionRetake {
@@ -74,6 +78,10 @@ class Timing39Session {
 	int countdown = 0, start = 0, end = 0, captured_end = 0;
 	size_t retake_result = unknown;
 	int retake_lane = 0;
+	int timing_correction_ms = 0;
+	std::array<bool, 2> retake_held{{false,false}};
+	int armed_owner = -1;
+	bool retake_boundary_started = false;
 	void Resolve();
 public:
 	std::vector<SessionRetake> retakes;
@@ -85,6 +93,12 @@ public:
 	bool Stop(int media_position); // playing -> results; idempotent
 	void Discard();
 	bool Retake(size_t result, int lane, int preroll);
+	bool CancelRetake();
+	void Advance(int media_position);
+	char ArmedOwner() const;
+	int TimingCorrection() const { return timing_correction_ms; } // positive moves taps later
+	bool SetTimingCorrection(int correction_ms);
+	bool ChooseAssignment(size_t row, int lane, size_t path);
 	void Rematch(size_t result, int lane);
 	SessionState State() const { return state; }
 	int Countdown() const { return countdown; }

@@ -54,6 +54,112 @@ TEST(Timing39Session, MeaningfulSungCheckpointCrossingRequiresReviewOnlyForOwner
 	EXPECT_EQ(Confidence::Green,s.Results()[1].GetConfidence());
 	EXPECT_EQ((TimingBlock{150,280,false}),s.Raw(0)[1]);
 }
+TEST(Timing39Session, ExplicitCandidateChoiceIsImmediatelyGreen) {
+	Timing39Session s;s.Prepare({Target(1,1000,1500,u8"こーー")},true,"opaque style",900,1500);Start(s);
+	Tap(s,'F',1050,1150);Tap(s,'J',1200,1300);s.Stop(1500);
+	ASSERT_EQ(1u,s.Results().size());
+	auto& result=s.Results()[0];
+	ASSERT_GE(result.lanes[0].match.paths.size(),2u);
+	result.association_ambiguous=true;
+	EXPECT_EQ(Confidence::Yellow,result.GetConfidence());
+	auto choice=result.lanes[0].match.paths[1].assignments;
+	EXPECT_TRUE(s.ChooseAssignment(0,0,1));
+	EXPECT_EQ(choice,result.lanes[0].editor.Get());
+	EXPECT_EQ(ResolutionSource::UserSelected,result.resolution);
+	EXPECT_EQ(Confidence::Green,result.GetConfidence());
+	EXPECT_TRUE(s.SetTimingCorrection(5));
+	EXPECT_EQ(choice,result.lanes[0].editor.Get());
+	EXPECT_EQ(ResolutionSource::UserSelected,result.resolution);
+	EXPECT_EQ(Confidence::Green,result.GetConfidence());
+}
+TEST(Timing39Session, TimingCorrectionDerivesFromImmutableRawAndCanReset) {
+	auto raw=std::vector<TimingBlock>{{1000,1200,false}};
+	EXPECT_EQ((TimingBlock{970,1170,false}),ShiftCapture(raw,-30)[0]);
+	EXPECT_EQ((TimingBlock{1000,1200,false}),raw[0]);
+	Timing39Session s;s.Prepare({Target(1,1000,1500,u8"み")},true,"opaque style",900,1500);Start(s);
+	Tap(s,'F',1000,1200);s.Stop(1500);
+	ASSERT_EQ(Confidence::Green,s.Results()[0].GetConfidence());
+	auto original=s.Raw(0);
+	ASSERT_TRUE(s.SetTimingCorrection(-30));
+	EXPECT_EQ(-30,s.TimingCorrection());
+	EXPECT_EQ(original,s.Raw(0));
+	EXPECT_EQ(Confidence::Red,s.Results()[0].GetConfidence());
+	ASSERT_TRUE(s.SetTimingCorrection(0));
+	EXPECT_EQ(original,s.Raw(0));
+	EXPECT_EQ(Confidence::Green,s.Results()[0].GetConfidence());
+}
+TEST(Timing39Session, CorrectionInvalidatesImpossibleManualAssignment) {
+	Timing39Session s;s.Prepare({Target(1,1000,1400,u8"こーー")},true,"opaque style",900,1400);Start(s);
+	Tap(s,'F',1050,1150);Tap(s,'J',1200,1300);s.Stop(1400);
+	ASSERT_TRUE(s.ChooseAssignment(0,0,1));
+	ASSERT_EQ(Confidence::Green,s.Results()[0].GetConfidence());
+	auto raw=s.Raw(0);
+	ASSERT_TRUE(s.SetTimingCorrection(-100));
+	EXPECT_EQ(raw,s.Raw(0));
+	EXPECT_TRUE(s.Results()[0].manual_invalidated);
+	EXPECT_EQ(ResolutionSource::Automatic,s.Results()[0].resolution);
+	EXPECT_NE(Confidence::Green,s.Results()[0].GetConfidence());
+}
+TEST(Timing39Session, RetakeArmingStartsAtExactDialogueBoundary) {
+	Timing39Session s;s.Prepare({Target(1,40000,40500,u8"み")},true,"opaque style",39000,40500);Start(s);
+	Tap(s,'F',40050,40200);s.Stop(40500);
+	ASSERT_TRUE(s.Retake(0,0,1000));Start(s);
+	EXPECT_TRUE(s.Key('F',true,39800));EXPECT_EQ('F',s.ArmedOwner());
+	s.Advance(40000);EXPECT_EQ(0,s.ArmedOwner());
+	EXPECT_TRUE(s.Key('F',false,40100));s.Stop(40500);
+	ASSERT_EQ(1u,s.retakes.size());
+	auto const& blocks=s.retakes.back().raw;
+	auto first=std::find_if(blocks.begin(),blocks.end(),[](TimingBlock const& b){return !b.gap;});
+	ASSERT_NE(blocks.end(),first);EXPECT_EQ(40000,first->start);EXPECT_EQ(40100,first->end);
+}
+TEST(Timing39Session, RetakeArmedPreemptionAndRelease) {
+	Timing39Session s;s.Prepare({Target(1,40000,40500,u8"み")},true,"opaque style",39000,40500);Start(s);
+	Tap(s,'F',40050,40200);s.Stop(40500);
+	ASSERT_TRUE(s.Retake(0,0,1000));Start(s);
+	s.Key('F',true,39800);s.Key('J',true,39920);EXPECT_EQ('J',s.ArmedOwner());
+	s.Advance(40000);s.Key('F',false,40100);s.Key('J',false,40200);s.Stop(40500);
+	auto const& blocks=s.retakes.back().raw;
+	auto first=std::find_if(blocks.begin(),blocks.end(),[](TimingBlock const& b){return !b.gap;});
+	ASSERT_NE(blocks.end(),first);EXPECT_EQ(40000,first->start);EXPECT_EQ(40200,first->end);
+	ASSERT_TRUE(s.Retake(0,0,1000));Start(s);
+	s.Key('F',true,39800);s.Key('F',false,39900);EXPECT_EQ(0,s.ArmedOwner());
+	s.Advance(40000);s.Stop(40500);
+	EXPECT_FALSE(HasSungBlocks(s.retakes.back().raw));
+}
+TEST(Timing39Session, SecondaryRetakeCanArmWithoutChangingPrimaryRaw) {
+	Timing39Session s;s.Prepare({Target(1,40000,40500,u8"み")},true,"opaque style",39000,40500);Start(s);
+	Tap(s,'F',40050,40200);s.Stop(40500);auto primary=s.Raw(0);
+	ASSERT_TRUE(s.Retake(0,1,1000));Start(s);
+	EXPECT_TRUE(s.Key('D',true,39800));EXPECT_EQ('D',s.ArmedOwner());
+	s.Advance(40000);EXPECT_TRUE(s.Key('D',false,40100));s.Stop(40500);
+	EXPECT_EQ(primary,s.Raw(0));
+	ASSERT_EQ(1u,s.retakes.size());
+	auto const& blocks=s.retakes.back().raw;
+	auto first=std::find_if(blocks.begin(),blocks.end(),[](TimingBlock const& b){return !b.gap;});
+	ASSERT_NE(blocks.end(),first);EXPECT_EQ(40000,first->start);
+}
+TEST(Timing39Session, ArmedRetakeUsesNormalPostBoundaryPreemption) {
+	Timing39Session s;s.Prepare({Target(1,40000,40500,u8"みく")},true,"opaque style",39000,40500);Start(s);
+	Tap(s,'F',40050,40100);Tap(s,'J',40150,40200);s.Stop(40500);
+	ASSERT_TRUE(s.Retake(0,0,1000));Start(s);
+	s.Key('F',true,39800);s.Advance(40000);
+	EXPECT_TRUE(s.Key('J',true,40050));
+	EXPECT_TRUE(s.Key('F',false,40100));
+	EXPECT_TRUE(s.Key('J',false,40200));s.Stop(40500);
+	std::vector<TimingBlock> sung;
+	for(auto const& block:s.retakes.back().raw)if(!block.gap)sung.push_back(block);
+	EXPECT_EQ((std::vector<TimingBlock>{{40000,40050,false},{40050,40200,false}}),sung);
+}
+TEST(Timing39Session, CancelledRetakeLeavesExistingResultUntouched) {
+	Timing39Session s;s.Prepare({Target(1,40000,40500,u8"み")},true,"opaque style",39000,40500);Start(s);
+	Tap(s,'F',40050,40200);s.Stop(40500);
+	auto existing=s.Results()[0].lanes[0].capture.blocks;
+	ASSERT_TRUE(s.Retake(0,0,1000));Start(s);s.Key('F',true,39800);
+	EXPECT_TRUE(s.CancelRetake());
+	EXPECT_EQ(SessionState::Results,s.State());
+	EXPECT_EQ(existing,s.Results()[0].lanes[0].capture.blocks);
+	EXPECT_TRUE(s.retakes.empty());
+}
 
 TEST(Timing39Session, HarmlessSungOverhangsKeepMatchStatus) {
 	for(int overhang:{5,27,50}) {
