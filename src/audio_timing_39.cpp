@@ -382,7 +382,9 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   offset_spin->Bind(wxEVT_TEXT_ENTER,[this](wxCommandEvent&){correction_timer.Stop();UpdateOffsetDirection();ApplyTimingCorrection();});
   panel->Bind(wxEVT_CHAR_HOOK,[this](wxKeyEvent& e){
    int key=e.GetKeyCode();
-   if(wxWindow::FindFocus()==offset_spin&&(key==WXK_UP||key==WXK_DOWN)){e.Skip();return;}
+   if(key==WXK_UP||key==WXK_DOWN)
+    for(auto focus=wxWindow::FindFocus();focus;focus=focus->GetParent())
+     if(focus==offset_spin){e.Skip();return;}
    if(key==WXK_ESCAPE){panel->Hide();return;}
    if(key=='R'&&!e.ControlDown()&&!e.AltDown()){Retake();return;}
    if((key==WXK_UP||key==WXK_DOWN)&&!e.AltDown()){
@@ -391,7 +393,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    if(key==WXK_RETURN){
     auto focus=wxWindow::FindFocus();
     for(size_t i=0;i<candidate_buttons.size();++i)if(focus==candidate_buttons[i]){
-     if(session.ChooseAssignment(selected,selected_lane,i)){notice.clear();Update();}return;
+     if(session.ChooseAssignment(selected,selected_lane,i)){notice.clear();panel->CallAfter([this]{Update();});}return;
     }
    }
    e.Skip();
