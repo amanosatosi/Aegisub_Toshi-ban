@@ -75,7 +75,8 @@ struct tool_assdraw final : public Command {
 		// Keep the executable and its arguments separate so Unicode paths and
 		// paths containing spaces do not pass through shell-style parsing.
 		wxString executable(assdraw.wstring());
-		wxChar *argv[] = {const_cast<wxChar *>(executable.c_str()), nullptr};
+		const wxChar *executable_ptr = executable.c_str();
+		wxChar *argv[] = {const_cast<wxChar *>(executable_ptr), nullptr};
 		if (wxExecute(argv, wxEXEC_ASYNC) == 0) {
 			wxMessageBox(_("ASSDraw3.exe could not be started."), _("ASSDraw3"),
 				wxOK | wxICON_ERROR | wxCENTER, c->parent);
