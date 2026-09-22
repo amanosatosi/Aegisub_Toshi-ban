@@ -349,8 +349,9 @@ public:
   void Get39Overlay(std::vector<Timing39Overlay>& out,int ms,TimeRange const& visible) const override {
    ordinary_boundaries.Visit(visible.begin(),visible.end(),[&](int start,int end){out.push_back({start,end,0,false,false,Timing39OverlayKind::ReferenceDialogue});});
    target_boundaries.Visit(visible.begin(),visible.end(),[&](int start,int end){out.push_back({start,end,0,false,false,Timing39OverlayKind::TargetLyric});});
-   for(int lane=0;lane<2;++lane)for(auto const& b:session.Preview(lane,ms,visible.begin(),visible.end()))
+   for(int lane=0;lane<2;++lane)session.VisitPreview(lane,ms,visible.begin(),visible.end(),[&](agi::timing39::TimingBlock const& b){
     out.push_back({b.start,b.end,lane,b.gap,false,Timing39OverlayKind::CapturedBlock});
+   });
   }
  void Commit() override{CommitResults(false);}
 };

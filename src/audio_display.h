@@ -39,6 +39,8 @@
 #include <wx/timer.h>
 #include <wx/window.h>
 
+#include "audio_timing.h"
+
 namespace agi { class AudioProvider; }
 namespace agi { struct Context; }
 
@@ -75,6 +77,7 @@ class AudioDisplay: public wxWindow {
 
 	/// The current audio renderer
 	std::unique_ptr<AudioRendererBitmapProvider> audio_renderer_provider;
+	bool spectrum_display = false;
 
 	/// The controller managing us
 	AudioController *controller = nullptr;
@@ -175,8 +178,10 @@ class AudioDisplay: public wxWindow {
 	void Paint39Overlay(wxDC &dc, TimeRange const& visible);
 	struct Timing39Particle { float x, y, vx, vy; int age; };
 	std::vector<Timing39Particle> timing39_particles;
+	std::vector<AudioTimingController::Timing39Overlay> timing39_overlay_scratch;
 	wxTimer timing39_effect_timer;
 	unsigned timing39_seen_serial = 0;
+	bool timing39_overlay_dirty = false;
 	void On39Effects(wxTimerEvent&);
 
 	/// Paint the markers in a time range

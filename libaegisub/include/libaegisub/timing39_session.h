@@ -98,5 +98,10 @@ public:
 	std::vector<TimingBlock> const& Raw(int lane) const { return capture.lanes[lane].Blocks(); }
 	std::vector<TimingBlock> Preview(int lane, int media_position) const;
 	std::vector<TimingBlock> Preview(int lane, int media_position, int visible_start, int visible_end) const;
+	template<typename Visitor> void VisitPreview(int lane, int media_position, int visible_start,
+		int visible_end, Visitor visitor) const {
+		(IsRetake() ? retake_capture : capture).lanes[lane].VisitPreview(
+			media_position, visible_start, visible_end, visitor);
+	}
 };
 } }

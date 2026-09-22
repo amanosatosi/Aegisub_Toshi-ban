@@ -1,6 +1,7 @@
 // Copyright (c) 2026, JibunSenyou contributors. ISC license.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <limits>
@@ -100,6 +101,18 @@ public:
 	std::vector<TimingBlock> const& Blocks() const { return blocks; }
 	std::vector<TimingBlock> Preview(int ms) const;
 	std::vector<TimingBlock> Preview(int ms, int visible_start, int visible_end) const;
+	template<typename Visitor> void VisitPreview(int ms, int visible_start, int visible_end, Visitor visitor) const {
+		auto first = std::lower_bound(blocks.begin(), blocks.end(), visible_start,
+			[](TimingBlock const& block, int value) { return block.end <= value; });
+		if (owner >= 0 && !blocks.empty() && first == blocks.end() && blocks.back().start < visible_end)
+			first = blocks.end() - 1;
+		for (auto at = first; at != blocks.end() && at->start < visible_end; ++at) {
+			auto block = *at;
+			if (owner >= 0 && at + 1 == blocks.end())
+				block.end = std::max(block.start, std::min(ms, checkpoint_end));
+			if (block.end > visible_start) visitor(block);
+		}
+	}
 };
 struct TimingCaptureSession {
 	std::array<TimingLane, 2> lanes{{TimingLane('F', 'J'), TimingLane('D', 'K')}};
