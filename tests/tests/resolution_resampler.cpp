@@ -4,6 +4,7 @@
 
 #include "ass_dialogue.h"
 #include "ass_file.h"
+#include "mangetsu_perspective.h"
 #include "ass_style.h"
 #include "project_properties.h"
 #include "resolution_resampler.h"
@@ -214,6 +215,25 @@ TEST(resolution_resampler, rescales_perspective_local_coordinates) {
 	EXPECT_EQ(
 		"{\\perspective(-200,-80,160,-60,220,120,-180,140)}Text",
 		result);
+}
+
+TEST(resolution_resampler, conjugates_stable_perspective_plane) {
+	auto text = ResampleText(
+		"{\\perspective(1,3,10,2,1,20,0.01,0.02,1)}Text",
+		Settings(1000, 1000, 2000, 3000));
+	AssDialogue line;
+	line.Text = text;
+	auto plane = GetMangetsuPerspective(line);
+	ASSERT_TRUE(plane.enabled);
+	ASSERT_TRUE(plane.plane);
+	EXPECT_NEAR(1, plane.matrix[0], 1e-8);
+	EXPECT_NEAR(2, plane.matrix[1], 1e-8);
+	EXPECT_NEAR(20, plane.matrix[2], 1e-8);
+	EXPECT_NEAR(3, plane.matrix[3], 1e-8);
+	EXPECT_NEAR(1, plane.matrix[4], 1e-8);
+	EXPECT_NEAR(60, plane.matrix[5], 1e-8);
+	EXPECT_NEAR(0.005, plane.matrix[6], 1e-8);
+	EXPECT_NEAR(0.02 / 3, plane.matrix[7], 1e-8);
 }
 
 TEST(resolution_resampler, preserves_mangetsu_non_spatial_parameters) {

@@ -112,6 +112,30 @@ namespace {
 		int shift = 0;
 
 		switch (cur->classification) {
+			// H' = S H S^-1 for a plane in script-local coordinates.
+			// Position margins cancel because the matrix is anchor-relative.
+			case AssParameterClass::PERSPECTIVE_A:
+			case AssParameterClass::PERSPECTIVE_D:
+				resizer = 1.0;
+				break;
+			case AssParameterClass::PERSPECTIVE_B:
+				resizer = state->rx / state->ry;
+				break;
+			case AssParameterClass::PERSPECTIVE_C:
+				resizer = state->ry / state->rx;
+				break;
+			case AssParameterClass::PERSPECTIVE_TX:
+				resizer = state->rx;
+				break;
+			case AssParameterClass::PERSPECTIVE_TY:
+				resizer = state->ry;
+				break;
+			case AssParameterClass::PERSPECTIVE_P:
+				resizer = 1.0 / state->rx;
+				break;
+			case AssParameterClass::PERSPECTIVE_Q:
+				resizer = 1.0 / state->ry;
+				break;
 			case AssParameterClass::ABSOLUTE_SIZE_X:
 				resizer = state->rx;
 				break;
@@ -158,8 +182,14 @@ namespace {
 		}
 
 		VariableDataType curType = cur->GetType();
-		if (curType == VariableDataType::FLOAT)
-			cur->Set((cur->Get<double>() + shift) * resizer);
+		if (curType == VariableDataType::FLOAT) {
+			double value = (cur->Get<double>() + shift) * resizer;
+			if (cur->classification >= AssParameterClass::PERSPECTIVE_A &&
+				cur->classification <= AssParameterClass::PERSPECTIVE_Q)
+				cur->Set<std::string>(float_to_string(value, 9));
+			else
+				cur->Set(value);
+		}
 		else if (curType == VariableDataType::INT)
 			cur->Set<int>((cur->Get<int>() + shift) * resizer + 0.5);
 	}

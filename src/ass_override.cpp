@@ -308,6 +308,9 @@ static void load_protos() {
 	for (int parameter = 0; parameter < 8; ++parameter)
 		proto[i].AddParam(VariableDataType::FLOAT, parameter & 1 ?
 			AssParameterClass::ABSOLUTE_SIZE_Y : AssParameterClass::ABSOLUTE_SIZE_X);
+	// The optional ninth value distinguishes a local plane matrix from the
+	// original eight-value text-bounds corner pin.
+	proto[i].AddParam(VariableDataType::FLOAT, AssParameterClass::NORMAL, OPTIONAL_9);
 	++i;
 	proto[i].name = "\\distort";
 	for (int parameter = 0; parameter < 6; ++parameter)
@@ -542,6 +545,16 @@ bool parse_parameters(AssOverrideTag *tag, const std::string &text, AssOverrideT
 		auto const& curproto = proto_it->variadic_params.front();
 		tag->Params.emplace_back(curproto.type, curproto.classification);
 		tag->Params.back().Set(paramList[curPar++]);
+	}
+	if (tag->Name == "\\perspective" && totalPars == 9 && tag->Params.size() == 9) {
+		static const AssParameterClass plane_classes[8] = {
+			AssParameterClass::PERSPECTIVE_A, AssParameterClass::PERSPECTIVE_B,
+			AssParameterClass::PERSPECTIVE_TX, AssParameterClass::PERSPECTIVE_C,
+			AssParameterClass::PERSPECTIVE_D, AssParameterClass::PERSPECTIVE_TY,
+			AssParameterClass::PERSPECTIVE_P, AssParameterClass::PERSPECTIVE_Q
+		};
+		for (size_t index = 0; index < 8; ++index)
+			tag->Params[index].classification = plane_classes[index];
 	}
 	return true;
 }

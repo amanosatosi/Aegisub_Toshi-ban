@@ -941,30 +941,18 @@ void VisualToolPerspective::TextToPerspective() {
 	Vector2D anchor = GetLinePositionAtFrame(active_line);
 	if (perspective_state.enabled) {
 		for (size_t i = 0; i < inner_corners.size(); ++i)
-			inner_corners[i]->pos = FromScriptCoords(anchor + perspective_state.corners[i]);
+			inner_corners[i]->pos = FromScriptCoords(anchor +
+				(perspective_state.plane ? MapMangetsuPerspective(
+					perspective_state, MangetsuPerspectiveReferenceCorner(i)) :
+					perspective_state.corners[i]));
 		return;
 	}
 
-	// A mode selection is read-only. Build a provisional identity plane from
-	// the same border/blur-independent base geometry used by the visual tools.
-	// If a bilinear warp is active, include it because the renderer orders
-	// \distort before \perspective.
-	if (GetMangetsuDistort(*active_line).enabled)
-		TextToDistort();
-	else
-		TextToPersp();
-
-	Vector2D top_left = ToScriptCoords(inner_corners[0]->pos);
-	Vector2D bottom_right = top_left;
-	for (auto const* corner : inner_corners) {
-		Vector2D point = ToScriptCoords(corner->pos);
-		top_left = Vector2D(std::min(top_left.X(), point.X()), std::min(top_left.Y(), point.Y()));
-		bottom_right = Vector2D(std::max(bottom_right.X(), point.X()), std::max(bottom_right.Y(), point.Y()));
-	}
-	auto provisional = MakeRect(top_left, bottom_right);
+	// Selecting this mode is read-only. A fixed local rectangle gives the
+	// editor stable handles even when text, font, or line count changes.
 	for (size_t i = 0; i < inner_corners.size(); ++i) {
-		inner_corners[i]->pos = FromScriptCoords(provisional[i]);
-		perspective_state.corners[i] = provisional[i] - anchor;
+		perspective_state.corners[i] = MangetsuPerspectiveReferenceCorner(i);
+		inner_corners[i]->pos = FromScriptCoords(anchor + perspective_state.corners[i]);
 	}
 }
 
@@ -979,11 +967,19 @@ bool VisualToolPerspective::PerspectiveToText(Feature* feature) {
 		TextToPerspective();
 		return false;
 	}
+	// Read the four visible handles and solve one local-space plane. Editing a
+	// legacy corner pin migrates that line; unedited eight-value tags stay exact.
+	for (size_t i = 0; i < inner_corners.size(); ++i)
+		perspective_state.corners[i] = ToScriptCoords(inner_corners[i]->pos) - anchor;
+	if (!SolveMangetsuPerspectivePlane(perspective_state)) {
+		TextToPerspective();
+		return false;
+	}
 
 	for (auto line : c->selectionController->GetSelectedSet()) {
 		if (FilterLockedLines() && IsLockedLine(line))
 			continue;
-		SetMangetsuPerspective(*line, perspective_state, feature->index);
+		SetMangetsuPerspective(*line, perspective_state);
 	}
 	return true;
 }

@@ -121,33 +121,28 @@ than being partially normalized. Static tags are edited; `\ct` inside
 
 The Perspective visual tool now has three explicit, non-destructive submodes:
 
-- **Perspective** (default) edits Mangetsu's true projective
-  `\perspective(x0,y0,x1,y1,x2,y2,x3,y3)` corner pin.
+- **Perspective** (default) edits Mangetsu's projective local plane.
 - **Distort** edits Mangetsu's separate bilinear `\distort` deformation.
 - **arch1t3ct** keeps the existing ASS rotation/shear/scale approximation.
 
-Perspective uses P0 top-left, P1 top-right, P2 bottom-right, and P3 bottom-left,
-exactly matching the renderer. Existing tags are read without conversion when
-switching modes. Selecting the mode is read-only; a line with no tag shows a
-provisional identity quad and receives `\perspective` only on the first corner
-edit. The solid quad distinguishes this mode from Distort's dashed quad and
-from the arch1t3ct compatibility controls.
+Perspective uses P0 top-left, P1 top-right, P2 bottom-right, and P3 bottom-left
+as four editor handles around a fixed 200 by 100 local reference rectangle.
+The handles define a homography, not the current text rectangle. Selecting the
+mode is read-only; a line with no tag shows provisional identity handles and
+receives `\perspective` only on the first corner edit. The solid quad
+distinguishes this mode from Distort's dashed quad.
 
 The triangle is the positioning-anchor handle. Dragging it updates `\pos`, or
-translates both endpoints of an existing `\move`, while leaving all eight
-perspective coordinates unchanged. A drag uses the visual-tool base class's
+translates both endpoints of an existing `\move`, while leaving the plane
+matrix unchanged. A drag uses the visual-tool base class's
 single coalesced undo transaction.
 
-Existing tags use their literal local-to-anchor coordinates, so their overlay
-handles agree exactly with Mangetsu. For a new tag, the provisional source
-plane uses Aegisub's full-event metric/drawing extents, excludes
-border/blur/shadow, applies the visual tool's normal ASS local transform, and
-includes an active Distort warp before taking the source AABB. This is a close
-authoring approximation: Aegisub does not currently expose libassmod's exact
-post-shaping outline/control-point bounds to visual tools, and mixed-style
-events with multiple independently distorted runs may differ until a corner is
-placed. The video subtitle itself always comes from the selected real renderer;
-the overlay draws only handles and guides.
+The tool writes `\perspective(a,b,tx,c,d,ty,p,q,1)`. Its nine values map
+subtitle-local coordinates to anchor-relative screen coordinates. Text changes,
+newlines, font and scale changes leave the plane unchanged. Reopening a line
+projects the fixed reference rectangle through the saved matrix to reconstruct
+the handles. Historical eight-value corner pins remain unchanged until a handle
+is edited; that edit migrates the visible quad to the stable plane form.
 
 ### Mangetsu Distort (`\distort`)
 

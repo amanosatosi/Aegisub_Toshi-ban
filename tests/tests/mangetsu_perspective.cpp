@@ -28,6 +28,8 @@ TEST(MangetsuPerspective, MalformedTagIsIgnored) {
 		"{\\perspective(0,0,100,0,100,50,0)}Text")).enabled);
 	EXPECT_FALSE(GetMangetsuPerspective(MakeLine(
 		"{\\perspective(0,0,100,0,100,50,0,nope)}Text")).enabled);
+	EXPECT_FALSE(GetMangetsuPerspective(MakeLine(
+		"{\\perspective(1,0,0,0,1,0,0,0,2)}Text")).enabled);
 }
 
 TEST(MangetsuPerspective, ResetDisablesStaticState) {
@@ -111,4 +113,49 @@ TEST(MangetsuPerspective, ComplexScriptTextIsNeverSplitOrRewritten) {
 		Vector2D(50, 20), Vector2D(-50, 20)}};
 	ASSERT_TRUE(SetMangetsuPerspective(line, state));
 	EXPECT_NE(std::string::npos, line.Text.get().find(burmese));
+}
+
+TEST(MangetsuPerspective, PlaneHandlesRoundTripWithoutTextDimensions) {
+	auto line = MakeLine("{\\an5\\pos(500,400)}Hi");
+	MangetsuPerspectiveState state;
+	state.corners = {{Vector2D(-90, -60), Vector2D(80, -45),
+		Vector2D(110, 65), Vector2D(-115, 55)}};
+	ASSERT_TRUE(SolveMangetsuPerspectivePlane(state));
+	ASSERT_TRUE(SetMangetsuPerspective(line, state));
+	auto saved = line.Text.get();
+	EXPECT_NE(std::string::npos, saved.find("\\perspective("));
+	for (auto const& text : {"Hi", "A much longer line\\Nand a second line", "BIGGER"}) {
+		auto changed = MakeLine(saved);
+		changed.Text = saved.substr(0, saved.find('}') + 1) + text;
+		auto restored = GetMangetsuPerspective(changed);
+		ASSERT_TRUE(restored.enabled);
+		ASSERT_TRUE(restored.plane);
+		for (size_t i = 0; i < 4; ++i) {
+			auto mapped = MapMangetsuPerspective(restored, MangetsuPerspectiveReferenceCorner(i));
+			EXPECT_NEAR(state.corners[i].X(), mapped.X(), 0.001);
+			EXPECT_NEAR(state.corners[i].Y(), mapped.Y(), 0.001);
+		}
+	}
+	auto resized = MakeLine(saved);
+	auto changed_header = saved;
+	auto position = changed_header.find("\\pos(500,400)");
+	ASSERT_NE(std::string::npos, position);
+	changed_header.replace(position, std::string("\\pos(500,400)").size(),
+		"\\pos(900,700)\\fs80\\fscx150\\fscy70\\frx20\\fry-15\\frz10");
+	resized.Text = changed_header;
+	auto unchanged_plane = GetMangetsuPerspective(resized);
+	ASSERT_TRUE(unchanged_plane.plane);
+	for (size_t i = 0; i < 8; ++i)
+		EXPECT_NEAR(state.matrix[i], unchanged_plane.matrix[i], 1e-8);
+}
+
+TEST(MangetsuPerspective, LegacyCornersStayLegacyUntilEdited) {
+	auto line = MakeLine("{\\perspective(0,0,100,0,100,50,0,50)}Text");
+	auto state = GetMangetsuPerspective(line);
+	ASSERT_TRUE(state.enabled);
+	EXPECT_FALSE(state.plane);
+	ASSERT_TRUE(SetMangetsuPerspectiveCorner(state, 0, Vector2D(-10, 0)));
+	ASSERT_TRUE(SolveMangetsuPerspectivePlane(state));
+	ASSERT_TRUE(SetMangetsuPerspective(line, state));
+	EXPECT_TRUE(GetMangetsuPerspective(line).plane);
 }
