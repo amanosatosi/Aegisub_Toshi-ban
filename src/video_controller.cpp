@@ -86,6 +86,14 @@ void VideoController::OnSubtitlesCommit(int type, const AssDialogue *changed) {
 		provider->UpdateSubtitles(context->ass.get(), changed);
 }
 
+void VideoController::PreviewSubtitleText(AssDialogue const *line, std::string const& text) {
+	if (!provider || !line) return;
+	AssDialogue preview(*line);
+	preview.Text = text;
+	provider->UpdateSubtitles(context->ass.get(), &preview);
+	RequestFrame();
+}
+
 void VideoController::OnActiveLineChanged(AssDialogue *line) {
 	if (line && provider && OPT_GET("Video/Subtitle Sync")->GetBool()) {
 		Stop();

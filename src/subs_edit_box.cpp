@@ -88,7 +88,6 @@
 #include <wx/intl.h>
 #include <wx/textentry.h>
 #include <wx/utils.h>
-#include <libaegisub/log.h>
 
 namespace {
 
@@ -834,10 +833,6 @@ void SubsEditBox::AutoFillActor() {
 
 void SubsEditBox::OnActorKeyDown(wxKeyEvent &evt) {
 	bool has_focus = wxWindow::FindFocus() == actor_box;
-	LOG_D("actor/MRU") << "OnActorKeyDown key=" << evt.GetKeyCode()
-		<< " unicode=" << evt.GetUnicodeKey()
-		<< " fast=" << fast_mode_enabled_
-		<< " actor_focus=" << has_focus;
 	actor_should_autofill_ = false;
 	actor_has_pending_selection_ = false;
 
@@ -931,7 +926,6 @@ void SubsEditBox::OnActorKeyDown(wxKeyEvent &evt) {
 }
 
 void SubsEditBox::OnActorSetFocus(wxFocusEvent &evt) {
-	LOG_D("actor/MRU") << "OnActorSetFocus fast=" << fast_mode_enabled_;
 	if (actor_mru_manager_)
 		actor_mru_manager_->OnActorFocusChanged(true);
 	// Focus changes no longer affect fast-mode state or MRU visibility.
@@ -939,7 +933,6 @@ void SubsEditBox::OnActorSetFocus(wxFocusEvent &evt) {
 }
 
 void SubsEditBox::OnActorKillFocus(wxFocusEvent &evt) {
-	LOG_D("actor/MRU") << "OnActorKillFocus fast=" << fast_mode_enabled_;
 	evt.Skip();
 	actor_text_amend_ = false;
 	if (!fast_mode_enabled_)
@@ -977,12 +970,6 @@ void SubsEditBox::ApplyActorNameFromMRU(wxString const& name) {
 	actor_selection_start_ = 0;
 	actor_selection_end_ = trimmed.length();
 
-	int active_row = c && c->selectionController && c->selectionController->GetActiveLine()
-		? c->selectionController->GetActiveLine()->Row
-		: -1;
-	LOG_D("actor/MRU") << "ApplyActorNameFromMRU line_row=" << (line ? line->Row : -1)
-		<< " active_row=" << active_row
-		<< " value='" << from_wx(trimmed) << "'";
 	CommitActorToCurrentLine(trimmed);
 	PopulateActorList();
 
@@ -996,15 +983,7 @@ void SubsEditBox::AdvanceLineAfterMRU() {
 	if (!c)
 		return;
 
-	int from_row = c && c->selectionController && c->selectionController->GetActiveLine()
-		? c->selectionController->GetActiveLine()->Row
-		: -1;
 	cmd::call("grid/line/next/create", c);
-
-	int to_row = c && c->selectionController && c->selectionController->GetActiveLine()
-		? c->selectionController->GetActiveLine()->Row
-		: -1;
-	LOG_D("actor/MRU") << "AdvanceLineAfterMRU from row " << from_row << " to row " << to_row;
 
 	RefocusActorAfterFastLineChange();
 }
@@ -1059,10 +1038,6 @@ void SubsEditBox::CommitActorToCurrentLine(wxString const& name) {
 	wxString previous = to_wx(target->Actor);
 	auto fly_value = boost::flyweight<std::string>(from_wx(name));
 	target->Actor = fly_value;
-
-	LOG_D("actor/MRU") << "CommitActorToCurrentLine line_row=" << (line ? line->Row : -1)
-		<< " target_row=" << target->Row
-		<< " old='" << from_wx(previous) << "' new='" << from_wx(name) << "'";
 
 	// [actor_MRU] Ensure MRU choices update the active line before advancing.
 	Commit(_("actor change"), AssFile::COMMIT_DIAG_META, false, target);

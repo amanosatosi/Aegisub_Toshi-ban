@@ -32,6 +32,7 @@
 
 #include <chrono>
 #include <set>
+#include <string>
 
 #include <wx/timer.h>
 
@@ -179,6 +180,8 @@ public:
 	int TimeAtFrame(int frame, agi::vfr::Time type = agi::vfr::EXACT) const;
 	int FrameAtTime(int time, agi::vfr::Time type = agi::vfr::EXACT) const;
 	std::shared_ptr<VideoFrame> GetFrame(int frame, bool raw) const;
+	/// Render a dialogue text snapshot without changing the subtitle model or undo stack.
+	void PreviewSubtitleText(AssDialogue const *line, std::string const& text);
 
 	double GetPlaybackSpeed() const { return playback_speed; }
 	void SetPlaybackSpeed(double speed);

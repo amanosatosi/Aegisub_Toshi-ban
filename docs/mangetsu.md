@@ -179,6 +179,24 @@ distortion values unchanged.
 
 ## Gradient Editor: fixed video placement
 
+The editor's **Target** list selects Primary, Secondary, Shadow, Fifth, or a
+numbered Outline layer. Its heading always names the active target. Outline
+layers have independent X and Y border-size controls; **+ New outline** adds
+the next available layer to the editing session. Its initial preview is
+provisional: the layer is written only after its gradient or size is changed.
+**Delete outline** discards a new layer
+from the current session.
+
+A text selection limits an edit to that selection and restores the previous
+effective color or gradient after it. Without a selection, the caret chooses
+the following text run. Inline tags for the selected target are suppressed in
+that run so they cannot defeat the preview; tags for other targets remain.
+Video preview uses a temporary subtitle snapshot. The selected target's
+working gradient appears even before an edit; an untouched preview never
+becomes a saved tag. **Apply** or **OK** writes
+the pending changes as one subtitle edit, while **Cancel** restores the original
+preview without changing subtitle text or undo history.
+
 The Mangetsu Gradient Editor has a **Lock Placement** button beside its angle
 controls. It changes a primary-fill attached gradient into a fixed-frame
 gradient. The angle still comes from the editor's angle control and the colors

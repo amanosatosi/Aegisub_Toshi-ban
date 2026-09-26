@@ -118,6 +118,7 @@ aegisub_src = files(
     'mangetsu_perspective.cpp',
     'mangetsu_curved_text.cpp',
     'mangetsu_gradient_placement.cpp',
+    'mangetsu_gradient_scope.cpp',
     'menu.cpp',
     'mkv_wrap.cpp',
     'matroska_audio_metadata.cpp',

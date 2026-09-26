@@ -9,14 +9,17 @@
 
 #include "ass_dialogue.h"
 #include "ass_file.h"
+#include "ass_style.h"
 #include "compat.h"
 #include "dialogs.h"
 #include "gradient_placement_session.h"
 #include "include/aegisub/context.h"
 #include "mangetsu_gradient_placement.h"
+#include "mangetsu_gradient_scope.h"
 #include "selection_controller.h"
-#include "subs_controller.h"
+#include "text_selection_controller.h"
 #include "video_display.h"
+#include "video_controller.h"
 #include "visual_tool_gradient_placement.h"
 
 #include <libaegisub/format.h>
@@ -28,15 +31,19 @@
 #include <cmath>
 #include <string>
 #include <memory>
+#include <map>
+#include <set>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include <wx/button.h>
-#include <wx/choice.h>
 #include <wx/cursor.h>
 #include <wx/dcbuffer.h>
 #include <wx/dialog.h>
+#include <wx/font.h>
 #include <wx/intl.h>
-#include <wx/msgdlg.h>
+#include <wx/listbox.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
@@ -86,16 +93,6 @@ static agi::Color lerp_color(agi::Color a, agi::Color b, double t) {
 		static_cast<unsigned char>(std::lround(a.a + (b.a - a.a) * t)));
 }
 
-static bool has_layer_tag(std::string const& text, int layer) {
-	std::string prefix = "\\" + std::to_string(layer) + "b";
-	static const char *suffixes[] = {"s", "sx", "sy", "c", "a", "vc", "va", "grd", "ga"};
-	for (auto suffix : suffixes) {
-		if (text.find(prefix + suffix) != std::string::npos)
-			return true;
-	}
-	return false;
-}
-
 enum class TargetGroup {
 	Main,
 	Border
@@ -104,12 +101,6 @@ enum class TargetGroup {
 enum class ChannelMode {
 	Color,
 	Alpha
-};
-
-enum class LoadDecision {
-	Load,
-	Keep,
-	Cancel
 };
 
 struct GradientStop {
@@ -122,15 +113,6 @@ struct TagRef {
 	std::string name;
 	std::string alias;
 	std::string status_name;
-};
-
-struct TagRange {
-	int start = -1;
-	int end = -1;
-	std::string name;
-	std::string value;
-
-	explicit operator bool() const { return start >= 0 && end >= start; }
 };
 
 class DialogMangetsuGradient;
@@ -175,29 +157,50 @@ class DialogMangetsuGradient final : public wxDialog {
 	bool existing = false;
 	bool updating_controls = false;
 	bool preview_pending = false;
-	bool tag_span_valid = false;
 	bool lock_placement = false;
 	bool placement_capture_active = false;
-	int commit_id = -1;
-	int tag_span_start = -1;
-	int tag_span_end = -1;
+	bool committing = false;
 
 	std::string original_text;
 	std::string loaded_value;
 	std::vector<GradientStop> stops;
 	std::vector<int> border_layers{1};
+	struct WorkingState {
+		std::vector<GradientStop> stops;
+		int angle = 0;
+		int selected_stop = 0;
+		bool existing = false;
+		bool exists_in_original = false;
+		bool modified = false;
+		bool cleared = false;
+		bool lock_placement = false;
+		mangetsu::PlacementRect placement_rect;
+		std::string loaded_value;
+	};
+	using TargetKey = std::tuple<int, int, int>; // group, target index, color/alpha
+	std::map<TargetKey, WorkingState> working;
+	std::map<int, std::pair<double, double>> outline_sizes;
+	std::map<int, std::pair<double, double>> original_outline_sizes;
+	std::set<int> changed_outline_sizes;
+	std::set<int> new_outline_layers;
+	std::vector<TargetKey> visible_targets;
+	mangetsu::GradientScope edit_scope;
+	double border_size_x = 0;
+	double border_size_y = 0;
 	mangetsu::PlacementRect placement_rect;
 	std::shared_ptr<GradientPlacementSession> placement_session;
 	agi::signal::Connection active_line_connection;
 	agi::signal::Connection file_commit_connection;
-	wxString preview_message;
 	wxString placement_status;
 
 	wxTimer preview_timer;
 	wxSpinCtrl *angle_ctrl = nullptr;
-	wxChoice *main_choice = nullptr;
-	wxChoice *border_choice = nullptr;
-	wxChoice *box_choice = nullptr;
+	wxListBox *target_list = nullptr;
+	wxButton *delete_outline_button = nullptr;
+	wxStaticText *editing_label = nullptr;
+	wxPanel *outline_size_panel = nullptr;
+	wxSpinCtrlDouble *border_x_ctrl = nullptr;
+	wxSpinCtrlDouble *border_y_ctrl = nullptr;
 	wxToggleButton *color_button = nullptr;
 	wxToggleButton *alpha_button = nullptr;
 	wxToggleButton *lock_placement_button = nullptr;
@@ -217,10 +220,22 @@ class DialogMangetsuGradient final : public wxDialog {
 
 	void BuildControls();
 	void RefreshAvailableTargets();
+	TargetKey CurrentKey() const;
+	void SaveWorkingState();
+	void LoadWorkingState();
+	void SwitchTarget(TargetKey key);
+	void OnTargetSelected(wxCommandEvent&);
+	void OnNewOutline(wxCommandEvent&);
+	void OnDeleteOutline(wxCommandEvent&);
+	void OnBorderSizeChanged(wxCommandEvent&);
+	std::string BuildWorkingText(bool include_provisional = false,
+		mangetsu::GradientScope *result_scope = nullptr);
+	std::string FormatStateValue(TargetKey key, WorkingState const& state) const;
+	mangetsu::GradientTarget ScopeTarget(TargetKey key) const;
+	std::string FallbackTag(mangetsu::GradientTarget target, AssStyle const *style = nullptr) const;
+	void PreviewWorkingText();
 	void RefreshControls();
 	void RefreshLightControls();
-	bool RefreshFromLine(bool allow_prompt);
-	LoadDecision ConfirmLoadExisting(std::string const& target_label);
 	void ResetDefaultGradient();
 	bool LoadTagValue(std::string const& value, bool placement = false);
 	std::string FormatAttachedTagValue() const;
@@ -241,7 +256,6 @@ class DialogMangetsuGradient final : public wxDialog {
 	void OnFileCommit(int type, AssDialogue const* line);
 	void OnPlacementToggle(wxCommandEvent&);
 	void UpdateDirtyState();
-	void ApplyCurrent(bool mark_dirty = true);
 	void ClearCurrent();
 	void ReverseStops();
 	void StartAddStopPlacement();
@@ -254,16 +268,10 @@ class DialogMangetsuGradient final : public wxDialog {
 	GradientStop SampleAt(double pos) const;
 	void SortStops();
 
-	TagRange FindCurrentTag(AssDialogue const *line) const;
-	static TagRange FindTag(std::string const& text, std::string const& tag, std::string const& alias = "");
-	static std::string ReplaceOrInsertTag(std::string const& text, TagRef const& tag, std::string const& value);
 	static std::vector<std::string> TokenizeTagValue(std::string const& value);
 	static bool ParseAssColor(std::string const& text, agi::Color& color);
 	static bool ParseAssAlpha(std::string const& text, int& alpha);
 	static std::string FormatAssAlpha(int alpha);
-	void InvalidateTagSpan();
-	bool ReplaceCurrentTagInLine(std::string const& value);
-	bool RemoveCurrentTagFromLine();
 
 	int HitTestStop(wxPoint pos) const;
 	double PosFromMouse(wxPoint pos) const;
@@ -273,13 +281,10 @@ class DialogMangetsuGradient final : public wxDialog {
 
 	void OnAngleChanged(wxCommandEvent&);
 	void OnQuickAngle(int new_angle);
-	void OnMainChoice(wxCommandEvent&);
-	void OnBorderChoice(wxCommandEvent&);
 	void OnMode(ChannelMode new_mode);
 	void OnApply(wxCommandEvent&);
 	void OnOK(wxCommandEvent&);
 	void OnCancel(wxCommandEvent&);
-	void CommitPreview(wxString const& message);
 	void MarkGradientChanged(bool immediate = false, wxString const& message = wxString());
 	void SchedulePreview(wxString const& message, bool immediate);
 	void FlushPreview();
@@ -576,12 +581,19 @@ DialogMangetsuGradient::DialogMangetsuGradient(wxWindow *parent, agi::Context *c
 	active_line = context && context->selectionController ? context->selectionController->GetActiveLine() : nullptr;
 	if (active_line)
 		original_text = active_line->Text.get();
+	if (context && context->textSelectionController)
+		edit_scope = mangetsu::ResolveGradientScope(original_text,
+			context->textSelectionController->GetSelectionStart(),
+			context->textSelectionController->GetSelectionEnd());
+	else
+		edit_scope = mangetsu::ResolveGradientScope(original_text, 0, 0);
 
 	ResetDefaultGradient();
 	BuildControls();
 	RefreshAvailableTargets();
-	RefreshFromLine(false);
+	LoadWorkingState();
 	RefreshControls();
+	PreviewWorkingText();
 	if (context && context->selectionController)
 		active_line_connection = context->selectionController->AddActiveLineListener(&DialogMangetsuGradient::OnActiveLineChanged, this);
 	if (context && context->ass)
@@ -598,6 +610,23 @@ DialogMangetsuGradient::~DialogMangetsuGradient() {
 
 void DialogMangetsuGradient::BuildControls() {
 	auto *root = new wxBoxSizer(wxVERTICAL);
+	auto *body = new wxBoxSizer(wxHORIZONTAL);
+	auto *editor = new wxBoxSizer(wxVERTICAL);
+	auto *target_box = new wxStaticBoxSizer(wxVERTICAL, this, _("Target"));
+	target_list = new wxListBox(this, wxID_ANY, wxDefaultPosition, wxSize(145, 230));
+	target_box->Add(target_list, 1, wxEXPAND | wxALL, 4);
+	auto *new_outline = new wxButton(this, wxID_ANY, _("+ New outline"));
+	target_box->Add(new_outline, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 4);
+	delete_outline_button = new wxButton(this, wxID_ANY, _("Delete outline"));
+	target_box->Add(delete_outline_button, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 4);
+	body->Add(target_box, 0, wxEXPAND | wxALL, 8);
+	editing_label = new wxStaticText(this, wxID_ANY, _("Editing: Primary"));
+	{
+		wxFont font = editing_label->GetFont();
+		font.SetWeight(wxFONTWEIGHT_BOLD);
+		editing_label->SetFont(font);
+	}
+	editor->Add(editing_label, 0, wxLEFT | wxRIGHT | wxTOP, 8);
 	auto *top = new wxBoxSizer(wxHORIZONTAL);
 
 	auto *angle_label = new wxStaticText(this, wxID_ANY, _("angle"));
@@ -630,17 +659,6 @@ void DialogMangetsuGradient::BuildControls() {
 	top->Add(lock_placement_button, wxSizerFlags().Center().Border(wxRIGHT, 8));
 
 	top->AddSpacer(12);
-	main_choice = new wxChoice(this, wxID_ANY);
-	border_choice = new wxChoice(this, wxID_ANY);
-	box_choice = new wxChoice(this, wxID_ANY);
-	box_choice->Append(_("No box gradients"));
-	box_choice->SetSelection(0);
-	box_choice->Enable(false);
-	box_choice->SetToolTip(_("Box gradient tags are not supported by this branch."));
-
-	top->Add(main_choice, wxSizerFlags().Center().Border(wxRIGHT, 4));
-	top->Add(border_choice, wxSizerFlags().Center().Border(wxRIGHT, 4));
-	top->Add(box_choice, wxSizerFlags().Center().Border(wxRIGHT, 8));
 
 	color_button = new wxToggleButton(this, wxID_ANY, _("Color"));
 	alpha_button = new wxToggleButton(this, wxID_ANY, _("Alpha"));
@@ -649,6 +667,19 @@ void DialogMangetsuGradient::BuildControls() {
 
 	stop_bar = new GradientStopBar(this, this);
 	status_label = new wxStaticText(this, wxID_ANY, wxEmptyString);
+	outline_size_panel = new wxPanel(this);
+	auto *size_sizer = new wxBoxSizer(wxHORIZONTAL);
+	size_sizer->Add(new wxStaticText(outline_size_panel, wxID_ANY, _("Border size  X:")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
+	border_x_ctrl = new wxSpinCtrlDouble(outline_size_panel, wxID_ANY, wxEmptyString, wxDefaultPosition,
+		wxSize(85, -1), wxSP_ARROW_KEYS, 0, 1000, 2, 0.25);
+	border_x_ctrl->SetDigits(2);
+	size_sizer->Add(border_x_ctrl, 0, wxRIGHT, 10);
+	size_sizer->Add(new wxStaticText(outline_size_panel, wxID_ANY, _("Y:")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
+	border_y_ctrl = new wxSpinCtrlDouble(outline_size_panel, wxID_ANY, wxEmptyString, wxDefaultPosition,
+		wxSize(85, -1), wxSP_ARROW_KEYS, 0, 1000, 2, 0.25);
+	border_y_ctrl->SetDigits(2);
+	size_sizer->Add(border_y_ctrl);
+	outline_size_panel->SetSizer(size_sizer);
 
 	auto *ops = new wxBoxSizer(wxHORIZONTAL);
 	add_button = new wxButton(this, wxID_ANY, _("+ Stop"));
@@ -672,18 +703,30 @@ void DialogMangetsuGradient::BuildControls() {
 	buttons->Add(apply, wxSizerFlags().Border(wxRIGHT, 4));
 	buttons->Add(cancel);
 
-	root->Add(top, wxSizerFlags().Expand().Border(wxALL, 8));
-	root->Add(stop_bar, wxSizerFlags(1).Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
-	root->Add(status_label, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
-	root->Add(ops, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
+	editor->Add(top, wxSizerFlags().Expand().Border(wxALL, 8));
+	editor->Add(outline_size_panel, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
+	editor->Add(stop_bar, wxSizerFlags(1).Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
+	editor->Add(status_label, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
+	editor->Add(ops, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
+	body->Add(editor, 1, wxEXPAND);
+	root->Add(body, 1, wxEXPAND);
 	root->Add(buttons, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
 	SetSizerAndFit(root);
 	SetMinSize(GetSize());
 
 	angle_ctrl->Bind(wxEVT_SPINCTRL, &DialogMangetsuGradient::OnAngleChanged, this);
 	angle_ctrl->Bind(wxEVT_TEXT, &DialogMangetsuGradient::OnAngleChanged, this);
-	main_choice->Bind(wxEVT_CHOICE, &DialogMangetsuGradient::OnMainChoice, this);
-	border_choice->Bind(wxEVT_CHOICE, &DialogMangetsuGradient::OnBorderChoice, this);
+	target_list->Bind(wxEVT_LISTBOX, &DialogMangetsuGradient::OnTargetSelected, this);
+	new_outline->Bind(wxEVT_BUTTON, &DialogMangetsuGradient::OnNewOutline, this);
+	delete_outline_button->Bind(wxEVT_BUTTON, &DialogMangetsuGradient::OnDeleteOutline, this);
+	border_x_ctrl->Bind(wxEVT_SPINCTRLDOUBLE, [this](wxSpinDoubleEvent&) {
+		wxCommandEvent event; OnBorderSizeChanged(event);
+	});
+	border_y_ctrl->Bind(wxEVT_SPINCTRLDOUBLE, [this](wxSpinDoubleEvent&) {
+		wxCommandEvent event; OnBorderSizeChanged(event);
+	});
+	border_x_ctrl->Bind(wxEVT_TEXT, &DialogMangetsuGradient::OnBorderSizeChanged, this);
+	border_y_ctrl->Bind(wxEVT_TEXT, &DialogMangetsuGradient::OnBorderSizeChanged, this);
 	color_button->Bind(wxEVT_TOGGLEBUTTON, [=](wxCommandEvent&) { OnMode(ChannelMode::Color); });
 	alpha_button->Bind(wxEVT_TOGGLEBUTTON, [=](wxCommandEvent&) { OnMode(ChannelMode::Alpha); });
 	lock_placement_button->Bind(wxEVT_TOGGLEBUTTON, &DialogMangetsuGradient::OnPlacementToggle, this);
@@ -716,71 +759,329 @@ void DialogMangetsuGradient::BuildControls() {
 }
 
 void DialogMangetsuGradient::RefreshAvailableTargets() {
-	border_layers.clear();
-	border_layers.push_back(1);
-	std::string text = active_line ? active_line->Text.get() : std::string();
-	for (int layer = 2; layer <= 10; ++layer) {
-		if (has_layer_tag(text, layer))
+	border_layers = mangetsu::FindOutlineLayers(original_text);
+	for (int layer : new_outline_layers)
+		if (std::find(border_layers.begin(), border_layers.end(), layer) == border_layers.end())
 			border_layers.push_back(layer);
+	std::sort(border_layers.begin(), border_layers.end());
+}
+
+DialogMangetsuGradient::TargetKey DialogMangetsuGradient::CurrentKey() const {
+	return {group == TargetGroup::Border ? 1 : 0,
+		group == TargetGroup::Border ? border_index : main_index,
+		mode == ChannelMode::Alpha ? 1 : 0};
+}
+
+mangetsu::GradientTarget DialogMangetsuGradient::ScopeTarget(TargetKey key) const {
+	mangetsu::GradientTarget target;
+	target.alpha = std::get<2>(key) != 0;
+	if (std::get<0>(key)) {
+		target.kind = mangetsu::GradientTargetKind::Outline;
+		target.layer = std::get<1>(key);
 	}
+	else {
+		switch (std::get<1>(key)) {
+			case 2: target.kind = mangetsu::GradientTargetKind::Secondary; break;
+			case 4: target.kind = mangetsu::GradientTargetKind::Shadow; break;
+			case 5: target.kind = mangetsu::GradientTargetKind::Fifth; break;
+			default: target.kind = mangetsu::GradientTargetKind::Primary; break;
+		}
+	}
+	return target;
+}
+
+std::string DialogMangetsuGradient::FallbackTag(mangetsu::GradientTarget target, AssStyle const *style) const {
+	if (!style && context && context->ass && active_line)
+		style = context->ass->GetStyle(active_line->Style);
+	agi::Color color = style ? style->primary : agi::Color(255, 255, 255);
+	std::string tag = "\\1c";
+	switch (target.kind) {
+		case mangetsu::GradientTargetKind::Secondary:
+			color = style ? style->secondary : agi::Color(255, 0, 0); tag = "\\2c"; break;
+		case mangetsu::GradientTargetKind::Outline:
+			color = style ? style->outline : agi::Color(0, 0, 0);
+			tag = "\\" + std::to_string(target.layer) + "bc"; break;
+		case mangetsu::GradientTargetKind::Shadow:
+			color = style ? style->shadow : agi::Color(0, 0, 0); tag = "\\4c"; break;
+		case mangetsu::GradientTargetKind::Fifth: tag = "\\5c"; break;
+		default: break;
+	}
+	if (target.alpha) {
+		tag = target.kind == mangetsu::GradientTargetKind::Outline ?
+			"\\" + std::to_string(target.layer) + "ba" : tag.substr(0, tag.size() - 1) + "a";
+		return tag + agi::format("&H%02X&", color.a);
+	}
+	return tag + color.GetAssOverrideFormatted();
+}
+
+void DialogMangetsuGradient::SaveWorkingState() {
+	WorkingState &state = working[CurrentKey()];
+	state.stops = stops;
+	state.angle = angle;
+	state.selected_stop = selected_stop;
+	state.existing = existing;
+	state.modified = state.modified || dirty;
+	state.lock_placement = lock_placement;
+	state.placement_rect = placement_rect;
+	state.loaded_value = loaded_value;
+	if (group == TargetGroup::Border)
+		outline_sizes[border_index] = {border_size_x, border_size_y};
+}
+
+void DialogMangetsuGradient::LoadWorkingState() {
+	auto found = working.find(CurrentKey());
+	if (found != working.end()) {
+		WorkingState const& state = found->second;
+		stops = state.stops;
+		angle = state.angle;
+		selected_stop = state.selected_stop;
+		existing = state.existing;
+		dirty = state.modified;
+		lock_placement = state.lock_placement;
+		placement_rect = state.placement_rect;
+		loaded_value = state.loaded_value;
+	}
+	else {
+		ResetDefaultGradient();
+		lock_placement = false;
+		placement_rect = {};
+		auto tag = mangetsu::FindEffectiveGradient(original_text, edit_scope, ScopeTarget(CurrentKey()));
+		existing = tag && LoadTagValue(tag.value, mangetsu::IsPlacementGradientTagName(tag.name));
+		if (!existing) {
+			ResetDefaultGradient();
+			lock_placement = false;
+			placement_rect = {};
+		}
+		loaded_value = FormatTagValue();
+		dirty = false;
+	}
+	if (group == TargetGroup::Border) {
+		auto size = outline_sizes.find(border_index);
+		if (size == outline_sizes.end()) {
+			AssStyle *style = context && context->ass && active_line ?
+				context->ass->GetStyle(active_line->Style) : nullptr;
+			double fallback = border_index == 1 ? (style ? style->outline_w : 2.0) : 0.0;
+			std::map<std::string, double> named_sizes;
+			if (context && context->ass)
+				for (auto const& named_style : context->ass->Styles) {
+					std::string key = named_style.name;
+					std::transform(key.begin(), key.end(), key.begin(),
+						[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+					named_sizes[key] = border_index == 1 ? named_style.outline_w : 0.0;
+				}
+			auto read_size = [&](bool x_axis) {
+				return mangetsu::EffectiveBorderSize(original_text, edit_scope,
+					border_index, x_axis, fallback, named_sizes);
+			};
+			size = outline_sizes.emplace(border_index,
+				std::make_pair(read_size(true), read_size(false))).first;
+			original_outline_sizes[border_index] = size->second;
+		}
+		border_size_x = size->second.first;
+		border_size_y = size->second.second;
+	}
+	if (found == working.end()) SaveWorkingState();
+	if (found == working.end()) working[CurrentKey()].exists_in_original = existing;
+}
+
+std::string DialogMangetsuGradient::FormatStateValue(TargetKey key, WorkingState const& state) const {
+	std::string value = "(" + std::to_string(state.angle);
+	for (size_t i = 0; i < state.stops.size(); ++i) {
+		value += ",";
+		if (i && i + 1 != state.stops.size())
+			value += agi::format("%g%%,", state.stops[i].pos);
+		value += std::get<2>(key) == 0 ? state.stops[i].color.GetAssOverrideFormatted() :
+			FormatAssAlpha(state.stops[i].alpha);
+	}
+	value += ")";
+	if (std::get<0>(key) == 0 && std::get<1>(key) == 1 && std::get<2>(key) == 0 &&
+		state.lock_placement && state.placement_rect.valid)
+		return mangetsu::FormatPlacementGradientValue(state.placement_rect, value);
+	return value;
+}
+
+std::string DialogMangetsuGradient::BuildWorkingText(bool include_provisional,
+	mangetsu::GradientScope *result_scope) {
+	SaveWorkingState();
+	std::vector<mangetsu::GradientEdit> edits;
+	std::set<int> size_written;
+	for (auto const& pair : working) {
+		TargetKey key = pair.first;
+		WorkingState const& state = pair.second;
+		bool provisional = include_provisional && key == CurrentKey() &&
+			!state.modified && !state.cleared;
+		if (!state.modified && !state.cleared && !provisional) continue;
+		if (state.cleared && !state.exists_in_original) continue;
+		if (state.lock_placement && !state.placement_rect.valid) continue;
+		mangetsu::GradientEdit edit;
+		edit.target = ScopeTarget(key);
+		edit.fallback = FallbackTag(edit.target);
+		if (!state.cleared) {
+			std::string tag;
+			if (edit.target.kind == mangetsu::GradientTargetKind::Outline)
+				tag = "\\" + std::to_string(edit.target.layer) + (edit.target.alpha ? "bga" : "bgrd");
+			else if (edit.target.kind == mangetsu::GradientTargetKind::Primary && !edit.target.alpha &&
+				state.lock_placement && state.placement_rect.valid)
+				tag = "\\pgrd";
+			else {
+				int index = std::get<1>(key);
+				tag = "\\" + std::to_string(index) + (edit.target.alpha ? "gra" : "grd");
+			}
+			edit.gradient = tag + FormatStateValue(key, state);
+		}
+		if (edit.target.kind == mangetsu::GradientTargetKind::Outline &&
+			(changed_outline_sizes.count(edit.target.layer) || new_outline_layers.count(edit.target.layer)) &&
+			!size_written.count(edit.target.layer)) {
+			auto size = outline_sizes.at(edit.target.layer);
+			std::string p = "\\" + std::to_string(edit.target.layer) + "bs";
+			edit.border_x = p + "x" + agi::format("%g", size.first);
+			edit.border_y = p + "y" + agi::format("%g", size.second);
+			size_written.insert(edit.target.layer);
+		}
+		edits.push_back(std::move(edit));
+	}
+	for (int layer : changed_outline_sizes) {
+		if (size_written.count(layer)) continue;
+		mangetsu::GradientEdit edit;
+		edit.target = {mangetsu::GradientTargetKind::Outline, layer, false};
+		edit.edit_gradient = false;
+		auto size = outline_sizes.at(layer);
+		std::string p = "\\" + std::to_string(layer) + "bs";
+		edit.border_x = p + "x" + agi::format("%g", size.first);
+		edit.border_y = p + "y" + agi::format("%g", size.second);
+		edits.push_back(std::move(edit));
+	}
+	AssStyle *style = context && context->ass && active_line ?
+		context->ass->GetStyle(active_line->Style) : nullptr;
+	for (auto &edit : edits) {
+		if (context && context->ass) {
+			for (auto const& style : context->ass->Styles) {
+				std::string style_key = style.name;
+				std::transform(style_key.begin(), style_key.end(), style_key.begin(),
+					[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+				edit.style_fallbacks[style_key] = FallbackTag(edit.target, &style);
+				std::string p = "\\" + std::to_string(edit.target.layer) + "bs";
+				std::string size = agi::format("%g", edit.target.layer == 1 ? style.outline_w : 0.0);
+				edit.style_border_fallbacks[style_key] = {p + "x" + size, p + "y" + size};
+			}
+		}
+		if (edit.border_x.empty() && edit.border_y.empty()) continue;
+		std::string p = "\\" + std::to_string(edit.target.layer) + "bs";
+		std::string size_fallback = agi::format("%g",
+			edit.target.layer == 1 ? (style ? style->outline_w : 2.0) : 0.0);
+		edit.border_fallback_x = p + "x" + size_fallback;
+		edit.border_fallback_y = p + "y" + size_fallback;
+	}
+	return mangetsu::ApplyGradientEdits(original_text, edit_scope, edits, result_scope);
+}
+
+void DialogMangetsuGradient::PreviewWorkingText() {
+	if (context && context->videoController && active_line)
+		context->videoController->PreviewSubtitleText(active_line, BuildWorkingText(true));
+}
+
+void DialogMangetsuGradient::SwitchTarget(TargetKey key) {
+	CancelAddStopPlacement(false);
+	EndPlacementSession();
+	SaveWorkingState();
+	group = std::get<0>(key) ? TargetGroup::Border : TargetGroup::Main;
+	if (group == TargetGroup::Border) border_index = std::get<1>(key);
+	else main_index = std::get<1>(key);
+	mode = std::get<2>(key) ? ChannelMode::Alpha : ChannelMode::Color;
+	LoadWorkingState();
+	RefreshControls();
+	PreviewWorkingText();
+	if (lock_placement && placement_rect.valid) StartPlacementSession();
+}
+
+void DialogMangetsuGradient::OnTargetSelected(wxCommandEvent&) {
+	if (updating_controls) return;
+	int selected = target_list->GetSelection();
+	if (selected >= 0 && selected < static_cast<int>(visible_targets.size())) {
+		TargetKey key = visible_targets[selected];
+		std::get<2>(key) = mode == ChannelMode::Alpha ? 1 : 0;
+		SwitchTarget(key);
+	}
+}
+
+void DialogMangetsuGradient::OnNewOutline(wxCommandEvent&) {
+	int next = border_layers.empty() ? 2 : std::max(2, border_layers.back() + 1);
+	new_outline_layers.insert(next);
+	AssStyle *style = context && context->ass && active_line ? context->ass->GetStyle(active_line->Style) : nullptr;
+	double base = style ? style->outline_w : 2.0;
+	if (!outline_sizes.empty()) base = std::max(base, outline_sizes.rbegin()->second.first);
+	outline_sizes[next] = {base + 2.0, base + 2.0};
+	original_outline_sizes[next] = outline_sizes[next];
+	RefreshAvailableTargets();
+	SwitchTarget({1, next, 0});
+}
+
+void DialogMangetsuGradient::OnDeleteOutline(wxCommandEvent&) {
+	if (group != TargetGroup::Border || !new_outline_layers.count(border_index)) return;
+	CancelAddStopPlacement(false);
+	int removed = border_index;
+	new_outline_layers.erase(removed);
+	changed_outline_sizes.erase(removed);
+	outline_sizes.erase(removed);
+	original_outline_sizes.erase(removed);
+	working.erase(TargetKey{1, removed, 0});
+	working.erase(TargetKey{1, removed, 1});
+	border_index = 1;
+	mode = ChannelMode::Color;
+	RefreshAvailableTargets();
+	LoadWorkingState();
+	RefreshControls();
+	PreviewWorkingText();
+}
+
+void DialogMangetsuGradient::OnBorderSizeChanged(wxCommandEvent&) {
+	if (updating_controls || group != TargetGroup::Border) return;
+	border_size_x = border_x_ctrl->GetValue();
+	border_size_y = border_y_ctrl->GetValue();
+	outline_sizes[border_index] = {border_size_x, border_size_y};
+	auto original = original_outline_sizes.find(border_index);
+	if (original != original_outline_sizes.end() &&
+		std::abs(border_size_x - original->second.first) < 0.001 &&
+		std::abs(border_size_y - original->second.second) < 0.001)
+		changed_outline_sizes.erase(border_index);
+	else
+		changed_outline_sizes.insert(border_index);
+	SchedulePreview(_("set outline size"), false);
 }
 
 void DialogMangetsuGradient::RefreshControls() {
 	updating_controls = true;
 
 	angle_ctrl->SetValue(angle);
-
-	auto mark = [&](std::string label, TagRef const& tag) {
-		(void)tag;
-		return FindCurrentTag(active_line) ? label + " *" : label;
+	target_list->Clear();
+	visible_targets.clear();
+	auto add_target = [&](std::string const& label, TargetKey key) {
+		target_list->Append(to_wx(label));
+		visible_targets.push_back(key);
 	};
-
-	main_choice->Clear();
-	for (int idx : {1, 2, 3, 4, 5}) {
-		std::string label;
-		switch (idx) {
-			case 1: label = "Primary"; break;
-			case 2: label = "Secondary"; break;
-			case 3: label = "Border (1)"; break;
-			case 4: label = "Shadow"; break;
-			case 5: label = "Fifth"; break;
-		}
-		TargetGroup saved_group = group;
-		int saved_main = main_index;
-		group = TargetGroup::Main;
-		main_index = idx;
-		main_choice->Append(to_wx(mark(label, CurrentTag())));
-		group = saved_group;
-		main_index = saved_main;
-	}
-	main_choice->SetSelection(std::max(0, main_index - 1));
-
-	border_choice->Clear();
-	int border_selection = 0;
-	for (size_t i = 0; i < border_layers.size(); ++i) {
-		int saved_border = border_index;
-		TargetGroup saved_group = group;
-		group = TargetGroup::Border;
-		border_index = border_layers[i];
-		border_choice->Append(to_wx(mark(agi::format("Border %d", border_layers[i]), CurrentTag())));
-		group = saved_group;
-		border_index = saved_border;
-		if (border_layers[i] == border_index)
-			border_selection = static_cast<int>(i);
-	}
-	border_choice->SetSelection(border_selection);
-
-	TargetGroup saved_group = group;
-	ChannelMode saved_mode = mode;
-	mode = ChannelMode::Color;
-	color_button->SetLabel(to_wx(FindCurrentTag(active_line) ? "Color *" : "Color"));
-	mode = ChannelMode::Alpha;
-	alpha_button->SetLabel(to_wx(FindCurrentTag(active_line) ? "Alpha *" : "Alpha"));
-	group = saved_group;
-	mode = saved_mode;
+	add_target("Primary", {0, 1, 0});
+	add_target("Secondary", {0, 2, 0});
+	for (int layer : border_layers)
+		add_target(agi::format("Outline %d", layer), {1, layer, 0});
+	add_target("Shadow", {0, 4, 0});
+	add_target("Fifth", {0, 5, 0});
+	for (size_t i = 0; i < visible_targets.size(); ++i)
+		if (std::get<0>(visible_targets[i]) == std::get<0>(CurrentKey()) &&
+			std::get<1>(visible_targets[i]) == std::get<1>(CurrentKey()))
+			target_list->SetSelection(static_cast<int>(i));
+	color_button->SetLabel(_("Color"));
+	alpha_button->SetLabel(_("Alpha"));
 
 	color_button->SetValue(mode == ChannelMode::Color);
 	alpha_button->SetValue(mode == ChannelMode::Alpha);
+	editing_label->SetLabel(to_wx("Editing: " + CurrentTargetName() + " — " + CurrentModeName()));
+	SetTitle(to_wx("Gradient Editor — " + CurrentTargetName()));
+	outline_size_panel->Show(group == TargetGroup::Border);
+	delete_outline_button->Enable(group == TargetGroup::Border && new_outline_layers.count(border_index));
+	if (group == TargetGroup::Border) {
+		border_x_ctrl->SetValue(border_size_x);
+		border_y_ctrl->SetValue(border_size_y);
+	}
 	status_label->SetLabel(to_wx(CurrentStatus()));
 	remove_button->Enable(selected_stop > 0 && selected_stop < static_cast<int>(stops.size()) - 1);
 	RefreshPlacementControl();
@@ -814,61 +1115,6 @@ void DialogMangetsuGradient::RefreshLightControls() {
 
 	if (stop_bar)
 		stop_bar->Refresh(false);
-}
-
-bool DialogMangetsuGradient::RefreshFromLine(bool allow_prompt) {
-	if (!active_line)
-		return true;
-
-	InvalidateTagSpan();
-	TagRange found = FindCurrentTag(active_line);
-	if (found) {
-		tag_span_valid = true;
-		tag_span_start = found.start;
-		tag_span_end = found.end;
-		if (dirty && allow_prompt) {
-			LoadDecision decision = ConfirmLoadExisting(CurrentTargetName() + " " + CurrentModeName());
-			if (decision == LoadDecision::Cancel) {
-				RefreshControls();
-				return false;
-			}
-			if (decision == LoadDecision::Keep) {
-				existing = true;
-				ApplyCurrent(false);
-				return true;
-			}
-		}
-		if (LoadTagValue(found.value, mangetsu::IsPlacementGradientTagName(found.name))) {
-			loaded_value = FormatTagValue();
-			dirty = false;
-			existing = true;
-			RefreshControls();
-			return true;
-		}
-	}
-
-	existing = false;
-	lock_placement = false;
-	InvalidateTagSpan();
-	if (!dirty) {
-		ResetDefaultGradient();
-		placement_rect = {};
-		loaded_value = FormatTagValue();
-	}
-	RefreshControls();
-	return true;
-}
-
-LoadDecision DialogMangetsuGradient::ConfirmLoadExisting(std::string const& target_label) {
-	wxMessageDialog dlg(this,
-		to_wx("Existing gradient found for " + target_label + ".\nLoad existing gradient or keep current edit?"),
-		_("Mangetsu Gradient Editor"),
-		wxYES_NO | wxCANCEL | wxICON_QUESTION);
-	dlg.SetYesNoCancelLabels(_("Load Existing"), _("Keep Current Edit"), _("Cancel"));
-	int ret = dlg.ShowModal();
-	if (ret == wxID_CANCEL)
-		return LoadDecision::Cancel;
-	return ret == wxID_YES ? LoadDecision::Load : LoadDecision::Keep;
 }
 
 TagRef DialogMangetsuGradient::CurrentTag() const {
@@ -907,7 +1153,7 @@ bool DialogMangetsuGradient::PlacementSupported() const {
 }
 
 bool DialogMangetsuGradient::PlacementTransformUnsupported() const {
-	if (!PlacementSupported() || !active_line || FindCurrentTag(active_line))
+	if (!PlacementSupported() || !active_line || existing)
 		return false;
 	TagRef attached = CurrentTag();
 	TagRef placed = PlacementTag();
@@ -942,17 +1188,17 @@ bool DialogMangetsuGradient::IsLockedLine() const {
 }
 
 std::string DialogMangetsuGradient::CurrentGroupName() const {
-	return group == TargetGroup::Main ? "Main" : "Border";
+	return group == TargetGroup::Main ? "Main" : "Outline";
 }
 
 std::string DialogMangetsuGradient::CurrentTargetName() const {
 	if (group == TargetGroup::Border)
-		return agi::format("Border %d", border_index);
+		return agi::format("Outline %d", border_index);
 
 	switch (main_index) {
 		case 1: return "Primary";
 		case 2: return "Secondary";
-		case 3: return "Border (1)";
+		case 3: return "Outline 1";
 		case 4: return "Shadow";
 		case 5: return "Fifth";
 		default: return "Main";
@@ -965,12 +1211,21 @@ std::string DialogMangetsuGradient::CurrentModeName() const {
 
 std::string DialogMangetsuGradient::CurrentStatus() const {
 	TagRef tag = OutputTag();
+	auto state = working.find(CurrentKey());
+	bool original_exists = state != working.end() && state->second.exists_in_original;
+	bool pending = (state != working.end() && state->second.modified) ||
+		(group == TargetGroup::Border && changed_outline_sizes.count(border_index));
 	std::string status = "Editing: " + CurrentGroupName() + " / " + CurrentTargetName() + " / " + CurrentModeName() +
-		" -> " + tag.status_name + "\nExisting: " + (existing ? "yes" : "no");
+		" -> " + tag.status_name + "\nOriginal gradient: " + (original_exists ? "yes" : "no") +
+		"   Pending edit: " + (pending ? "yes" : "no");
 	if (!placement_status.empty())
 		status += "\n" + from_wx(placement_status);
 	if (!add_stop_status.empty())
 		status += "\n" + from_wx(add_stop_status);
+	if (group == TargetGroup::Border && new_outline_layers.count(border_index) &&
+		!changed_outline_sizes.count(border_index) &&
+		state != working.end() && !state->second.modified)
+		status += "\nPreview only — edit this outline to keep it.";
 	return status;
 }
 
@@ -1216,22 +1471,27 @@ void DialogMangetsuGradient::OnActiveLineChanged(AssDialogue *line) {
 	}
 	CallAfter([this] {
 		EndPlacementSession();
-		placement_status = _("Placement selection ended because the active subtitle line changed.");
-		RefreshLightControls();
+		if (context && context->videoController && active_line)
+			context->videoController->PreviewSubtitleText(active_line, original_text);
+		Destroy();
 	});
 }
 
-void DialogMangetsuGradient::OnFileCommit(int type, AssDialogue const*) {
-	if (type != AssFile::COMMIT_NEW)
+void DialogMangetsuGradient::OnFileCommit(int type, AssDialogue const* changed) {
+	bool new_file = type == AssFile::COMMIT_NEW;
+	if (!new_file &&
+		(changed != active_line || committing || !active_line || active_line->Text.get() == original_text))
 		return;
 	if (preview_pending) {
 		preview_timer.Stop();
 		preview_pending = false;
 	}
-	CallAfter([this] {
+	CallAfter([this, new_file] {
 		EndPlacementSession();
-		// The line pointer and original undo snapshot no longer belong to this
-		// subtitle file. Close rather than attempting an undo into the new file.
+		// A new file or an external edit invalidates the working snapshot.
+		if (!new_file && context && context->videoController && active_line && context->ass &&
+			context->selectionController->GetActiveLine() == active_line)
+			context->videoController->PreviewSubtitleText(active_line, active_line->Text.get());
 		Destroy();
 	});
 }
@@ -1286,16 +1546,10 @@ void DialogMangetsuGradient::UpdateDirtyState() {
 	dirty = FormatTagValue() != loaded_value;
 }
 
-void DialogMangetsuGradient::CommitPreview(wxString const& message) {
-	if (!context || !context->ass || !active_line)
-		return;
-	commit_id = context->ass->Commit(message, AssFile::COMMIT_DIAG_TEXT, commit_id, active_line);
-	if (context->videoDisplay)
-		context->videoDisplay->Render();
-}
-
 void DialogMangetsuGradient::MarkGradientChanged(bool immediate, wxString const& message) {
 	UpdateDirtyState();
+	working[CurrentKey()].cleared = false;
+	working[CurrentKey()].modified = true;
 	if (placement_session)
 		placement_session->pending_gradient_value = FormatTagValue();
 	RefreshLightControls();
@@ -1303,7 +1557,7 @@ void DialogMangetsuGradient::MarkGradientChanged(bool immediate, wxString const&
 }
 
 void DialogMangetsuGradient::SchedulePreview(wxString const& message, bool immediate) {
-	preview_message = message;
+	(void)message;
 	if (immediate) {
 		FlushPreview();
 		return;
@@ -1321,19 +1575,7 @@ void DialogMangetsuGradient::FlushPreview() {
 		preview_pending = false;
 	}
 
-	if (!active_line)
-		return;
-	// Waiting for the first placement drag is deliberately non-mutating. The
-	// controls may still be adjusted, but no ordinary fallback tag is inserted
-	// until a valid rectangle exists.
-	if (lock_placement && !placement_rect.valid)
-		return;
-
-	if (!ReplaceCurrentTagInLine(FormatTagValue()))
-		return;
-
-	existing = true;
-	CommitPreview(preview_message.IsEmpty() ? _("set gradient") : preview_message);
+	PreviewWorkingText();
 	RefreshLightControls();
 }
 
@@ -1350,37 +1592,14 @@ void DialogMangetsuGradient::OnDialogKeyDown(wxKeyEvent& event) {
 	event.Skip();
 }
 
-void DialogMangetsuGradient::ApplyCurrent(bool mark_dirty) {
-	if (!active_line)
-		return;
-	if (lock_placement && !placement_rect.valid)
-		return;
-	if (mark_dirty)
-		UpdateDirtyState();
-	if (!ReplaceCurrentTagInLine(FormatTagValue())) {
-		RefreshControls();
-		return;
-	}
-	existing = true;
-	CommitPreview(_("set gradient"));
-	RefreshAvailableTargets();
-	RefreshControls();
-}
-
 void DialogMangetsuGradient::ClearCurrent() {
-	if (lock_placement && !placement_rect.valid) {
-		placement_status = _("Drag a fixed gradient area before changing placement mode.");
-		RefreshLightControls();
-		return;
-	}
-	FlushPreview();
-	if (!active_line || !FindCurrentTag(active_line))
-		return;
+	SaveWorkingState();
+	WorkingState &state = working[CurrentKey()];
+	state.cleared = true;
+	state.modified = true;
 	dirty = true;
-	if (!RemoveCurrentTagFromLine())
-		return;
 	existing = false;
-	CommitPreview(_("clear gradient"));
+	PreviewWorkingText();
 	RefreshControls();
 }
 
@@ -1473,6 +1692,9 @@ void DialogMangetsuGradient::FlatZone() {
 void DialogMangetsuGradient::EditSelectedStop() {
 	if (selected_stop < 0 || selected_stop >= static_cast<int>(stops.size()))
 		return;
+	SaveWorkingState();
+	WorkingState before = working[CurrentKey()];
+	bool was_dirty = dirty;
 
 	if (mode == ChannelMode::Color) {
 		agi::Color selected = stops[selected_stop].color;
@@ -1482,7 +1704,10 @@ void DialogMangetsuGradient::EditSelectedStop() {
 		});
 		if (!ok) {
 			stops[selected_stop].color = selected;
-			MarkGradientChanged(true);
+			working[CurrentKey()] = before;
+			dirty = was_dirty;
+			PreviewWorkingText();
+			RefreshLightControls();
 		}
 		else
 			FlushPreview();
@@ -1495,7 +1720,10 @@ void DialogMangetsuGradient::EditSelectedStop() {
 		});
 		if (!ok) {
 			stops[selected_stop].alpha = selected.a;
-			MarkGradientChanged(true);
+			working[CurrentKey()] = before;
+			dirty = was_dirty;
+			PreviewWorkingText();
+			RefreshLightControls();
 		}
 		else
 			FlushPreview();
@@ -1535,20 +1763,6 @@ void DialogMangetsuGradient::SortStops() {
 	}
 }
 
-TagRange DialogMangetsuGradient::FindCurrentTag(AssDialogue const *line) const {
-	if (!line)
-		return {};
-	TagRef tag = CurrentTag();
-	TagRange attached = FindTag(line->Text.get(), tag.name, tag.alias);
-	if (!PlacementSupported())
-		return attached;
-	TagRef placed_tag = PlacementTag();
-	TagRange placed = FindTag(line->Text.get(), placed_tag.name, placed_tag.alias);
-	// Mangetsu uses the last valid primary source. Keep the editor targeting
-	// rule aligned when an old attached and a placed tag coexist in one block.
-	return placed && (!attached || placed.start > attached.start) ? placed : attached;
-}
-
 static int matching_paren(std::string const& text, int open) {
 	int depth = 0;
 	for (int i = open; i < static_cast<int>(text.size()); ++i) {
@@ -1561,190 +1775,6 @@ static int matching_paren(std::string const& text, int open) {
 		}
 	}
 	return -1;
-}
-
-TagRange DialogMangetsuGradient::FindTag(std::string const& text, std::string const& tag, std::string const& alias) {
-	bool in_block = false;
-	TagRange last_found;
-	for (int i = 0; i < static_cast<int>(text.size()); ++i) {
-		if (!in_block) {
-			if (text[i] == '{')
-				in_block = true;
-			continue;
-		}
-		if (text[i] == '}') {
-			in_block = false;
-			continue;
-		}
-		if (text[i] != '\\')
-			continue;
-
-		int name_end = i + 1;
-		while (name_end < static_cast<int>(text.size()) &&
-			(std::isdigit(static_cast<unsigned char>(text[name_end])) || std::isalpha(static_cast<unsigned char>(text[name_end]))))
-			++name_end;
-		if (name_end == i + 1)
-			continue;
-
-		std::string name = text.substr(i, name_end - i);
-		while (name_end < static_cast<int>(text.size()) && std::isspace(static_cast<unsigned char>(text[name_end])))
-			++name_end;
-
-		if (name == "\\t" && name_end < static_cast<int>(text.size()) && text[name_end] == '(') {
-			int close = matching_paren(text, name_end);
-			if (close >= 0)
-				i = close;
-			continue;
-		}
-
-		if (name != tag && (alias.empty() || name != alias))
-			continue;
-
-		int value_start = name_end;
-		int value_end = value_start;
-		if (value_start < static_cast<int>(text.size()) && text[value_start] == '(') {
-			int close = matching_paren(text, value_start);
-			if (close < 0)
-				continue;
-			value_end = close + 1;
-		}
-		else {
-			while (value_end < static_cast<int>(text.size()) && text[value_end] != '\\' && text[value_end] != '}')
-				++value_end;
-		}
-
-		// Edit the effective static tag: the last matching tag outside \t(...).
-		last_found.start = i;
-		last_found.end = value_end;
-		last_found.name = name;
-		last_found.value = text.substr(value_start, value_end - value_start);
-		i = value_end - 1;
-	}
-	return last_found;
-}
-
-std::string DialogMangetsuGradient::ReplaceOrInsertTag(std::string const& text, TagRef const& tag, std::string const& value) {
-	TagRange found = FindTag(text, tag.name, tag.alias);
-	std::string replacement = tag.name + value;
-	if (found) {
-		std::string out = text;
-		out.replace(found.start, found.end - found.start, replacement);
-		return out;
-	}
-
-	if (!text.empty() && text[0] == '{') {
-		int close = static_cast<int>(text.find('}'));
-		if (close >= 0) {
-			std::string out = text;
-			out.insert(1, replacement);
-			return out;
-		}
-	}
-
-	return "{" + replacement + "}" + text;
-}
-
-void DialogMangetsuGradient::InvalidateTagSpan() {
-	tag_span_valid = false;
-	tag_span_start = -1;
-	tag_span_end = -1;
-}
-
-bool DialogMangetsuGradient::ReplaceCurrentTagInLine(std::string const& value) {
-	if (!active_line)
-		return false;
-
-	TagRef output = OutputTag();
-	TagRef attached = CurrentTag();
-	TagRef placed = PlacementTag();
-	std::string replacement = output.name + value;
-	std::string text = active_line->Text.get();
-
-	auto span_matches = [&]() {
-		if (!tag_span_valid || tag_span_start < 0 || tag_span_end < tag_span_start || tag_span_end > static_cast<int>(text.size()))
-			return false;
-		auto matches = [&](TagRef const& tag) {
-			return text.compare(tag_span_start, tag.name.size(), tag.name) == 0 ||
-				(!tag.alias.empty() && text.compare(tag_span_start, tag.alias.size(), tag.alias) == 0);
-		};
-		return matches(attached) || (PlacementSupported() && matches(placed));
-	};
-
-	if (span_matches()) {
-		if (text.compare(tag_span_start, tag_span_end - tag_span_start, replacement) == 0)
-			return false;
-		text.replace(tag_span_start, tag_span_end - tag_span_start, replacement);
-		tag_span_end = tag_span_start + static_cast<int>(replacement.size());
-		active_line->Text = text;
-		return true;
-	}
-
-	TagRange found = FindCurrentTag(active_line);
-	if (found) {
-		text.replace(found.start, found.end - found.start, replacement);
-		tag_span_valid = true;
-		tag_span_start = found.start;
-		tag_span_end = found.start + static_cast<int>(replacement.size());
-		active_line->Text = text;
-		return true;
-	}
-
-	if (!text.empty() && text[0] == '{') {
-		int close = static_cast<int>(text.find('}'));
-		if (close >= 0) {
-			text.insert(1, replacement);
-			tag_span_valid = true;
-			tag_span_start = 1;
-			tag_span_end = 1 + static_cast<int>(replacement.size());
-			active_line->Text = text;
-			return true;
-		}
-	}
-
-	text = "{" + replacement + "}" + text;
-	tag_span_valid = true;
-	tag_span_start = 1;
-	tag_span_end = 1 + static_cast<int>(replacement.size());
-	active_line->Text = text;
-	return true;
-}
-
-bool DialogMangetsuGradient::RemoveCurrentTagFromLine() {
-	if (!active_line)
-		return false;
-
-	TagRef attached = CurrentTag();
-	TagRef placed = PlacementTag();
-	std::string text = active_line->Text.get();
-
-	auto span_matches = [&]() {
-		if (!tag_span_valid || tag_span_start < 0 || tag_span_end < tag_span_start || tag_span_end > static_cast<int>(text.size()))
-			return false;
-		auto matches = [&](TagRef const& tag) {
-			return text.compare(tag_span_start, tag.name.size(), tag.name) == 0 ||
-				(!tag.alias.empty() && text.compare(tag_span_start, tag.alias.size(), tag.alias) == 0);
-		};
-		return matches(attached) || (PlacementSupported() && matches(placed));
-	};
-
-	int start = -1;
-	int end = -1;
-	if (span_matches()) {
-		start = tag_span_start;
-		end = tag_span_end;
-	}
-	else {
-		TagRange found = FindCurrentTag(active_line);
-		if (!found)
-			return false;
-		start = found.start;
-		end = found.end;
-	}
-
-	text.erase(start, end - start);
-	active_line->Text = text;
-	InvalidateTagSpan();
-	return true;
 }
 
 std::vector<std::string> DialogMangetsuGradient::TokenizeTagValue(std::string const& value) {
@@ -1850,67 +1880,12 @@ void DialogMangetsuGradient::OnQuickAngle(int new_angle) {
 	MarkGradientChanged(true);
 }
 
-void DialogMangetsuGradient::OnMainChoice(wxCommandEvent&) {
-	if (updating_controls)
-		return;
-	CancelAddStopPlacement(false);
-	EndPlacementSession();
-	FlushPreview();
-	TargetGroup old_group = group;
-	int old_main = main_index;
-	group = TargetGroup::Main;
-	main_index = main_choice->GetSelection() + 1;
-	InvalidateTagSpan();
-	if (!RefreshFromLine(true)) {
-		group = old_group;
-		main_index = old_main;
-		InvalidateTagSpan();
-		RefreshControls();
-	}
-	else if (lock_placement && placement_rect.valid)
-		StartPlacementSession();
-}
-
-void DialogMangetsuGradient::OnBorderChoice(wxCommandEvent&) {
-	if (updating_controls)
-		return;
-	CancelAddStopPlacement(false);
-	EndPlacementSession();
-	FlushPreview();
-	int sel = border_choice->GetSelection();
-	if (sel >= 0 && sel < static_cast<int>(border_layers.size())) {
-		TargetGroup old_group = group;
-		int old_border = border_index;
-		group = TargetGroup::Border;
-		border_index = border_layers[sel];
-		InvalidateTagSpan();
-		if (!RefreshFromLine(true)) {
-			group = old_group;
-			border_index = old_border;
-			InvalidateTagSpan();
-			RefreshControls();
-		}
-		else if (lock_placement && placement_rect.valid)
-			StartPlacementSession();
-	}
-}
-
 void DialogMangetsuGradient::OnMode(ChannelMode new_mode) {
 	if (updating_controls)
 		return;
-	CancelAddStopPlacement(false);
-	EndPlacementSession();
-	FlushPreview();
-	ChannelMode old_mode = mode;
-	mode = new_mode;
-	InvalidateTagSpan();
-	if (!RefreshFromLine(true)) {
-		mode = old_mode;
-		InvalidateTagSpan();
-		RefreshControls();
-	}
-	else if (lock_placement && placement_rect.valid)
-		StartPlacementSession();
+	TargetKey key = CurrentKey();
+	std::get<2>(key) = new_mode == ChannelMode::Alpha ? 1 : 0;
+	SwitchTarget(key);
 }
 
 void DialogMangetsuGradient::OnApply(wxCommandEvent&) {
@@ -1921,20 +1896,46 @@ void DialogMangetsuGradient::OnApply(wxCommandEvent&) {
 		RefreshLightControls();
 		return;
 	}
-	FlushPreview();
-	commit_id = -1;
-	if (active_line)
-		original_text = active_line->Text.get();
-	loaded_value = FormatTagValue();
-	dirty = false;
-	RefreshFromLine(false);
+	if (!active_line || !context || !context->ass) return;
+	if (preview_pending) { preview_timer.Stop(); preview_pending = false; }
+	mangetsu::GradientScope applied_scope;
+	std::string result = BuildWorkingText(false, &applied_scope);
+	if (result != original_text) {
+		active_line->Text = result;
+		committing = true;
+		context->ass->Commit(_("set gradient"), AssFile::COMMIT_DIAG_TEXT, -1, active_line);
+		committing = false;
+		original_text = result;
+		edit_scope = applied_scope;
+		if (context->textSelectionController) {
+			if (edit_scope.selected)
+				context->textSelectionController->SetSelection(
+					static_cast<int>(edit_scope.start), static_cast<int>(edit_scope.end));
+			else
+				context->textSelectionController->SetInsertionPoint(static_cast<int>(edit_scope.start));
+		}
+	}
+	if (context->videoController)
+		context->videoController->PreviewSubtitleText(active_line, original_text);
+	working.clear();
+	outline_sizes.clear();
+	original_outline_sizes.clear();
+	changed_outline_sizes.clear();
+	new_outline_layers.clear();
+	RefreshAvailableTargets();
+	if (group == TargetGroup::Border &&
+		std::find(border_layers.begin(), border_layers.end(), border_index) == border_layers.end())
+		border_index = 1;
+	LoadWorkingState();
+	RefreshControls();
 }
 
 void DialogMangetsuGradient::OnOK(wxCommandEvent&) {
 	CancelAddStopPlacement(false);
-	FlushPreview();
+	if (lock_placement && !placement_rect.valid) return;
+	wxCommandEvent apply;
+	OnApply(apply);
 	EndPlacementSession();
-	commit_id = -1;
 	FinishDialog(wxID_OK);
 }
 
@@ -1945,14 +1946,8 @@ void DialogMangetsuGradient::OnCancel(wxCommandEvent&) {
 		preview_timer.Stop();
 		preview_pending = false;
 	}
-	if (commit_id != -1 && context && context->subsController) {
-		context->subsController->Undo();
-		commit_id = -1;
-	}
-	else if (active_line && active_line->Text.get() != original_text && context && context->ass) {
-		active_line->Text = original_text;
-		context->ass->Commit(_("cancel gradient"), AssFile::COMMIT_DIAG_TEXT, -1, active_line);
-	}
+	if (context && context->videoController && active_line)
+		context->videoController->PreviewSubtitleText(active_line, original_text);
 	if (context && context->videoDisplay)
 		context->videoDisplay->Render();
 	FinishDialog(wxID_CANCEL);
