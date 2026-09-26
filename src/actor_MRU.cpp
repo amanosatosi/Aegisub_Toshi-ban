@@ -17,7 +17,6 @@
 #include <wx/stattext.h>
 #include <wx/settings.h>
 #include <wx/intl.h>
-#include <libaegisub/log.h>
 
 wxBEGIN_EVENT_TABLE(ActorMRUWindow, wxPopupWindow)
 	EVT_KEY_DOWN(ActorMRUWindow::OnKeyDown)
@@ -189,7 +188,6 @@ void ActorMRUWindow::AdjustHeightForRows(int rows) {
 }
 
 void ActorMRUWindow::OnKeyDown(wxKeyEvent &evt) {
-	wxLogDebug("[actor_MRU] ActorMRUWindow::OnKeyDown key=%d", evt.GetKeyCode());
 	if (!manager_) {
 		evt.Skip();
 		return;
@@ -249,7 +247,6 @@ void ActorMRUManager::SetFastModeEnabled(bool enabled) {
 		return;
 
 	fast_mode_enabled_ = enabled;
-	LOG_D("actor/MRU") << "SetFastModeEnabled fast=" << fast_mode_enabled_;
 
 	UpdateWindowVisibility();
 }
@@ -272,8 +269,6 @@ void ActorMRUManager::OnActorCommitted(wxString const& new_actor, wxString const
 
 void ActorMRUManager::OnActorFocusChanged(bool has_focus) {
 	actor_has_focus_ = has_focus;
-	LOG_D("actor/MRU") << "OnActorFocusChanged has_focus=" << actor_has_focus_
-		<< " fast=" << fast_mode_enabled_ << " visible=" << window_visible_;
 
 	UpdateActiveState();
 	UpdateWindowVisibility();
@@ -288,7 +283,6 @@ void ActorMRUManager::UpdateWindowVisibility() {
 }
 
 bool ActorMRUManager::HandleUpKey() {
-	LOG_D("actor/MRU") << "HandleUpKey()";
 	if (!fast_mode_enabled_)
 		return false;
 	ShowWindow();
@@ -305,7 +299,6 @@ bool ActorMRUManager::HandleUpKey() {
 }
 
 bool ActorMRUManager::HandleDownKey() {
-	LOG_D("actor/MRU") << "HandleDownKey()";
 	if (!fast_mode_enabled_)
 		return false;
 	ShowWindow();
@@ -325,9 +318,6 @@ bool ActorMRUManager::HandleDownKey() {
 }
 
 bool ActorMRUManager::HandleEnterKey() {
-	LOG_D("actor/MRU") << "HandleEnterKey called: fast=" << fast_mode_enabled_
-		<< " hasEntries=" << HasEntries() << " hasSelection=" << HasSelection()
-		<< " owner=" << owner_;
 	if (!fast_mode_enabled_ || !owner_ || !actor_ctrl_)
 		return false;
 	wxString typed = actor_ctrl_->GetValue();
@@ -342,8 +332,6 @@ bool ActorMRUManager::HandleEnterKey() {
 		final_actor = typed;
 	// Preserve explicit empty actor input: no fallback to MRU entry[0].
 
-	int current_row = owner_->line ? owner_->line->Row : -1;
-	LOG_D("actor/MRU") << "HandleEnterKey applying '" << from_wx(final_actor) << "' on row " << current_row;
 	owner_->ApplyActorNameFromMRU(final_actor);
 	owner_->AdvanceLineAfterMRU();
 	if (!final_actor.empty())
