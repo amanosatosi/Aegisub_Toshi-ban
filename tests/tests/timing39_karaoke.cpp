@@ -68,6 +68,21 @@ TEST(Timing39Karaoke, RedNeverWritesAndUnknownNeedsReading) {
 	d.Text=u8"魑魅魍魎";EXPECT_FALSE(AnalyzeDialogue(d).error.empty());
 	d.Text=u8"<宇宙|そら>";a=AnalyzeDialogue(d);EXPECT_EQ(u8"そら",a.reading.normalized);
 }
+TEST(Timing39Karaoke, ManualReattackSerializesWithoutDuplicatingVisibleReading) {
+	AssDialogue d;d.Start=1000;d.End=1400;d.Text=u8"ように";
+	auto analysis=AnalyzeDialogue(d);
+	std::vector<TimingBlock> blocks{{1000,1100,false},{1100,1200,false},
+		{1200,1300,false},{1300,1400,false}};
+	std::vector<TimingAssignment> mapping{{0,0,1},{1,1,1},{2,2,1},{3,2,1}};
+	std::string output,error;
+	ASSERT_TRUE(Serialize(d,analysis,blocks,mapping,output,error,true))<<error;
+	AssDialogue rendered(d);rendered.Text=output;AssKaraoke parsed(&rendered,false,false);
+	ASSERT_EQ(4u,parsed.size());
+	std::string visible;for(auto const& syllable:parsed)visible+=syllable.text;
+	EXPECT_EQ(u8"ように",visible);
+	EXPECT_TRUE(parsed.IsEmptySyllable(3));
+	EXPECT_EQ(1300,(parsed.begin()+3)->start_time);
+}
 
 TEST(Timing39Karaoke, RealLyricSerializationAndWorkedExamples) {
 	for(auto const& example:std::vector<std::pair<std::string,size_t>>{

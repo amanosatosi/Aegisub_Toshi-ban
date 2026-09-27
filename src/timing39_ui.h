@@ -91,6 +91,9 @@ inline std::string CompactResultReason(SessionResult const& result,int lane) {
 			text+="\n"+std::to_string(morae-taps)+" merge"+(morae-taps==1?"":"s")+" required";
 			text+="\n"+std::to_string(LegalMergeCandidateCount(result.target.analysis))+" legal merge candidates";
 		}
+		else if(taps>morae)
+			text+="\n"+std::to_string(taps-morae)+" extra attack"+(taps-morae==1?"":"s")+
+				" must be assigned to an adjacent mora or retaken";
 		text+="\n"+match.reason;
 	}
 	else text=match.reason;
@@ -99,6 +102,49 @@ inline std::string CompactResultReason(SessionResult const& result,int lane) {
 	auto ambiguity=CompactAmbiguity(result.target.analysis,match);
 	if(!ambiguity.empty())text+="\n\n"+ambiguity;
 	return text;
+}
+
+enum class ReviewOwnership { Gap, Owned, ExcludedPreviousTail, HarmlessEndClamp, CrossingNeedsReview };
+struct ReviewBlock {
+	TimingBlock raw, adjusted;
+	ReviewOwnership ownership;
+};
+struct LocalReviewModel {
+	int begin = 0, end = 0, line_start = 0, line_end = 0;
+	std::vector<ReviewBlock> raw;
+	std::vector<TimingBlock> local;
+	std::vector<TimingAssignment> assignments;
+};
+inline LocalReviewModel BuildLocalReviewModel(SessionResult const& result, int lane,
+	std::vector<TimingBlock> const& raw, int correction_ms, int context_ms = 400) {
+	LocalReviewModel view;
+	view.line_start = result.target.start; view.line_end = result.target.end;
+	view.begin = std::max(0, view.line_start - context_ms);
+	view.end = view.line_end + context_ms;
+	if (lane < 0 || lane > 1) return view;
+	// Captures are chronological. Selection/correction rebuilds only this local
+	// view; OnPaint never walks or copies the full session.
+	auto first = std::lower_bound(raw.begin(), raw.end(), view.begin - correction_ms,
+		[](TimingBlock const& b, int t){ return b.end <= t; });
+	for (auto at = first; at != raw.end() && at->start < view.end - correction_ms; ++at) {
+		auto shift = [correction_ms](int value) {
+			return int(std::max<int64_t>(0, std::min<int64_t>(std::numeric_limits<int>::max(),
+				int64_t(value) + correction_ms)));
+		};
+		TimingBlock shifted{shift(at->start), shift(at->end), at->gap};
+		ReviewOwnership ownership = ReviewOwnership::Owned;
+		if (at->gap) ownership = ReviewOwnership::Gap;
+		else if (shifted.start < view.line_start && shifted.end > view.line_start)
+			ownership = ReviewOwnership::ExcludedPreviousTail;
+		else if (shifted.start >= view.line_start && shifted.start < view.line_end &&
+			shifted.end > view.line_end)
+			ownership = shifted.end - view.line_end <= sung_checkpoint_clamp_tolerance_ms
+				? ReviewOwnership::HarmlessEndClamp : ReviewOwnership::CrossingNeedsReview;
+		view.raw.push_back({*at, shifted, ownership});
+	}
+	view.local = result.lanes[lane].capture.blocks;
+	view.assignments = result.lanes[lane].Assignments();
+	return view;
 }
 
 // Start-sorted interval index with a monotonic prefix maximum. A visible-range

@@ -69,6 +69,31 @@ std::vector<TimingBlock> ShiftCapture(std::vector<TimingBlock> const& raw, int c
 	}
 	return adjusted;
 }
+bool ValidManualAssignments(Analysis const& analysis, std::vector<TimingBlock> const& blocks,
+	std::vector<TimingAssignment> const& mapping) {
+	if (!analysis.error.empty() || analysis.morae.empty() || mapping.empty()) return false;
+	size_t next_mora = 0, assignment = 0;
+	for (size_t block = 0; block < blocks.size(); ++block) {
+		if (blocks[block].gap) continue;
+		if (assignment >= mapping.size()) return false;
+		auto const& current = mapping[assignment];
+		if (current.timing_block != block || !current.mora_count ||
+			current.first_mora >= analysis.morae.size() ||
+			current.mora_count > analysis.morae.size() - current.first_mora) return false;
+		if (assignment == 0) {
+			if (current.first_mora != 0) return false;
+		}
+		else {
+			auto const& previous = mapping[assignment - 1];
+			bool repeated = current.first_mora == previous.first_mora &&
+				current.mora_count == previous.mora_count;
+			if (!repeated && current.first_mora != next_mora) return false;
+		}
+		next_mora = current.first_mora + current.mora_count;
+		++assignment;
+	}
+	return assignment == mapping.size() && next_mora == analysis.morae.size();
+}
 std::vector<SessionTarget> DiscoverTargets(std::vector<SessionTarget> const& candidates,
 	bool explicit_scope, std::string const& active_style, int start, int end) {
 	std::vector<SessionTarget> out;
@@ -93,6 +118,13 @@ std::vector<SessionTarget> DiscoverTargets(std::vector<SessionTarget> const& can
 }
 Confidence SessionResult::GetConfidence() const {
 	if (lane < 0 || lane > 1) return Confidence::Yellow;
+	if (resolution == ResolutionSource::UserManualRepair && !manual_invalidated &&
+		lanes[lane].manual_active &&
+		ValidManualAssignments(target.analysis, lanes[lane].capture.blocks,
+			lanes[lane].manual_assignments)) {
+		return lanes[lane].capture.status == PartitionStatus::AmbiguousSungCrossing
+			? Confidence::Yellow : Confidence::Green;
+	}
 	auto status = lanes[lane].match.confidence;
 	if (status == Confidence::Red) return status;
 	if (lanes[lane].capture.status == PartitionStatus::AmbiguousSungCrossing) return Confidence::Yellow;
@@ -161,6 +193,7 @@ void Timing39Session::Rematch(size_t row, int lane) {
 	auto& r = results[row]; auto& l = r.lanes[lane];
 	l.match = Match(r.target.analysis, l.capture.blocks);
 	l.editor.Reset(l.match.paths.empty() ? std::vector<TimingAssignment>{} : l.match.paths[0].assignments);
+	l.manual_assignments.clear(); l.manual_active = false;
 	r.reviewed = false; r.committed = false; r.manual_invalidated = false;
 	r.resolution = ResolutionSource::Automatic;
 }
@@ -172,8 +205,27 @@ bool Timing39Session::ChooseAssignment(size_t row, int lane, size_t path) {
 	auto const& chosen = l.match.paths[path].assignments;
 	if (!ValidAssignments(r.target.analysis, l.capture.blocks, chosen)) return false;
 	if (chosen != l.editor.Get()) l.editor.Choose(r.target.analysis, chosen);
+	l.manual_assignments.clear(); l.manual_active = false;
 	r.lane = lane; r.reviewed = true; r.manual_invalidated = false;
 	r.resolution = ResolutionSource::UserSelected;
+	return true;
+}
+bool Timing39Session::SetManualAssignment(size_t row, int lane, std::vector<TimingAssignment> mapping) {
+	if (state != SessionState::Results || row >= results.size() || lane < 0 || lane > 1) return false;
+	auto& result = results[row];
+	if (result.committed) return false;
+	auto& selected = result.lanes[lane];
+	if (!ValidManualAssignments(result.target.analysis, selected.capture.blocks, mapping)) return false;
+	selected.manual_assignments = std::move(mapping);
+	selected.manual_active = true;
+	result.lane = lane; result.reviewed = true; result.manual_invalidated = false;
+	result.resolution = ResolutionSource::UserManualRepair;
+	return true;
+}
+bool Timing39Session::ResetManualAssignment(size_t row, int lane) {
+	if (state != SessionState::Results || row >= results.size() || lane < 0 || lane > 1 ||
+		results[row].committed || !results[row].lanes[lane].manual_active) return false;
+	Rematch(row, lane);
 	return true;
 }
 bool Timing39Session::SetTimingCorrection(int correction_ms) {
@@ -184,7 +236,8 @@ bool Timing39Session::SetTimingCorrection(int correction_ms) {
 	std::array<std::vector<TimingBlock>, 2> adjusted{{
 		ShiftCapture(Raw(0), correction_ms), ShiftCapture(Raw(1), correction_ms)}};
 	for (auto& r : results) {
-		bool previous_manual = r.resolution == ResolutionSource::UserSelected;
+		bool previous_selected = r.resolution == ResolutionSource::UserSelected;
+		bool previous_repair = r.resolution == ResolutionSource::UserManualRepair;
 		r.manual_invalidated = false;
 		for (int lane = 0; lane < 2; ++lane) {
 			auto& l = r.lanes[lane];
@@ -198,11 +251,14 @@ bool Timing39Session::SetTimingCorrection(int correction_ms) {
 				}
 			l.capture = PartitionCapture(*source, r.target.start, r.target.end);
 			l.match = Match(r.target.analysis, l.capture.blocks);
-			if (previous_manual && r.lane == lane &&
-				ValidAssignments(r.target.analysis, l.capture.blocks, l.editor.Get())) continue;
-			if (previous_manual && r.lane == lane) {
+			if (r.lane == lane && ((previous_selected &&
+				ValidAssignments(r.target.analysis, l.capture.blocks, l.editor.Get())) ||
+				(previous_repair && ValidManualAssignments(r.target.analysis, l.capture.blocks,
+					l.manual_assignments)))) continue;
+			if ((previous_selected || previous_repair) && r.lane == lane) {
 				r.manual_invalidated = true; r.resolution = ResolutionSource::Automatic; r.reviewed = false;
 			}
+			l.manual_assignments.clear(); l.manual_active = false;
 			l.editor.Reset(l.match.paths.empty() ? std::vector<TimingAssignment>{} : l.match.paths[0].assignments);
 		}
 	}
@@ -280,6 +336,14 @@ void Timing39Session::Discard() {
 }
 std::vector<TimingBlock> Timing39Session::Preview(int lane, int ms) const {
 	return (IsRetake() ? retake_capture : capture).lanes[lane].Preview(ms);
+}
+std::vector<TimingBlock> const& Timing39Session::RawForResult(size_t row, int lane) const {
+	static std::vector<TimingBlock> const empty;
+	if (row >= results.size() || lane < 0 || lane > 1) return empty;
+	for (auto take = retakes.rbegin(); take != retakes.rend(); ++take)
+		if (take->target == results[row].target.id && take->lane == lane)
+			return take->raw;
+	return Raw(lane);
 }
 std::vector<TimingBlock> Timing39Session::Preview(int lane, int ms, int visible_start, int visible_end) const {
 	return (IsRetake() ? retake_capture : capture).lanes[lane].Preview(ms,visible_start,visible_end);

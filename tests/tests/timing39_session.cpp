@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <libaegisub/timing39_session.h>
+#include "timing39_ui.h"
 using namespace agi::timing39;
 namespace {
 SessionTarget Target(uint64_t id, int start, int end, std::string text=u8"みく") {
@@ -17,6 +18,61 @@ void Start(Timing39Session& s) {
 void Tap(Timing39Session& s,int key,int begin,int end) {
 	EXPECT_TRUE(s.Key(key,true,begin)); EXPECT_TRUE(s.Key(key,false,end));
 }
+std::vector<TimingAssignment> Manual(std::vector<TimingBlock> const& blocks,
+	std::vector<std::pair<size_t,size_t>> const& spans) {
+	std::vector<TimingAssignment> result;size_t next=0;
+	for(size_t i=0;i<blocks.size();++i)if(!blocks[i].gap) {
+		if(next>=spans.size())break;
+		result.push_back({i,spans[next].first,spans[next].second});++next;
+	}
+	return result;
+}
+}
+TEST(Timing39Session, ManualReattackMapsTwoAttacksToOneMoraAndResets) {
+	Timing39Session s;s.Prepare({Target(1,1000,1800,u8"ように")},true,"opaque style",900,1800);Start(s);
+	Tap(s,'F',1050,1150);Tap(s,'J',1200,1300);Tap(s,'F',1350,1450);Tap(s,'J',1500,1600);s.Stop(1800);
+	auto raw=s.Raw(0);
+	auto& result=s.Results()[0];ASSERT_EQ(Confidence::Red,result.GetConfidence());
+	auto mapping=Manual(result.lanes[0].capture.blocks,{{0,1},{1,1},{2,1},{2,1}});
+	ASSERT_TRUE(ValidManualAssignments(result.target.analysis,result.lanes[0].capture.blocks,mapping));
+	EXPECT_TRUE(s.SetManualAssignment(0,0,mapping));
+	EXPECT_EQ(ResolutionSource::UserManualRepair,result.resolution);
+	EXPECT_EQ(Confidence::Green,result.GetConfidence());EXPECT_EQ(raw,s.Raw(0));
+	EXPECT_FALSE(s.SetManualAssignment(0,0,Manual(result.lanes[0].capture.blocks,{{2,1},{0,1},{1,1},{2,1}})));
+	EXPECT_TRUE(s.ResetManualAssignment(0,0));EXPECT_EQ(Confidence::Red,result.GetConfidence());
+	EXPECT_EQ(ResolutionSource::Automatic,result.resolution);EXPECT_EQ(raw,s.Raw(0));
+}
+TEST(Timing39Session, ManualMergeAndCorrectionInvalidation) {
+	Timing39Session s;s.Prepare({Target(1,1000,1500,u8"ない")},true,"opaque style",900,1500);Start(s);
+	Tap(s,'F',1005,1200);s.Stop(1500);
+	auto raw=s.Raw(0);auto& result=s.Results()[0];
+	auto mapping=Manual(result.lanes[0].capture.blocks,{{0,2}});
+	ASSERT_TRUE(s.SetManualAssignment(0,0,mapping));
+	EXPECT_EQ(Confidence::Green,result.GetConfidence());
+	ASSERT_TRUE(s.SetTimingCorrection(10));
+	EXPECT_EQ(mapping,result.lanes[0].Assignments());
+	EXPECT_EQ(ResolutionSource::UserManualRepair,result.resolution);
+	ASSERT_TRUE(s.SetTimingCorrection(-10));
+	EXPECT_TRUE(result.manual_invalidated);
+	EXPECT_FALSE(result.lanes[0].manual_active);
+	EXPECT_EQ(ResolutionSource::Automatic,result.resolution);
+	EXPECT_EQ(raw,s.Raw(0));
+}
+TEST(Timing39Session, LocalReviewShowsRawCorrectionTailAndClamp) {
+	SessionResult result;result.target=Target(1,192390,194150,u8"<世|せ><界|かい>まで");
+	std::vector<TimingBlock> raw{{191937,192452,false},{192640,192780,false},
+		{192796,193124,false},{193140,193468,false},{193484,193687,false},
+		{193687,194155,false}};
+	result.lanes[0].capture=PartitionCapture(raw,result.target.start,result.target.end);
+	auto view=agi::timing39::ui::BuildLocalReviewModel(result,0,raw,0);
+	EXPECT_EQ(6u,view.raw.size());
+	EXPECT_EQ(agi::timing39::ui::ReviewOwnership::ExcludedPreviousTail,view.raw[0].ownership);
+	EXPECT_EQ(agi::timing39::ui::ReviewOwnership::HarmlessEndClamp,view.raw.back().ownership);
+	EXPECT_EQ(5u,agi::timing39::ui::SungTapCount(result.lanes[0].capture));
+	auto shifted=agi::timing39::ui::BuildLocalReviewModel(result,0,raw,-30);
+	EXPECT_EQ(191937,shifted.raw[0].raw.start);
+	EXPECT_EQ(191907,shifted.raw[0].adjusted.start);
+	EXPECT_EQ(191937,raw[0].start);
 }
 TEST(Timing39Session, ActivateCountdownCaptureAcrossLinesAndNormalStop) {
 	Timing39Session s;s.Prepare({Target(1,1000,1500),Target(2,2000,2500)},true,"opaque style",900,2500);

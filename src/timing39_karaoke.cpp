@@ -1,5 +1,6 @@
 // Copyright (c) 2026, JibunSenyou contributors. ISC license.
 #include "timing39_karaoke.h"
+#include <libaegisub/timing39_session.h>
 #include "ass_dialogue.h"
 #include "ass_karaoke.h"
 #include <algorithm>
@@ -19,8 +20,9 @@ Analysis AnalyzeDialogue(AssDialogue const& line) {
 }
 
 bool Serialize(AssDialogue const& line,Analysis const& a,std::vector<TimingBlock> const& blocks,
-	std::vector<TimingAssignment> const& assignments,std::string& output,std::string& error) {
-	if(!a.error.empty() || !ValidAssignments(a,blocks,assignments)) {error="No complete legal assignment to serialize";return false;}
+	std::vector<TimingAssignment> const& assignments,std::string& output,std::string& error,bool manual) {
+	if(!a.error.empty() || !(manual ? ValidManualAssignments(a,blocks,assignments) :
+		ValidAssignments(a,blocks,assignments))) {error="No complete legal assignment to serialize";return false;}
 	int start=line.Start,end=line.End,previous=start;
 	for(auto const& block:blocks) {
 		if(block.start<previous || block.end<block.start || block.end>end || (!block.gap&&block.start==block.end)) {
@@ -44,12 +46,21 @@ bool Serialize(AssDialogue const& line,Analysis const& a,std::vector<TimingBlock
 		types.push_back(type);
 	}
 	while(kara.size()>1) kara.RemoveSplit(1);
+	// Split each distinct reading group once. A repeated manual group adds an
+	// empty karaoke syllable at the later attack; ASS cannot replay the same
+	// visible characters, but both captured attack checkpoints are preserved.
+	size_t split_index=0;
+	size_t prior_position=a.morae[assignments.front().first_mora].logical_begin;
 	for(size_t i=1;i<assignments.size();++i) {
 		size_t pos=a.morae[assignments[i].first_mora].logical_begin;
-		size_t last=i==1?0:a.morae[assignments[i-1].first_mora].logical_begin;
-		if(pos<=last || pos>=logical.size()) {error="Unsupported split inside a reading encoding";return false;}
-		kara.AddSplitKTiming(i-1,pos-last);
+		if(pos==prior_position)continue;
+		if(pos<prior_position || pos>=logical.size()) {error="Unsupported split inside a reading encoding";return false;}
+		kara.AddSplitKTiming(split_index++,pos-prior_position);
+		prior_position=pos;
 	}
+	for(size_t i=1;i<assignments.size();++i)
+		if(assignments[i].first_mora==assignments[i-1].first_mora)
+			kara.InsertEmptySyllable(i);
 	// Round absolute relative-to-line checkpoints once, then subtract. Rounding
 	// each duration independently accumulates drift across a long lyric.
 	auto quantize=[&](int ms){return start+((ms-start+5)/10)*10;};

@@ -48,8 +48,16 @@ struct SessionLaneResult {
 	PartitionedCapture capture;
 	MatchResult match;
 	AssignmentEditor editor;
+	std::vector<TimingAssignment> manual_assignments;
+	bool manual_active = false;
+	std::vector<TimingAssignment> const& Assignments() const { return manual_active ? manual_assignments : editor.Get(); }
 };
-enum class ResolutionSource { Automatic, UserSelected, Retake };
+// Manual mappings preserve block order but may repeat a mora interval for
+// successive sung attacks. Unlike automatic candidates, they are explicit
+// performer decisions and are not constrained by the candidate graph.
+bool ValidManualAssignments(Analysis const&, std::vector<TimingBlock> const&,
+	std::vector<TimingAssignment> const&);
+enum class ResolutionSource { Automatic, UserSelected, UserManualRepair, Retake };
 struct SessionResult {
 	SessionTarget target;
 	std::array<SessionLaneResult, 2> lanes;
@@ -99,6 +107,8 @@ public:
 	int TimingCorrection() const { return timing_correction_ms; } // positive moves taps later
 	bool SetTimingCorrection(int correction_ms);
 	bool ChooseAssignment(size_t row, int lane, size_t path);
+	bool SetManualAssignment(size_t row, int lane, std::vector<TimingAssignment> mapping);
+	bool ResetManualAssignment(size_t row, int lane);
 	void Rematch(size_t result, int lane);
 	SessionState State() const { return state; }
 	int Countdown() const { return countdown; }
@@ -110,6 +120,7 @@ public:
 	std::vector<SessionResult>& Results() { return results; }
 	std::vector<SessionResult> const& Results() const { return results; }
 	std::vector<TimingBlock> const& Raw(int lane) const { return capture.lanes[lane].Blocks(); }
+	std::vector<TimingBlock> const& RawForResult(size_t row, int lane) const;
 	std::vector<TimingBlock> Preview(int lane, int media_position) const;
 	std::vector<TimingBlock> Preview(int lane, int media_position, int visible_start, int visible_end) const;
 	template<typename Visitor> void VisitPreview(int lane, int media_position, int visible_start,
