@@ -55,6 +55,8 @@
 #include <algorithm>
 
 #include <wx/dcbuffer.h>
+#include <wx/dcmemory.h>
+#include <wx/image.h>
 #include <wx/log.h>
 #include <wx/mousestate.h>
 
@@ -739,6 +741,7 @@ void AudioDisplay::SetZoomLevel(int new_zoom_level)
 	double cursor_time = (scroll_left + cursor_pos) * ms_per_pixel;
 
 	ms_per_pixel = new_ms_per_pixel;
+	++review_generation;
 	pixel_audio_width = std::max(1, int(GetDuration() / ms_per_pixel));
 
 	audio_renderer->SetMillisecondsPerPixel(ms_per_pixel);
@@ -785,12 +788,14 @@ int AudioDisplay::GetZoomLevelFactor(int level)
 
 void AudioDisplay::SetAmplitudeScale(float scale)
 {
+	++review_generation;
 	audio_renderer->SetAmplitudeScale(scale);
 	Refresh();
 }
 
 void AudioDisplay::ReloadRenderingSettings()
 {
+	++review_generation;
 	std::string colour_scheme_name;
 	spectrum_display = OPT_GET("Audio/Spectrum")->GetBool();
 
@@ -836,6 +841,39 @@ void AudioDisplay::ReloadRenderingSettings()
 	timeline->SetColourScheme(colour_scheme_name);
 
 	Refresh();
+}
+
+wxBitmap AudioDisplay::RenderReviewAudio(int start_ms, int end_ms, wxSize size)
+{
+	if (!provider || !audio_renderer_provider || audio_height <= 0 ||
+		ms_per_pixel <= 0 || start_ms >= end_ms || size.x <= 0 || size.y <= 0)
+		return {};
+	// The main renderer owns the waveform/spectrum tile and analysis caches.
+	// Only the output viewport bitmap is local to Results. Chunking bounds
+	// temporary memory even for an unusually long subtitle event.
+	int source_start = std::max(0, AbsoluteXFromTime(start_ms));
+	int source_end = std::max(source_start + 1, AbsoluteXFromTime(end_ms));
+	int source_width = source_end - source_start;
+	wxBitmap result(size.x, size.y);
+	wxMemoryDC output(result);
+	output.SetBackground(wxBrush(GetBackgroundColour()));
+	output.Clear();
+	for (int offset = 0; offset < source_width; offset += 512) {
+		int chunk = std::min(512, source_width - offset);
+		int left = int(int64_t(offset) * size.x / source_width);
+		int right = int(int64_t(offset + chunk) * size.x / source_width);
+		if (right <= left) continue;
+		wxBitmap tile(chunk, audio_height);
+		{
+			wxMemoryDC dc(tile);
+			audio_renderer->Render(dc, wxPoint(0, 0), source_start + offset,
+				chunk, AudioStyle_Normal);
+		}
+		wxImage scaled = tile.ConvertToImage().Scale(right - left, size.y, wxIMAGE_QUALITY_HIGH);
+		output.DrawBitmap(wxBitmap(scaled), left, 0);
+	}
+	output.SelectObject(wxNullBitmap);
+	return result;
 }
 
 void AudioDisplay::OnLoadTimer(wxTimerEvent&)
@@ -1483,6 +1521,7 @@ void AudioDisplay::OnSize(wxSizeEvent &)
 	audio_height = size.GetHeight();
 	audio_height -= scrollbar->GetBounds().GetHeight();
 	audio_height -= timeline->GetHeight();
+	++review_generation;
 	audio_renderer->SetHeight(audio_height);
 
 	audio_top = timeline->GetHeight();
@@ -1506,6 +1545,7 @@ int AudioDisplay::GetDuration() const
 
 void AudioDisplay::OnAudioOpen(agi::AudioProvider *provider)
 {
+	++review_generation;
 	this->provider = provider;
 
 	if (!audio_renderer_provider)

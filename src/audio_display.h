@@ -35,6 +35,7 @@
 #include <memory>
 
 #include <wx/gdicmn.h>
+#include <wx/bitmap.h>
 #include <wx/string.h>
 #include <wx/timer.h>
 #include <wx/window.h>
@@ -126,6 +127,7 @@ class AudioDisplay: public wxWindow {
 
 	/// Amplitude scaling ("vertical zoom") as a factor, 1.0 is neutral
 	float scale_amplitude = 1.f;
+	uint64_t review_generation = 0;
 
 	/// Top of the main audio area in pixels
 	int audio_top = 0;
@@ -244,6 +246,10 @@ class AudioDisplay: public wxWindow {
 	void OnMarkerMoved();
 
 public:
+	// Borrow the main renderer's decoded provider, spectrum analysis and bitmap
+	// tiles for a small static Results preview. Never changes the main zoom.
+	wxBitmap RenderReviewAudio(int start_ms, int end_ms, wxSize size);
+	uint64_t ReviewGeneration() const { return review_generation; }
 	AudioDisplay(wxWindow *parent, AudioController *controller, agi::Context *context);
 	~AudioDisplay();
 

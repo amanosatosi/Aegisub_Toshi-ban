@@ -29,6 +29,8 @@
 
 #include <wx/defs.h>
 #include <wx/sashwin.h>
+#include <wx/bitmap.h>
+#include <cstdint>
 
 #include <libaegisub/signal.h>
 
@@ -83,6 +85,8 @@ class AudioBox final : public wxSashWindow {
 	void OnVolume(wxScrollEvent &event);
 
 public:
+	wxBitmap RenderReviewAudio(int start_ms, int end_ms, wxSize size);
+	uint64_t ReviewGeneration() const;
 	AudioBox(wxWindow *parent, agi::Context *context);
 
 	void ShowKaraokeBar(bool show);

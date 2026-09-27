@@ -128,6 +128,11 @@ END_EVENT_TABLE()
 
 void AudioBox::FocusAudio() { audioDisplay->SetFocus(); }
 
+wxBitmap AudioBox::RenderReviewAudio(int start_ms, int end_ms, wxSize size) {
+	return audioDisplay->RenderReviewAudio(start_ms, end_ms, size);
+}
+uint64_t AudioBox::ReviewGeneration() const { return audioDisplay->ReviewGeneration(); }
+
 void AudioBox::OnMouseWheel(wxMouseEvent &evt) {
 	if (!ForwardMouseWheelEvent(audioDisplay, evt))
 		return;
