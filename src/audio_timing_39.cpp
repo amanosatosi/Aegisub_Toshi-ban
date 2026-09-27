@@ -166,6 +166,9 @@ class Timing39ReviewView final : public wxPanel {
 		for(int checkpoint:{model.line_start,model.line_end}) {
 			int x=X(checkpoint);
 			dc.SetPen(wxPen(amber,2));dc.DrawLine(x,17,x,210);
+			wxString label=checkpoint==model.line_start?_("Line start"):_("Line end");
+			dc.SetTextForeground(amber);
+			dc.DrawText(label,std::max(0,std::min(x+3,size.x-dc.GetTextExtent(label).x)),0);
 		}
 		for(auto const& item:model.raw) {
 			if(item.raw.gap)continue;
@@ -226,12 +229,14 @@ class Timing39ReviewView final : public wxPanel {
 		if(playback_cursor>=model.begin&&playback_cursor<model.end){
 			int x=X(playback_cursor);dc.SetPen(wxPen(text,1));dc.DrawLine(x,18,x,118);
 		}
+		dc.SetTextForeground(neutral);
+		dc.DrawText(_("Hatch: previous-line tail excluded   ·   dotted: harmless clamp"),5,218);
 		if(cached_generation!=audio_box->ReviewGeneration()&&!rebuild_queued){
 			rebuild_queued=true;CallAfter([this]{rebuild_queued=false;RebuildAudio();});
 		}
 	}
 public:
-	Timing39ReviewView(wxWindow* parent,AudioBox* audio):wxPanel(parent,wxID_ANY,wxDefaultPosition,wxSize(-1,220)),audio_box(audio){
+	Timing39ReviewView(wxWindow* parent,AudioBox* audio):wxPanel(parent,wxID_ANY,wxDefaultPosition,wxSize(-1,238)),audio_box(audio){
 		SetBackgroundStyle(wxBG_STYLE_PAINT);
 		Bind(wxEVT_PAINT,&Timing39ReviewView::OnPaint,this);
 		Bind(wxEVT_SIZE,[this](wxSizeEvent& event){RebuildAudio();event.Skip();});
@@ -244,8 +249,10 @@ public:
 		RebuildAudio();Refresh(false);
 	}
 	void SetPlaybackCursor(int ms){
-		if(ms==playback_cursor)return;playback_cursor=ms;
-		if(IsShownOnScreen()&&ms>=model.begin&&ms<model.end)Refresh(false);
+		if(ms==playback_cursor)return;
+		bool was_visible=playback_cursor>=model.begin&&playback_cursor<model.end;
+		playback_cursor=ms;
+		if(IsShownOnScreen()&&(was_visible||(ms>=model.begin&&ms<model.end)))Refresh(false);
 	}
 	void SetDraft(std::vector<t39::TimingAssignment> assignments,std::vector<size_t> next_blocks){
 		model.assignments=std::move(assignments);pending=std::move(next_blocks);Refresh(false);
@@ -378,7 +385,12 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  void UpdatePane() {
   if(!correction_pane)return;
   auto r=Current();
-  if(!r){line_title->SetLabel("");reason->SetLabel("");choice_sizer->Clear(true);candidate_buttons.clear();correction_pane->Layout();return;}
+  if(!r){
+   line_title->SetLabel("");reason->SetLabel("");choice_sizer->Clear(true);candidate_buttons.clear();
+   if(reset_manual)reset_manual->Disable();
+   if(review_view)review_view->SetReview({},t39::Analysis{}, {},t39::Confidence::Red);
+   correction_pane->Layout();return;
+  }
   auto readable=t39ui::PrepareLyricDisplay(r->target.analysis).plain;
   line_title->SetLabel(to_wx(readable));
   std::string explanation=t39ui::CompactResultReason(*r,selected_lane);
@@ -601,7 +613,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    if(!Current()||!review_view)return;
    c->audioController->PlayRange(TimeRange(review_view->ContextStart(),review_view->ContextEnd()));
   });
-  Button(correction_pane,playback,_("Stop"),[this]{c->audioController->Stop();});
+  Button(correction_pane,playback,_("Stop"),[this]{c->audioController->Stop();if(review_view)review_view->SetPlaybackCursor(-1);});
   right->Add(playback,0,wxLEFT|wxRIGHT|wxBOTTOM,5);
   manual_pane=new wxPanel(correction_pane);
   auto manual_sizer=new wxBoxSizer(wxVERTICAL);
