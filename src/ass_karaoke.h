@@ -133,6 +133,9 @@ public:
 
 	/// Get the line's text, optionally with karaoke tags
 	std::string GetText(bool k_tags = true) const;
+	/// Exact serialized contribution of each syllable, in order. The pieces
+	/// concatenate to GetText(true), including Mangetsu ruby source wrappers.
+	std::vector<std::string> GetTextFragments() const;
 
 	/// Get the karaoke tag type used, with leading slash
 	/// @returns "\k", "\K", "\kf", "\ko", or "\kO"

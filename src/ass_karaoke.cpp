@@ -614,6 +614,37 @@ std::string AssKaraoke::GetText(bool k_tags) const {
 	return text;
 }
 
+std::vector<std::string> AssKaraoke::GetTextFragments() const {
+	std::vector<std::string> fragments;
+	fragments.reserve(syls.size());
+	if (!has_mangetsu_furigana) {
+		for (auto const& syl : syls) fragments.push_back(syl.GetText(true));
+		return fragments;
+	}
+	std::string logical_text;
+	for (auto const& syl : syls) logical_text += syl.text;
+	if (logical_text != mangetsu_logical_text ||
+		mangetsu_source_offsets.size() != logical_text.size() + 1) return {};
+	size_t logical_pos = 0;
+	std::vector<size_t> positions;
+	positions.reserve(syls.size());
+	for (auto const& syl : syls) {
+		positions.push_back(mangetsu_source_offsets[logical_pos]);
+		logical_pos += syl.text.size();
+	}
+	for (size_t i = 0; i < syls.size(); ++i) {
+		auto begin = positions[i];
+		auto end = i + 1 < positions.size() ? positions[i + 1] : mangetsu_source.size();
+		if (end < begin || end > mangetsu_source.size()) return {};
+		std::string fragment;
+		if (!i) fragment = mangetsu_source.substr(0, begin);
+		fragment += agi::format("{%s%d}", syls[i].tag_type, ((syls[i].duration + 5) / 10));
+		fragment += mangetsu_source.substr(begin, end - begin);
+		fragments.push_back(std::move(fragment));
+	}
+	return fragments;
+}
+
 std::string AssKaraoke::GetMangetsuText(bool k_tags) const {
 	if (!k_tags)
 		return mangetsu_source;
