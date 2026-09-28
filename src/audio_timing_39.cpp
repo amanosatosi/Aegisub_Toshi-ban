@@ -722,7 +722,8 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   auto old_analysis=r->target.analysis;
   auto old_original=r->original_analysis;
   auto& lane=r->lanes[selected_lane];
-  auto old_match=lane.match,old_editor=lane.editor;
+  auto old_match=lane.match;
+  auto old_editor=lane.editor;
   if(placement_draft.HasLatinCuts()&&!r->original_analysis)
    r->original_analysis=std::make_shared<t39::Analysis>(old_analysis);
   r->target.analysis=placement_draft.CurrentAnalysis();

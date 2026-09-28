@@ -139,8 +139,8 @@ bool SerializeCommitPlan(AssDialogue const& line,CommitPlan& plan,std::string& o
 	if(cursor!=logical.size()) {error="Commit plan omitted visible source text";return false;}
 	// Recut with cumulative byte offsets; empty captured gaps and repeated
 	// attacks are inserted after the source text has been partitioned.
-	if(kara.size()!=std::count_if(plan.atoms.begin(),plan.atoms.end(),
-		[](CommitAtom const& atom){return atom.logical_end>atom.logical_begin;})) {
+	if(kara.size()!=size_t(std::count_if(plan.atoms.begin(),plan.atoms.end(),
+		[](CommitAtom const& atom){return atom.logical_end>atom.logical_begin;}))) {
 		error="Commit plan split failed at a source character boundary";return false;
 	}
 	size_t slot=0;
