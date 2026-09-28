@@ -116,8 +116,8 @@ TEST(Timing39Karaoke, PunctuationAndRubyRemainZeroTimeInActualParser) {
 	AssDialogue d;d.Start=0;d.End=700;d.Text=u8"「<好|す>きだよ、ずっと」";
 	auto a=AnalyzeDialogue(d);ASSERT_TRUE(a.error.empty())<<a.error;
 	ASSERT_EQ(7u,a.morae.size());
-	std::vector<TimingBlock> blocks{{0,40,true},{40,80,false},{80,100,true},
-		{100,200,false},{200,210,true},{210,310,false},{310,410,false},
+	std::vector<TimingBlock> blocks{{0,40,true},{40,80,false},{80,100,false},
+		{100,210,true},{210,310,false},{310,410,false},
 		{410,510,false},{510,610,false},{610,680,false},{680,700,true}};
 	auto match=Match(a,blocks);ASSERT_FALSE(match.paths.empty())<<match.reason;
 	CommitPlan plan;std::string output,error;
