@@ -21,6 +21,22 @@ jobs:
           -lgtest_main -lgtest -pthread -o timing39-tests
       - name: Exercise language, real lyrics, capture and assignment corrections
         run: ./timing39-tests --gtest_output=xml:timing39-results.xml
+      - name: Annotate failing model assertions
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          path = "timing39-results.xml"
+          if os.path.isfile(path):
+              for case in ET.parse(path).getroot().iter("testcase"):
+                  for failure in case.findall("failure"):
+                      title = f"{case.get('classname')}.{case.get('name')}"
+                      message = (failure.get("message") or failure.text or "Assertion failed")[:6000]
+                      message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+                      print(f"::error title={title}::{message}")
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
