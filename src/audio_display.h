@@ -33,6 +33,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <utility>
 
 #include <wx/gdicmn.h>
 #include <wx/bitmap.h>
@@ -249,6 +250,8 @@ public:
 	// Borrow the main renderer's decoded provider, spectrum analysis and bitmap
 	// tiles for a small static Results preview. Never changes the main zoom.
 	wxBitmap RenderReviewAudio(int start_ms, int end_ms, wxSize size);
+	int ReviewAudioSliceCount(int start_ms, int end_ms) const;
+	std::pair<int, wxBitmap> RenderReviewAudioSlice(int start_ms, int end_ms, wxSize size, int slice);
 	uint64_t ReviewGeneration() const { return review_generation; }
 	AudioDisplay(wxWindow *parent, AudioController *controller, agi::Context *context);
 	~AudioDisplay();

@@ -131,6 +131,12 @@ void AudioBox::FocusAudio() { audioDisplay->SetFocus(); }
 wxBitmap AudioBox::RenderReviewAudio(int start_ms, int end_ms, wxSize size) {
 	return audioDisplay->RenderReviewAudio(start_ms, end_ms, size);
 }
+int AudioBox::ReviewAudioSliceCount(int start_ms, int end_ms) const {
+	return audioDisplay->ReviewAudioSliceCount(start_ms, end_ms);
+}
+std::pair<int, wxBitmap> AudioBox::RenderReviewAudioSlice(int start_ms, int end_ms, wxSize size, int slice) {
+	return audioDisplay->RenderReviewAudioSlice(start_ms, end_ms, size, slice);
+}
 uint64_t AudioBox::ReviewGeneration() const { return audioDisplay->ReviewGeneration(); }
 
 void AudioBox::OnMouseWheel(wxMouseEvent &evt) {

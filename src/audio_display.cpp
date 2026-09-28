@@ -845,35 +845,61 @@ void AudioDisplay::ReloadRenderingSettings()
 
 wxBitmap AudioDisplay::RenderReviewAudio(int start_ms, int end_ms, wxSize size)
 {
+	AudioPerf::Scope review_timer(AudioPerf::ReviewBitmap);
 	if (!provider || !audio_renderer_provider || audio_height <= 0 ||
 		ms_per_pixel <= 0 || start_ms >= end_ms || size.x <= 0 || size.y <= 0)
 		return {};
-	// The main renderer owns the waveform/spectrum tile and analysis caches.
-	// Only the output viewport bitmap is local to Results. Chunking bounds
-	// temporary memory even for an unusually long subtitle event.
-	int source_start = std::max(0, AbsoluteXFromTime(start_ms));
-	int source_end = std::max(source_start + 1, AbsoluteXFromTime(end_ms));
-	int source_width = source_end - source_start;
 	wxBitmap result(size.x, size.y);
 	wxMemoryDC output(result);
 	output.SetBackground(wxBrush(GetBackgroundColour()));
 	output.Clear();
-	for (int offset = 0; offset < source_width; offset += 512) {
-		int chunk = std::min(512, source_width - offset);
-		int left = int(int64_t(offset) * size.x / source_width);
-		int right = int(int64_t(offset + chunk) * size.x / source_width);
-		if (right <= left) continue;
-		wxBitmap tile(chunk, audio_height);
-		{
-			wxMemoryDC dc(tile);
-			audio_renderer->Render(dc, wxPoint(0, 0), source_start + offset,
-				chunk, AudioStyle_Normal);
-		}
-		wxImage scaled = tile.ConvertToImage().Scale(right - left, size.y, wxIMAGE_QUALITY_HIGH);
-		output.DrawBitmap(wxBitmap(scaled), left, 0);
+	int slice_count = ReviewAudioSliceCount(start_ms, end_ms);
+	for (int slice = 0; slice < slice_count; ++slice) {
+		auto part = RenderReviewAudioSlice(start_ms, end_ms, size, slice);
+		if (part.second.IsOk()) output.DrawBitmap(part.second, part.first, 0);
 	}
 	output.SelectObject(wxNullBitmap);
 	return result;
+}
+
+int AudioDisplay::ReviewAudioSliceCount(int start_ms, int end_ms) const
+{
+	if (ms_per_pixel <= 0 || start_ms >= end_ms) return 0;
+	int source_start = std::max(0, AbsoluteXFromTime(start_ms));
+	int source_end = std::max(source_start + 1, AbsoluteXFromTime(end_ms));
+	return (source_end - source_start + 255) / 256;
+}
+
+std::pair<int, wxBitmap> AudioDisplay::RenderReviewAudioSlice(int start_ms, int end_ms,
+	wxSize size, int slice)
+{
+	AudioPerf::Scope tile_timer(AudioPerf::ReviewTile);
+	if (!provider || !audio_renderer_provider || audio_height <= 0 ||
+		ms_per_pixel <= 0 || start_ms >= end_ms || size.x <= 0 || size.y <= 0 || slice < 0)
+		return {0, wxBitmap()};
+	// The main renderer retains the waveform/spectrum analysis cache. Each
+	// Results event renders one bounded tile, then yields to input processing.
+	int source_start = std::max(0, AbsoluteXFromTime(start_ms));
+	int source_end = std::max(source_start + 1, AbsoluteXFromTime(end_ms));
+	int source_width = source_end - source_start;
+	int offset = slice * 256;
+	if (offset >= source_width) return {0, wxBitmap()};
+	int chunk = std::min(256, source_width - offset);
+	int left = int(int64_t(offset) * size.x / source_width);
+	int right = int(int64_t(offset + chunk) * size.x / source_width);
+	if (right <= left) return {left, wxBitmap()};
+	wxBitmap tile(chunk, audio_height);
+	{
+		wxMemoryDC dc(tile);
+		audio_renderer->Render(dc, wxPoint(0, 0), source_start + offset,
+			chunk, AudioStyle_Normal);
+	}
+	AudioPerf::Scope convert_timer(AudioPerf::ReviewConvert);
+	wxImage image = tile.ConvertToImage();
+	convert_timer.Stop();
+	AudioPerf::Scope scale_timer(AudioPerf::ReviewScale);
+	wxImage scaled = image.Scale(right - left, size.y, wxIMAGE_QUALITY_HIGH);
+	return {left, wxBitmap(scaled)};
 }
 
 void AudioDisplay::OnLoadTimer(wxTimerEvent&)

@@ -15,7 +15,11 @@ public:
 	enum Stage {
 		Paint, StyleRanges, StyleLookup, Waveform, Spectrum, TileBuild,
 		VisibleQuery, DialogueBoundaries, TargetSpans, CapturedBlocks,
-		TimelineOverlays, Particles, ParticleUpdate, StageCount
+		TimelineOverlays, Particles, ParticleUpdate,
+		ResultsUpdate, ResultsPane, ResultsLayout, ResultsLaneSwitch,
+		ResultsRowSelect, ReviewBitmap, ReviewTile, ReviewConvert,
+		ReviewScale, ResultsCandidates, ResultsManual, ResultsInspector,
+		ResultsCorrection, StageCount
 	};
 	using Clock = std::chrono::steady_clock;
 	struct Sample { double total_ms = 0, max_ms = 0; unsigned count = 0; };
@@ -83,6 +87,13 @@ private:
 			case CapturedBlocks: return "captured-blocks";
 			case TimelineOverlays: return "timeline-overlays";
 			case Particles: return "particles"; case ParticleUpdate: return "particle-update";
+			case ResultsUpdate: return "results-update"; case ResultsPane: return "results-pane";
+			case ResultsLayout: return "results-layout"; case ResultsLaneSwitch: return "lane-switch";
+			case ResultsRowSelect: return "row-select"; case ReviewBitmap: return "review-bitmap";
+			case ReviewTile: return "review-tile"; case ReviewConvert: return "review-convert";
+			case ReviewScale: return "review-scale"; case ResultsCandidates: return "results-candidates";
+			case ResultsManual: return "results-manual"; case ResultsInspector: return "results-inspector";
+			case ResultsCorrection: return "results-correction";
 			default: return "unknown";
 		}
 	}

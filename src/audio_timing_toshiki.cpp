@@ -19,6 +19,7 @@
 #include "pen.h"
 #include "selection_controller.h"
 #include "utils.h"
+#include "toshiki_timing_draft.h"
 
 #include <libaegisub/make_unique.h>
 
@@ -101,7 +102,7 @@ class AudioTimingControllerToshiki final : public AudioTimingController {
 	size_t AssignedSlotCount() const;
 
 	static int RoundToCentisecond(int position) {
-		return (position + 5) / 10 * 10;
+		return toshiki_timing::Round(position);
 	}
 
 public:
@@ -469,7 +470,7 @@ int AudioTimingControllerToshiki::AssignBoundary(int ms) {
 
 	size_t index = assigned_boundary_count;
 	int minimum = index ? display_boundaries[index - 1] : start_marker.GetPosition();
-	int position = mid(minimum, RoundToCentisecond(ms), end_marker.GetPosition());
+	int position = toshiki_timing::Clamp(ms, minimum, end_marker.GetPosition());
 	display_boundaries.push_back(position);
 	++assigned_boundary_count;
 	ApplyDisplayBoundaries();
@@ -566,7 +567,7 @@ int AudioTimingControllerToshiki::MoveBoundary(ToshikiKTimingMarker *marker, int
 
 	int minimum = index == 0 ? start_marker.GetPosition() : markers[index - 1].GetPosition();
 	int maximum = index + 1 < assigned_boundary_count ? markers[index + 1].GetPosition() : end_marker.GetPosition();
-	new_position = mid(minimum, RoundToCentisecond(new_position), maximum);
+	new_position = toshiki_timing::Clamp(new_position, minimum, maximum);
 	if (new_position == marker->GetPosition())
 		return -1;
 

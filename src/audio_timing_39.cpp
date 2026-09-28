@@ -3,11 +3,14 @@
 #include "timing39_karaoke.h"
 #include "timing39_session_setup.h"
 #include "timing39_ui.h"
+#include "timing39_event_clock.h"
+#include "toshiki_timing_draft.h"
 #include "frame_main.h"
 #include "video_controller.h"
 #include "ass_dialogue.h"
 #include "ass_file.h"
 #include "audio_box.h"
+#include "audio_perf.h"
 #include "audio_controller.h"
 #include "audio_rendering_style.h"
 #include "compat.h"
@@ -18,7 +21,9 @@
 #include <libaegisub/audio/provider.h>
 #include <libaegisub/make_unique.h>
 #include <libaegisub/timing39_session.h>
+#include <libaegisub/timing39_input_clock.h>
 #include <algorithm>
+#include <cstdlib>
 #include <map>
 #include <set>
 #include <wx/button.h>
@@ -27,7 +32,10 @@
 #include <wx/dialog.h>
 #include <wx/eventfilter.h>
 #include <wx/listbox.h>
+#include <wx/log.h>
+#include <wx/msgdlg.h>
 #include <wx/panel.h>
+#include <wx/scrolwin.h>
 #include <wx/settings.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
@@ -125,25 +133,101 @@ class Timing39ReviewView final : public wxPanel {
 	std::vector<size_t> pending;
 	t39::Confidence confidence=t39::Confidence::Red;
 	wxBitmap audio_bitmap;
-	int cached_begin=-1,cached_end=-1;
-	wxSize cached_size;
-	uint64_t cached_generation=0;
+	t39ui::ReviewBitmapKey cached_key;
+	bool cache_valid=false;
 	int playback_cursor=-1;
 	bool rebuild_queued=false;
+	uint64_t render_serial=0;
+	int render_slice=0;
+	int render_slice_count=0;
+	toshiki_timing::Draft *timing_draft=nullptr;
+	int drag_index=-1;
+	bool drag_start=false;
+	std::vector<t39::TimingBlock> drag_original;
 	int X(int ms) const {
 		return model.end<=model.begin?0:int(int64_t(ms-model.begin)*GetClientSize().x/(model.end-model.begin));
 	}
+	int TimeFromX(int x) const {
+		return model.begin+int(int64_t(std::max(0,std::min(x,GetClientSize().x)))*
+			(model.end-model.begin)/std::max(1,GetClientSize().x));
+	}
+	std::pair<int,bool> NearbyMarker(int x,int sensitivity=8) const {
+		if(!timing_draft)return {-1,false};
+		int best=sensitivity+1,index=-1;bool at_start=false;
+		for(size_t i=0;i<timing_draft->Blocks().size();++i){
+			auto const& block=timing_draft->Blocks()[i];
+			for(bool start:{true,false}){
+				int distance=std::abs(X(start?block.start:block.end)-x);
+				if(distance<best){best=distance;index=int(i);at_start=start;}
+			}
+		}
+		return {index,at_start};
+	}
+	void OnLeftDown(wxMouseEvent& event){
+		if(!timing_draft||event.GetY()<18||event.GetY()>118){event.Skip();return;}
+		auto marker=NearbyMarker(event.GetX());
+		if(marker.first>=0){
+			drag_index=marker.first;drag_start=marker.second;
+			drag_original=timing_draft->Blocks();CaptureMouse();
+		}
+		else if(timing_draft->Split(TimeFromX(event.GetX())))Refresh(false);
+	}
+	void OnMotion(wxMouseEvent& event){
+		if(!timing_draft||drag_index<0||!event.Dragging())return;
+		if(timing_draft->PreviewMove(size_t(drag_index),drag_start,TimeFromX(event.GetX())))Refresh(false);
+	}
+	void OnLeftUp(wxMouseEvent& event){
+		if(drag_index<0){event.Skip();return;}
+		if(HasCapture())ReleaseMouse();
+		if(timing_draft)timing_draft->FinishPreview(drag_original);
+		drag_index=-1;drag_original.clear();Refresh(false);
+	}
+	void OnRightDown(wxMouseEvent& event){
+		if(!timing_draft||event.GetY()<18||event.GetY()>118){event.Skip();return;}
+		auto const& blocks=timing_draft->Blocks();
+		for(size_t i=0;i+1<blocks.size();++i)
+			if(std::abs(X((blocks[i].end+blocks[i+1].start)/2)-event.GetX())<=10){
+				if(timing_draft->Join(i))Refresh(false);return;
+			}
+	}
 	void RebuildAudio() {
+		AudioPerf::Scope timer(AudioPerf::ReviewBitmap);
 		auto size=GetClientSize();
 		wxSize image_size(size.x,100);
-		if(size.x<=0||model.end<=model.begin)return;
-		auto generation=audio_box->ReviewGeneration();
-		if(audio_bitmap.IsOk()&&cached_begin==model.begin&&cached_end==model.end&&
-			cached_size==image_size&&cached_generation==generation)return;
-		audio_bitmap=audio_box->RenderReviewAudio(model.begin,model.end,image_size);
-		cached_begin=model.begin;cached_end=model.end;cached_size=image_size;
-		cached_generation=generation;
+		if(size.x<=0||model.end<=model.begin){++render_serial;cache_valid=false;audio_bitmap=wxBitmap();return;}
+		t39ui::ReviewBitmapKey key{model.begin,model.end,image_size.x,image_size.y,
+			audio_box->ReviewGeneration()};
+		if(cache_valid&&audio_bitmap.IsOk()&&cached_key==key)return;
+		++render_serial;
+		audio_bitmap=wxBitmap(image_size.x,image_size.y);
+		if(audio_bitmap.IsOk()){
+			wxMemoryDC dc(audio_bitmap);
+			dc.SetBackground(wxBrush(GetBackgroundColour()));dc.Clear();
+			dc.SelectObject(wxNullBitmap);
+		}
+		cached_key=key;cache_valid=audio_bitmap.IsOk();
+		render_slice=0;
+		render_slice_count=audio_box->ReviewAudioSliceCount(model.begin,model.end);
+		if(cache_valid&&render_slice_count>0){
+			auto serial=render_serial;
+			CallAfter([this,serial]{RenderNextSlice(serial);});
+		}
 		Refresh(false);
+	}
+	void RenderNextSlice(uint64_t serial){
+		if(serial!=render_serial||!cache_valid||render_slice>=render_slice_count)return;
+		if(cached_key.generation!=audio_box->ReviewGeneration()){
+			RebuildAudio();return;
+		}
+		auto part=audio_box->RenderReviewAudioSlice(cached_key.begin,cached_key.end,
+			wxSize(cached_key.width,cached_key.height),render_slice++);
+		if(part.second.IsOk()){
+			wxMemoryDC dc(audio_bitmap);
+			dc.DrawBitmap(part.second,part.first,0);
+			dc.SelectObject(wxNullBitmap);
+			RefreshRect(wxRect(part.first,18,part.second.GetWidth(),part.second.GetHeight()),false);
+		}
+		if(render_slice<render_slice_count)CallAfter([this,serial]{RenderNextSlice(serial);});
 	}
 	void OnPaint(wxPaintEvent&) {
 		wxAutoBufferedPaintDC dc(this);
@@ -219,6 +303,15 @@ class Timing39ReviewView final : public wxPanel {
 				dc.SetTextForeground(text);dc.DrawText(to_wx(label),x+3,199);
 			}
 		}
+		if(timing_draft){
+			wxColour edit=dark?wxColour(203,143,238):wxColour(117,54,156);
+			dc.SetPen(wxPen(edit,2));dc.SetBrush(*wxTRANSPARENT_BRUSH);
+			for(auto const& block:timing_draft->Blocks()){
+				int left=X(block.start),right=X(block.end);
+				dc.DrawRectangle(left,76,std::max(2,right-left),38);
+				dc.DrawCircle(left,76,3);dc.DrawCircle(right,76,3);
+			}
+		}
 		for(auto boundary:disputed)if(boundary<model.assignments.size()) {
 			auto block=model.assignments[boundary].timing_block;
 			if(block<model.local.size()){
@@ -231,7 +324,7 @@ class Timing39ReviewView final : public wxPanel {
 		}
 		dc.SetTextForeground(neutral);
 		dc.DrawText(_("Hatch: previous-line tail excluded   ·   dotted: harmless clamp"),5,218);
-		if(cached_generation!=audio_box->ReviewGeneration()&&!rebuild_queued){
+		if(cache_valid&&cached_key.generation!=audio_box->ReviewGeneration()&&!rebuild_queued){
 			rebuild_queued=true;CallAfter([this]{rebuild_queued=false;RebuildAudio();});
 		}
 	}
@@ -240,6 +333,10 @@ public:
 		SetBackgroundStyle(wxBG_STYLE_PAINT);
 		Bind(wxEVT_PAINT,&Timing39ReviewView::OnPaint,this);
 		Bind(wxEVT_SIZE,[this](wxSizeEvent& event){RebuildAudio();event.Skip();});
+		Bind(wxEVT_LEFT_DOWN,&Timing39ReviewView::OnLeftDown,this);
+		Bind(wxEVT_LEFT_UP,&Timing39ReviewView::OnLeftUp,this);
+		Bind(wxEVT_MOTION,&Timing39ReviewView::OnMotion,this);
+		Bind(wxEVT_RIGHT_DOWN,&Timing39ReviewView::OnRightDown,this);
 	}
 	void SetReview(t39ui::LocalReviewModel next,t39::Analysis const& analysis,
 		std::vector<size_t> boundaries,t39::Confidence status) {
@@ -250,21 +347,28 @@ public:
 	}
 	void SetPlaybackCursor(int ms){
 		if(ms==playback_cursor)return;
-		bool was_visible=playback_cursor>=model.begin&&playback_cursor<model.end;
+		int old=playback_cursor;
 		playback_cursor=ms;
-		if(IsShownOnScreen()&&(was_visible||(ms>=model.begin&&ms<model.end)))Refresh(false);
+		if(!IsShownOnScreen())return;
+		for(int position:{old,ms})if(position>=model.begin&&position<model.end)
+			RefreshRect(wxRect(X(position)-2,18,5,101),false);
 	}
 	void SetDraft(std::vector<t39::TimingAssignment> assignments,std::vector<size_t> next_blocks){
 		model.assignments=std::move(assignments);pending=std::move(next_blocks);Refresh(false);
 	}
 	void ClearDraft(){pending.clear();Refresh(false);}
-	int ContextStart() const{return model.begin;}
-	int ContextEnd() const{return model.end;}
+	void SetTimingDraft(toshiki_timing::Draft *draft){
+		if(HasCapture())ReleaseMouse();drag_index=-1;timing_draft=draft;Refresh(false);
+	}
+	std::pair<int,int> PlaybackRange(bool context) const {
+		return t39ui::ReviewPlaybackRange(model,context);
+	}
 };
 
 class AudioTimingController39 final : public AudioTimingController, public wxEventFilter {
  agi::Context* c;
  t39::Timing39Session session;
+ t39::InputClockMapper input_clock;
  t39::SessionPlaybackStart full_start;
  std::map<uint64_t,AssDialogue*> events;
  t39ui::TimelineIntervalIndex ordinary_boundaries,target_boundaries;
@@ -273,8 +377,15 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  wxDialog *panel=nullptr,*inspector=nullptr;
  Timing39ResultsList *rows=nullptr;
  wxPanel *correction_pane=nullptr;
+ wxScrolledWindow *review_scroll=nullptr;
  Timing39ReviewView *review_view=nullptr;
  wxPanel *manual_pane=nullptr;
+ wxPanel *timing_pane=nullptr;
+ wxButton *reset_timing=nullptr;
+ toshiki_timing::Draft timing_draft;
+ bool timing_mode=false;
+ size_t timing_row=0;
+ int timing_lane=0;
  wxButton *reset_manual=nullptr;
  wxStaticText *manual_progress=nullptr;
  bool manual_mode=false;
@@ -288,6 +399,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  wxSpinCtrl *offset_spin=nullptr;
  wxTimer correction_timer;
  std::vector<wxButton*> candidate_buttons;
+ wxStaticText *resolved_label=nullptr;
  wxButton *raw_toggle=nullptr;
  wxTextCtrl *reading=nullptr,*details=nullptr;
  size_t selected=0;
@@ -354,14 +466,16 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   else c->frame->Show39Countdown(session.Countdown());
   Notify();
  }
- void ShowResults(){if(!panel)MakePanel();Update();panel->Show();panel->Raise();}
+ void ShowResults(){if(!panel)MakePanel();Update();panel->Layout();if(review_scroll)review_scroll->FitInside();panel->Show();panel->Raise();}
  void FileChanged(int type,AssDialogue const*) {
   if(committing||!(type&(AssFile::COMMIT_DIAG_FULL|AssFile::COMMIT_DIAG_ADDREM)))return;
+  if(timing_mode)CloseTimingDraft();
    c->audioController->Stop();countdown.Stop();session.Discard();events.clear();ordinary_boundaries.Reset({});target_boundaries.Reset({});
   notice="Subtitle edit or undo invalidated the cached targets. Toggle 39 Mode to start a new session.";
   if(inspector)inspector->Hide();Update();Notify();
  }
- void Update() {
+	void Update(bool all_rows=false) {
+   AudioPerf::Scope update_timer(AudioPerf::ResultsUpdate);
    if(!panel)return;refreshing=true;
    if(offset_spin && !correction_timer.IsRunning() && offset_spin->GetValue()!=session.TimingCorrection())
     offset_spin->SetValue(session.TimingCorrection());
@@ -371,8 +485,9 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    if(rows->RowCount()!=session.Results().size()) {
     rows->ResetRows(session.Results());
    }
-   else for(size_t i=0;i<session.Results().size();++i)
-    rows->SetStatus(i,session.Results()[i].GetConfidence());
+	   else if(all_rows)for(size_t i=0;i<session.Results().size();++i)
+	    rows->SetStatus(i,session.Results()[i].GetConfidence());
+	   else if(auto current=Current())rows->SetStatus(selected,current->GetConfidence());
    if(auto r=Current()) {
     if(rows->GetSelection()!=int(selected))rows->SetSelection(int(selected));
     lane_choice->SetSelection(r->lane+1);
@@ -380,16 +495,21 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   }else status->SetLabel(to_wx(notice.empty()?"No captured lyric targets. Toggle 39 Mode to start again.":notice));
   UpdatePane();
   if(inspector&&inspector->IsShown())UpdateInspector();
-  panel->Layout();refreshing=false;
+  refreshing=false;
+  if(auto summary=AudioPerf::Instance().MaybeSummary();!summary.empty())
+   wxLogMessage(wxString::FromUTF8(summary.c_str()));
  }
  void UpdatePane() {
+  AudioPerf::Scope pane_timer(AudioPerf::ResultsPane);
   if(!correction_pane)return;
   auto r=Current();
   if(!r){
-   line_title->SetLabel("");reason->SetLabel("");choice_sizer->Clear(true);candidate_buttons.clear();
+   line_title->SetLabel("");reason->SetLabel("");
+   for(auto button:candidate_buttons)button->Hide();
+   if(resolved_label)resolved_label->Hide();
    if(reset_manual)reset_manual->Disable();
    if(review_view)review_view->SetReview({},t39::Analysis{}, {},t39::Confidence::Red);
-   correction_pane->Layout();return;
+   if(review_scroll)review_scroll->FitInside();return;
   }
   auto readable=t39ui::PrepareLyricDisplay(r->target.analysis).plain;
   line_title->SetLabel(to_wx(readable));
@@ -397,19 +517,23 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   if(r->resolution==t39::ResolutionSource::UserSelected && r->GetConfidence()==t39::Confidence::Green)
    explanation="Selected assignment resolved this line.";
   if(r->resolution==t39::ResolutionSource::UserManualRepair && r->GetConfidence()==t39::Confidence::Green)
-   explanation="Manual mapping resolved this line; raw attacks are unchanged.";
+   explanation="Mora placement resolved this line; raw attacks are unchanged.";
+  if(r->resolution==t39::ResolutionSource::UserManualTiming && r->GetConfidence()==t39::Confidence::Green)
+   explanation="Manual timing resolved this line; raw attacks are unchanged.";
   if(r->manual_invalidated)explanation="Previous selected assignment no longer fits the corrected taps.\n"+explanation;
   reason->SetLabel(to_wx(explanation));
-  line_title->Wrap(std::max(250,correction_pane->GetClientSize().x-24));
-  reason->Wrap(std::max(250,correction_pane->GetClientSize().x-24));
-  choice_sizer->Clear(true);candidate_buttons.clear();
+  line_title->Wrap(std::max(250,review_scroll->GetClientSize().x-24));
+  reason->Wrap(std::max(250,review_scroll->GetClientSize().x-24));
+  AudioPerf::Scope candidate_timer(AudioPerf::ResultsCandidates);
   auto& lane=r->lanes[selected_lane];
   if(reset_manual)reset_manual->Enable(lane.manual_active&&!r->committed);
+  if(reset_timing)reset_timing->Enable(lane.timing_override_active&&!r->committed);
   if(review_view)review_view->SetReview(t39ui::BuildLocalReviewModel(*r,selected_lane,
    session.RawForResult(selected,selected_lane),session.TimingCorrection()),r->target.analysis,
    lane.match.uncertain_boundaries,r->GetConfidence());
   if(manual_mode&&(manual_row!=selected||manual_lane!=selected_lane))CloseManual();
   UpdateManualProgress();
+  size_t visible_choices=0;
   if(r->GetConfidence()==t39::Confidence::Yellow &&
      lane.capture.status!=t39::PartitionStatus::AmbiguousSungCrossing && !lane.match.paths.empty()) {
    for(size_t i=0;i<lane.match.paths.size();++i) {
@@ -417,33 +541,72 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
        lane.match.paths[i].cost-lane.match.paths[0].cost>=t39::ScoringModel{}.ambiguity_margin))break;
     auto label=t39ui::CompactPathChoice(r->target.analysis,lane.match,i);
     if(label.empty())label="Assignment "+std::to_string(i+1);
-    auto option=new wxButton(correction_pane,wxID_ANY,to_wx(label));
-    choice_sizer->Add(option,0,wxEXPAND|wxALL,4);candidate_buttons.push_back(option);
-    option->Bind(wxEVT_BUTTON,[this,i](wxCommandEvent&){
-     if(session.ChooseAssignment(selected,selected_lane,i)){notice.clear();panel->CallAfter([this]{Update();});}
-    });
+    if(i>=candidate_buttons.size()){
+     auto option=new wxButton(review_scroll,wxID_ANY,to_wx(label));
+     choice_sizer->Add(option,0,wxEXPAND|wxALL,4);candidate_buttons.push_back(option);
+     option->Bind(wxEVT_BUTTON,[this,i](wxCommandEvent&){
+      if(session.ChooseAssignment(selected,selected_lane,i)){notice.clear();panel->CallAfter([this]{Update();});}
+     });
+    }
+    auto option=candidate_buttons[i];
+    if(option->GetLabel()!=to_wx(label))option->SetLabel(to_wx(label));
+    option->Show();++visible_choices;
    }
   }
-  else if(r->GetConfidence()==t39::Confidence::Green) {
-   choice_sizer->Add(new wxStaticText(correction_pane,wxID_ANY,_("Assignment resolved — ready to commit")),0,wxEXPAND|wxALL,4);
-  }
-  correction_pane->Layout();
+  for(size_t i=visible_choices;i<candidate_buttons.size();++i)candidate_buttons[i]->Hide();
+  if(resolved_label)resolved_label->Show(r->GetConfidence()==t39::Confidence::Green);
+  candidate_timer.Stop();
+  {AudioPerf::Scope layout_timer(AudioPerf::ResultsLayout);review_scroll->Layout();review_scroll->FitInside();}
  }
  void CloseManual() {
   manual_mode=false;manual_groups.clear();
   if(review_view&&Current())review_view->SetDraft(Current()->lanes[selected_lane].Assignments(),{});
-  if(manual_pane){manual_pane->Hide();correction_pane->Layout();}
+  if(manual_pane){manual_pane->Hide();review_scroll->FitInside();}
+ }
+ void CloseTimingDraft() {
+  timing_mode=false;
+  if(review_view)review_view->SetTimingDraft(nullptr);
+  if(timing_pane){timing_pane->Hide();review_scroll->FitInside();}
+ }
+ bool MayLeaveTimingDraft() {
+  if(!timing_mode)return true;
+  if(timing_draft.Changed()){
+   wxMessageDialog confirm(panel,_("Discard the unapplied manual timing changes?"),
+    _("39 Mode manual timing"),wxYES_NO|wxNO_DEFAULT|wxICON_QUESTION);
+   if(confirm.ShowModal()!=wxID_YES)return false;
+  }
+  CloseTimingDraft();return true;
+ }
+ void StartTimingDraft() {
+  auto r=Current();if(!r||r->committed)return;
+  if(timing_mode&&!MayLeaveTimingDraft())return;
+  if(manual_mode)CloseManual();
+  timing_draft.Begin(r->target.start,r->target.end,r->lanes[selected_lane].capture.blocks);
+  timing_mode=true;timing_row=selected;timing_lane=selected_lane;
+  review_view->SetTimingDraft(&timing_draft);
+  timing_pane->Show();review_scroll->FitInside();
+ }
+ void ApplyTimingDraft() {
+  if(!timing_mode||timing_row!=selected||timing_lane!=selected_lane)return;
+  auto draft=timing_draft.Blocks();
+  if(session.SetManualTiming(selected,selected_lane,draft)){
+   notice="Manual Toshiki timing applied; raw rhythm capture is unchanged.";
+   CloseTimingDraft();Update();
+  }
+  else {notice="Manual timing is outside the line or has overlapping blocks.";Update();}
  }
  void StartManual() {
   auto r=Current();if(!r||r->committed)return;
+  if(timing_mode&&!MayLeaveTimingDraft())return;
   if(!t39ui::SungTapCount(r->lanes[selected_lane].capture)||r->target.analysis.morae.empty()){
    notice="Manual repair needs a sung attack and a readable mora; retake or provide a reading.";Update();return;
   }
   manual_mode=true;manual_row=selected;manual_lane=selected_lane;
   manual_groups.clear();manual_timing_count=manual_mora_count=1;
-  manual_pane->Show();UpdateManualProgress();correction_pane->Layout();
+  manual_pane->Show();UpdateManualProgress();review_scroll->FitInside();
  }
  void UpdateManualProgress() {
+  AudioPerf::Scope timer(AudioPerf::ResultsManual);
   if(!manual_pane||!manual_mode||!Current())return;
   auto const& result=*Current();
   size_t taps=t39ui::SungTapCount(result.lanes[manual_lane].capture);
@@ -459,7 +622,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    "Next: "+std::to_string(manual_timing_count)+" attack(s) → ["+selected_reading+"] ("+
    std::to_string(manual_mora_count)+" morae)\n"+
    "←/→ attacks   ↑/↓ morae   Enter link   Backspace undo";
-  manual_progress->SetLabel(to_wx(label));manual_progress->Wrap(std::max(250,correction_pane->GetClientSize().x-25));
+  manual_progress->SetLabel(to_wx(label));manual_progress->Wrap(std::max(250,review_scroll->GetClientSize().x-25));
   if(review_view){
    std::vector<t39::TimingAssignment> draft;
    std::vector<size_t> next_blocks;
@@ -498,7 +661,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
     first_mora+=group.second;
    }
    if(session.SetManualAssignment(selected,manual_lane,std::move(mapping))){
-    notice="Manual timing assignment resolved; raw capture unchanged.";CloseManual();Update();
+   notice="Mora placement resolved; raw capture unchanged.";CloseManual();Update();
    }else {manual_groups.pop_back();notice="Manual mapping could not be completed; check the remaining groups.";UpdateManualProgress();}
    return;
   }
@@ -523,7 +686,8 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    text+="Previous-line sung tails excluded: "+std::to_string(l.capture.preceding_sung_tails)+"\n";
   text+="Partition: "+PartitionName(l.capture)+"\n\n";
    text+="Timing correction: "+std::to_string(session.TimingCorrection())+" ms (negative earlier; raw unchanged)\n";
-   text+="Resolution source: "+std::string(r.resolution==t39::ResolutionSource::UserManualRepair?"user manual repair":
+   text+="Resolution source: "+std::string(r.resolution==t39::ResolutionSource::UserManualRepair?"user mora placement":
+    r.resolution==t39::ResolutionSource::UserManualTiming?"user manual timing":
     r.resolution==t39::ResolutionSource::UserSelected?"user selected":
     r.resolution==t39::ResolutionSource::Retake?"retake":"automatic")+"\n\n";
    text+=t39ui::CompactResultReason(r,selected_lane)+"\n\nMORAE\n";
@@ -546,6 +710,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    return text;
   }
   void UpdateInspector() {
+  AudioPerf::Scope timer(AudioPerf::ResultsInspector);
   auto r=Current();if(!r)return;auto& l=r->lanes[selected_lane];
   reading->ChangeValue(to_wx(r->target.analysis.surface));
   int divider=assignments->GetSelection();assignments->Clear();paths->Clear();
@@ -565,11 +730,15 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   auto b=new wxButton(parent,wxID_ANY,label);s->Add(b,0,wxALL,3);b->Bind(wxEVT_BUTTON,[fn](wxCommandEvent&){fn();});
  }
  void ApplyTimingCorrection() {
+  AudioPerf::Scope timer(AudioPerf::ResultsCorrection);
   if(!offset_spin)return;
+  if(!MayLeaveTimingDraft()){
+   offset_spin->SetValue(session.TimingCorrection());UpdateOffsetDirection();return;
+  }
   int offset=offset_spin->GetValue();
   if(!session.SetTimingCorrection(offset))notice="Timing correction is available after capture, before committing lines.";
   else notice.clear();
-  Update();
+  Update(true);
  }
  void UpdateOffsetDirection() {
   if(!offset_direction||!offset_spin)return;
@@ -583,7 +752,10 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   for(size_t step=1;step<=count;++step) {
    size_t candidate=size_t((int(selected)+int(count)+delta*int(step)%int(count))%int(count));
    if(!problems_only||session.Results()[candidate].GetConfidence()!=t39::Confidence::Green) {
-    selected=candidate;selected_lane=std::max(0,session.Results()[selected].lane);notice.clear();Update();return;
+    if(!MayLeaveTimingDraft())return;
+    selected=candidate;selected_lane=std::max(0,session.Results()[selected].lane);
+    if(review_scroll)review_scroll->Scroll(0,0);
+    notice.clear();Update();return;
    }
   }
  }
@@ -594,28 +766,37 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   auto splitter=new wxSplitterWindow(panel,wxID_ANY,wxDefaultPosition,wxDefaultSize,wxSP_LIVE_UPDATE);
   rows=new Timing39ResultsList(splitter);
   correction_pane=new wxPanel(splitter);
+  auto fixed_and_scroll=new wxBoxSizer(wxVERTICAL);
   auto right=new wxBoxSizer(wxVERTICAL);
-  right->Add(new wxStaticText(correction_pane,wxID_ANY,_("Session timing correction")),0,wxLEFT|wxRIGHT|wxTOP,8);
+  fixed_and_scroll->Add(new wxStaticText(correction_pane,wxID_ANY,_("Session timing correction")),0,wxLEFT|wxRIGHT|wxTOP,8);
   auto timing_row=new wxBoxSizer(wxHORIZONTAL);
   offset_spin=new wxSpinCtrl(correction_pane,wxID_ANY,"",wxDefaultPosition,wxSize(105,-1),wxSP_ARROW_KEYS|wxTE_PROCESS_ENTER,-2000,2000,0);
   timing_row->Add(offset_spin,0,wxALL,5);
   offset_direction=new wxStaticText(correction_pane,wxID_ANY,_("No timing correction"));
   timing_row->Add(offset_direction,1,wxALIGN_CENTER_VERTICAL|wxALL,5);
-  right->Add(timing_row,0,wxEXPAND|wxLEFT|wxRIGHT,5);
-  right->Add(new wxStaticText(correction_pane,wxID_ANY,_("Negative = earlier; positive = later. Raw capture is unchanged.")),0,wxLEFT|wxRIGHT|wxBOTTOM,8);
-  line_title=new wxStaticText(correction_pane,wxID_ANY,"");right->Add(line_title,0,wxEXPAND|wxALL,8);
-  lane_choice=new wxChoice(correction_pane,wxID_ANY);lane_choice->Append(_("Unresolved lane"));lane_choice->Append(_("F/J primary"));lane_choice->Append(_("D/K secondary"));right->Add(lane_choice,0,wxLEFT|wxRIGHT|wxBOTTOM,8);
-  reason=new wxStaticText(correction_pane,wxID_ANY,"");right->Add(reason,0,wxEXPAND|wxLEFT|wxRIGHT|wxBOTTOM,8);
-  review_view=new Timing39ReviewView(correction_pane,c->audioBox);
+  fixed_and_scroll->Add(timing_row,0,wxEXPAND|wxLEFT|wxRIGHT,5);
+  fixed_and_scroll->Add(new wxStaticText(correction_pane,wxID_ANY,_("Negative = earlier; positive = later. Raw capture is unchanged.")),0,wxLEFT|wxRIGHT|wxBOTTOM,8);
+  review_scroll=new wxScrolledWindow(correction_pane,wxID_ANY,wxDefaultPosition,wxDefaultSize,wxVSCROLL|wxTAB_TRAVERSAL);
+  review_scroll->SetScrollRate(0,12);
+  line_title=new wxStaticText(review_scroll,wxID_ANY,"");right->Add(line_title,0,wxEXPAND|wxALL,8);
+  lane_choice=new wxChoice(review_scroll,wxID_ANY);lane_choice->Append(_("Unresolved lane"));lane_choice->Append(_("F/J primary"));lane_choice->Append(_("D/K secondary"));right->Add(lane_choice,0,wxLEFT|wxRIGHT|wxBOTTOM,8);
+  reason=new wxStaticText(review_scroll,wxID_ANY,"");right->Add(reason,0,wxEXPAND|wxLEFT|wxRIGHT|wxBOTTOM,8);
+  review_view=new Timing39ReviewView(review_scroll,c->audioBox);
   right->Add(review_view,0,wxEXPAND|wxLEFT|wxRIGHT|wxBOTTOM,8);
   auto playback=new wxBoxSizer(wxHORIZONTAL);
-  Button(correction_pane,playback,_("Play context"),[this]{
+  Button(review_scroll,playback,_("Play line"),[this]{
    if(!Current()||!review_view)return;
-   c->audioController->PlayRange(TimeRange(review_view->ContextStart(),review_view->ContextEnd()));
+   auto range=review_view->PlaybackRange(false);
+   c->audioController->PlayRange(TimeRange(range.first,range.second));
   });
-  Button(correction_pane,playback,_("Stop"),[this]{c->audioController->Stop();if(review_view)review_view->SetPlaybackCursor(-1);});
+  Button(review_scroll,playback,_("Play context"),[this]{
+   if(!Current()||!review_view)return;
+   auto range=review_view->PlaybackRange(true);
+   c->audioController->PlayRange(TimeRange(range.first,range.second));
+  });
+  Button(review_scroll,playback,_("Stop"),[this]{c->audioController->Stop();if(review_view)review_view->SetPlaybackCursor(-1);});
   right->Add(playback,0,wxLEFT|wxRIGHT|wxBOTTOM,5);
-  manual_pane=new wxPanel(correction_pane);
+  manual_pane=new wxPanel(review_scroll);
   auto manual_sizer=new wxBoxSizer(wxVERTICAL);
   manual_progress=new wxStaticText(manual_pane,wxID_ANY,"");
   manual_sizer->Add(manual_progress,0,wxEXPAND|wxALL,4);
@@ -626,28 +807,63 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   manual_sizer->Add(manual_actions,0,wxEXPAND);
   manual_pane->SetSizer(manual_sizer);right->Add(manual_pane,0,wxEXPAND|wxALL,6);
   manual_pane->Hide();
-  choice_sizer=new wxBoxSizer(wxVERTICAL);right->Add(choice_sizer,1,wxEXPAND|wxALL,6);
+  timing_pane=new wxPanel(review_scroll);
+  auto timing_sizer=new wxBoxSizer(wxVERTICAL);
+  timing_sizer->Add(new wxStaticText(timing_pane,wxID_ANY,
+   _("Toshiki draft: click audio to split; drag purple edges to move; right-click between blocks to join.")),
+   0,wxEXPAND|wxALL,4);
+  auto timing_buttons=new wxBoxSizer(wxHORIZONTAL);
+  Button(timing_pane,timing_buttons,_("Apply timing"),[this]{ApplyTimingDraft();});
+  Button(timing_pane,timing_buttons,_("Cancel"),[this]{CloseTimingDraft();});
+  Button(timing_pane,timing_buttons,_("Undo"),[this]{if(timing_draft.Undo())review_view->Refresh(false);});
+  Button(timing_pane,timing_buttons,_("Redo"),[this]{if(timing_draft.Redo())review_view->Refresh(false);});
+  timing_sizer->Add(timing_buttons,0,wxEXPAND);
+  timing_pane->SetSizer(timing_sizer);right->Add(timing_pane,0,wxEXPAND|wxALL,6);
+  timing_pane->Hide();
+  choice_sizer=new wxBoxSizer(wxVERTICAL);right->Add(choice_sizer,0,wxEXPAND|wxALL,6);
+  resolved_label=new wxStaticText(review_scroll,wxID_ANY,_("Assignment resolved — ready to commit"));
+  choice_sizer->Add(resolved_label,0,wxEXPAND|wxALL,4);
   auto actions=new wxBoxSizer(wxHORIZONTAL);
-  Button(correction_pane,actions,_("Retake"),[this]{Retake();});
-  Button(correction_pane,actions,_("Manual repair"),[this]{StartManual();});
-  reset_manual=new wxButton(correction_pane,wxID_ANY,_("Reset to automatic"));
-  actions->Add(reset_manual,0,wxALL,3);
+  Button(review_scroll,actions,_("Retake"),[this]{Retake();});
+  Button(review_scroll,actions,_("Fix mora placement"),[this]{StartManual();});
+  Button(review_scroll,actions,_("Manual timing"),[this]{StartTimingDraft();});
+  right->Add(actions,0,wxLEFT|wxRIGHT|wxBOTTOM,5);
+  auto reset_actions=new wxBoxSizer(wxHORIZONTAL);
+  reset_manual=new wxButton(review_scroll,wxID_ANY,_("Reset mora placement"));
+  reset_actions->Add(reset_manual,0,wxALL,3);
   reset_manual->Bind(wxEVT_BUTTON,[this](wxCommandEvent&){
    if(session.ResetManualAssignment(selected,selected_lane)){notice="Automatic assignment restored; raw capture unchanged.";CloseManual();Update();}
   });
-  Button(correction_pane,actions,_("Advanced / Inspector"),[this]{ShowInspector();});
-  right->Add(actions,0,wxLEFT|wxRIGHT|wxBOTTOM,5);
+  reset_timing=new wxButton(review_scroll,wxID_ANY,_("Reset manual timing"));
+  reset_actions->Add(reset_timing,0,wxALL,3);
+  reset_timing->Bind(wxEVT_BUTTON,[this](wxCommandEvent&){
+   if(session.ResetManualTiming(selected,selected_lane)){notice="Raw-derived timing restored.";CloseTimingDraft();Update();}
+  });
+  Button(review_scroll,reset_actions,_("Advanced / Inspector"),[this]{ShowInspector();});
+  right->Add(reset_actions,0,wxLEFT|wxRIGHT|wxBOTTOM,5);
   auto navigation=new wxBoxSizer(wxHORIZONTAL);
-  Button(correction_pane,navigation,_("Previous problem"),[this]{Navigate(-1,true);});
-  Button(correction_pane,navigation,_("Next problem"),[this]{Navigate(1,true);});
+  Button(review_scroll,navigation,_("Previous problem"),[this]{Navigate(-1,true);});
+  Button(review_scroll,navigation,_("Next problem"),[this]{Navigate(1,true);});
   right->Add(navigation,0,wxLEFT|wxRIGHT|wxBOTTOM,5);
-  correction_pane->SetSizer(right);
+  review_scroll->SetSizer(right);
+  fixed_and_scroll->Add(review_scroll,1,wxEXPAND);
+  correction_pane->SetSizer(fixed_and_scroll);
   splitter->SetMinimumPaneSize(260);splitter->SplitVertically(rows,correction_pane,520);
   root->Add(splitter,1,wxEXPAND|wxALL,5);
   auto commit=new wxBoxSizer(wxHORIZONTAL);Button(panel,commit,_("Commit all GREEN"),[this]{CommitResults();});root->Add(commit,0,wxALL,5);
   panel->SetSizer(root);
-  rows->Bind(wxEVT_LISTBOX,[this](wxCommandEvent&){selected=size_t(rows->GetSelection());if(auto r=Current())selected_lane=std::max(0,r->lane);notice.clear();Update();});
-  lane_choice->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){if(refreshing)return;if(auto r=Current()){r->lane=lane_choice->GetSelection()-1;selected_lane=std::max(0,r->lane);r->reviewed=r->lane>=0;notice.clear();Update();}});
+  rows->Bind(wxEVT_LISTBOX,[this](wxCommandEvent&){
+   AudioPerf::Scope timer(AudioPerf::ResultsRowSelect);
+   if(!MayLeaveTimingDraft()){rows->SetSelection(int(selected));return;}
+   selected=size_t(rows->GetSelection());if(auto r=Current())selected_lane=std::max(0,r->lane);
+   if(review_scroll)review_scroll->Scroll(0,0);notice.clear();Update();
+  });
+  lane_choice->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){
+   AudioPerf::Scope timer(AudioPerf::ResultsLaneSwitch);
+   if(refreshing)return;
+   if(!MayLeaveTimingDraft()){if(auto r=Current())lane_choice->SetSelection(r->lane+1);return;}
+   if(auto r=Current()){r->lane=lane_choice->GetSelection()-1;selected_lane=std::max(0,r->lane);r->reviewed=r->lane>=0;notice.clear();Update();}
+  });
   correction_timer.Bind(wxEVT_TIMER,[this](wxTimerEvent&){ApplyTimingCorrection();});
   offset_spin->Bind(wxEVT_SPINCTRL,[this](wxSpinEvent&){if(refreshing)return;UpdateOffsetDirection();correction_timer.Start(140,true);});
   offset_spin->Bind(wxEVT_TEXT_ENTER,[this](wxCommandEvent&){correction_timer.Stop();UpdateOffsetDirection();ApplyTimingCorrection();});
@@ -665,7 +881,13 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
     if(key==WXK_BACK){UndoManual();return;}
     if(key==WXK_ESCAPE){CloseManual();return;}
    }
-   if(key==WXK_ESCAPE){panel->Hide();return;}
+   if(timing_mode){
+    if(key==WXK_ESCAPE){CloseTimingDraft();return;}
+    if(key==WXK_RETURN){ApplyTimingDraft();return;}
+    if(key=='Z'&&e.ControlDown()){if(timing_draft.Undo())review_view->Refresh(false);return;}
+    if(key=='Y'&&e.ControlDown()){if(timing_draft.Redo())review_view->Refresh(false);return;}
+   }
+   if(key==WXK_ESCAPE){if(MayLeaveTimingDraft())panel->Hide();return;}
    if(key=='R'&&!e.ControlDown()&&!e.AltDown()){Retake();return;}
    if((key==WXK_UP||key==WXK_DOWN)&&!e.AltDown()){
     Navigate(key==WXK_DOWN?1:-1,e.ControlDown());return;
@@ -678,7 +900,11 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    }
    e.Skip();
   });
-  panel->Bind(wxEVT_CLOSE_WINDOW,[this](wxCloseEvent& e){if(e.CanVeto()){e.Veto();panel->Hide();}else e.Skip();});
+  panel->Bind(wxEVT_CLOSE_WINDOW,[this](wxCloseEvent& e){
+   if(e.CanVeto()){
+    e.Veto();if(MayLeaveTimingDraft())panel->Hide();
+   }else e.Skip();
+  });
  }
  void ShowInspector() {
   if(!Current())return;
@@ -705,6 +931,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  void Retake(){
   auto current=Current();
   if(!current||current->committed||session.State()!=t39::SessionState::Results)return;
+  if(!MayLeaveTimingDraft())return;
   if(correction_timer.IsRunning()){correction_timer.Stop();ApplyTimingCorrection();}
   c->videoController->Stop();c->audioController->Stop();
   if(session.Retake(selected,selected_lane,Preroll())){
@@ -738,8 +965,17 @@ public:
   countdown.Bind(wxEVT_TIMER,&AudioTimingController39::Tick,this);Prepare();wxEvtHandler::AddFilter(this);
   connections.push_back(c->ass->AddCommitListener(&AudioTimingController39::FileChanged,this));
   connections.push_back(c->audioController->AddPlaybackPositionListener([this](int ms){
+   // Keep the start anchor for this playback. Re-anchoring after a UI stall
+   // could place an older queued key before the new anchor and lose its time.
+   if(session.State()==t39::SessionState::Capturing && c->audioController->IsPlaying() &&
+      !input_clock.IsAnchored())
+    input_clock.Anchor(t39::InputClockNow(),ms);
+   else if(session.State()!=t39::SessionState::Capturing)input_clock.Reset();
    last_position=ms;session.Advance(ms);
    if(review_view&&panel&&panel->IsShown())review_view->SetPlaybackCursor(ms);
+  }));
+  connections.push_back(c->audioController->AddPlaybackStopListener([this]{
+   if(review_view)review_view->SetPlaybackCursor(-1);
   }));
  }
  ~AudioTimingController39() override {HideCountdown();correction_timer.Stop();session.Discard();physical_held.fill(false);wxEvtHandler::RemoveFilter(this);connections.clear();delete inspector;delete panel;}
@@ -762,7 +998,12 @@ public:
 #endif
   if(down&&(key.AltDown()||key.ControlDown()||key.ShiftDown()))return Event_Skip;
   if(index>=0&&down){if(physical_held[index])return Event_Processed;physical_held[index]=true;}
-  return TimingKey(key.GetKeyCode(),down,c->audioController->GetPlaybackPosition(),false,false)?Event_Processed:Event_Skip;
+  int event_ms=0;
+  uint32_t event_tick=0;
+  bool mapped=index>=0 && t39::InputEventTick(key,event_tick) &&
+   input_clock.Map(event_tick,t39::InputClockNow(),session.StartTime(),session.EndTime(),event_ms);
+  if(!mapped)event_ms=c->audioController->GetPlaybackPosition();
+  return TimingKey(key.GetKeyCode(),down,event_ms,false,false)?Event_Processed:Event_Skip;
  }
  bool Is39Mode() const override{return true;}
  bool Is39SessionActive() const override{return session.State()==t39::SessionState::Countdown||session.State()==t39::SessionState::Ready||session.State()==t39::SessionState::Capturing;}
@@ -787,14 +1028,15 @@ public:
  void AddLeadIn() override{} void AddLeadOut() override{} void ModifyLength(int,bool) override{} void ModifyStart(int) override{}
  void Next(NextMode) override{if(!Is39SessionActive())c->selectionController->NextLine();}
  void Prev() override{if(!Is39SessionActive())c->selectionController->PrevLine();}
-  void Revert() override{c->audioController->Stop();session.Discard();ordinary_boundaries.Reset({});target_boundaries.Reset({});Update();Notify();}
+  void Revert() override{c->audioController->Stop();if(timing_mode)CloseTimingDraft();session.Discard();ordinary_boundaries.Reset({});target_boundaries.Reset({});Update();Notify();}
  void PlaybackStarting(int ms) override {
+  input_clock.Reset();
   if(session.State()==t39::SessionState::Capturing)PlaybackStopped(c->audioController->GetPlaybackPosition());
   else if(session.State()==t39::SessionState::Countdown)PlaybackStopped(session.StartTime());
   if(session.Start(ms))physical_held.fill(false);
   last_position=ms;Notify();
  }
- void PlaybackStopped(int ms) override {HideCountdown();physical_held.fill(false);if(session.Stop(ms)){c->videoController->Stop();last_position=ms;ShowResults();Notify();}}
+ void PlaybackStopped(int ms) override {input_clock.Reset();HideCountdown();physical_held.fill(false);if(session.Stop(ms)){c->videoController->Stop();last_position=ms;ShowResults();Notify();}}
  void TimingFocusLost(int) override{} // widget focus changes do not end the session; app deactivation does
  bool TimingKey(int key,bool down,int ms,bool control,bool shift) override {
   if(!Is39SessionActive())return false;
