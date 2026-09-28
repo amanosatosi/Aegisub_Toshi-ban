@@ -10,6 +10,11 @@ per second. Other audio refresh call sites are not included in that request
 counter. Without the
 environment variable, timing is disabled.
 
+For Results review audio it additionally reports review requests, cache hits,
+actual rebuilds, output columns, review milliseconds per pixel, tile count,
+and total tile work time. Main horizontal zoom must not change the review
+milliseconds per pixel or trigger a rebuild.
+
 Generate deterministic input with
 `python tools/timing39_audio_stress.py OUTPUT_DIRECTORY`. Open the generated
 ASS and WAV, enable 39 Mode, start continuous playback from 0, and tap F/J
@@ -34,8 +39,8 @@ unit tests do not establish smoothness or actual paint-time improvement.
 
 - `AudioController::OnPlaybackTimer` publishes the playback position about
   every 20 ms. In 39 Mode, `AudioDisplay::OnPlaybackPosition` follows it with
-  a centered scroll and repaint. Key capture still reads the authoritative
-  playback clock in the timing input path; it is independent of paint cadence.
+  a centered scroll and repaint. On Windows, key capture maps the queued key
+  event timestamp to media time; other ports retain a playback-clock fallback.
 - `AudioDisplay::OnPaint` traverses update rectangles and paints waveform or
   spectrum, Toshiki preview, selection/dialogue overlay, timing markers and
   labels, then the 39 Mode reference, target, capture, hit-line and particle
@@ -68,3 +73,22 @@ unit tests do not establish smoothness or actual paint-time improvement.
 No baseline or final paint times are recorded in this source tree. They must
 be obtained from actual instrumented GUI builds using the procedure above.
 Do not cite static code inspection or CI build time as a runtime speedup.
+
+## Results horizontal-zoom starvation reproduction
+
+With `AEGISUB_AUDIO_PERF=1`, use the same several-second result line, window
+size and audio source in both builds. Open 39 Mode Results, wait for its local
+waveform to finish, and record the first review rebuild's columns, tile count
+and tile work time. Repeatedly zoom the *main* audio display far inward and
+outward, switch Primary/Secondary, select neighboring rows, and play the local
+line. Repeat in spectrogram mode. Record review rebuilds, maximum Results
+interaction time, and whether the UI becomes unresponsive. Do not infer a
+runtime speedup from the static calculation below.
+
+For an 8-second interval at 800 output pixels, the former path rendered 400
+source columns at 20 ms/px, 8,000 at 1 ms/px, and 80,000 at 0.1 ms/px. At the
+current 256-column slice size that last case required 313 slices, each with
+bitmap conversion and high-quality rescaling. The independent Results plan
+always renders 800 output columns in four direct tiles at 10 ms/px. This is a
+code-derived work bound, **not** a measured before/after duration. Actual GUI
+measurements and visual verification are still required.

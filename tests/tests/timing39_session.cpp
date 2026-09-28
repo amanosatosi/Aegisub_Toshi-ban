@@ -3,6 +3,7 @@
 #include <libaegisub/timing39_session.h>
 #include <libaegisub/timing39_input_clock.h>
 #include "timing39_ui.h"
+#include "audio_review_plan.h"
 #include "toshiki_timing_draft.h"
 using namespace agi::timing39;
 namespace {
@@ -119,6 +120,54 @@ TEST(Timing39Session, LaneOverlaysDoNotChangeStaticAudioCacheIdentity) {
 	EXPECT_TRUE(primary==secondary);
 	secondary.generation=8;EXPECT_FALSE(primary==secondary);
 	secondary=primary;secondary.width=580;EXPECT_FALSE(primary==secondary);
+}
+TEST(Timing39Session, ReviewRenderPlanIsIndependentOfMainHorizontalZoom) {
+	AudioReviewPlan plan{10000,18000,800};
+	ASSERT_TRUE(plan.Valid());
+	EXPECT_DOUBLE_EQ(10.0,plan.MillisecondsPerPixel());
+	EXPECT_EQ(4,plan.SliceCount());
+	int columns=0;
+	for(int i=0;i<plan.SliceCount();++i){
+		auto slice=plan.GetSlice(i);
+		EXPECT_EQ(columns,slice.x);
+		EXPECT_DOUBLE_EQ(10000.0+columns*10.0,slice.begin_ms);
+		columns+=slice.width;
+	}
+	EXPECT_EQ(800,columns);
+	for(double main_ms_per_pixel:{10.0,1.0,0.1}){
+		// The old path grew to 80,000 source pixels/313 slices at 0.1 ms/px.
+		EXPECT_GT(int(8000/main_ms_per_pixel),0);
+		EXPECT_EQ(800,plan.width);
+		EXPECT_EQ(4,plan.SliceCount());
+		EXPECT_DOUBLE_EQ(10.0,plan.MillisecondsPerPixel());
+	}
+}
+TEST(Timing39Session, ReviewAudioCacheInvalidatesOnlyForStaticInputs) {
+	using agi::timing39::ui::ReviewBitmapKey;
+	ReviewBitmapKey key{10000,18000,800,100,3};
+	// Lane, cursor, assignment and main zoom/scroll are overlay or main-view
+	// state: none is represented in the static bitmap identity.
+	for(int lane:{0,1})for(int cursor:{10000,12000,17999}){
+		(void)lane;(void)cursor;
+		EXPECT_TRUE((key==ReviewBitmapKey{10000,18000,800,100,3}));
+	}
+	auto changed=key;changed.begin=9900;EXPECT_FALSE(key==changed);
+	changed=key;changed.end=18100;EXPECT_FALSE(key==changed);
+	changed=key;changed.width=801;EXPECT_FALSE(key==changed);
+	changed=key;changed.height=101;EXPECT_FALSE(key==changed);
+	// The generation is raised for provider, mode, spectrum, amplitude or theme.
+	changed=key;changed.generation=4;EXPECT_FALSE(key==changed);
+}
+TEST(Timing39Session, ReviewWorkStaysBoundedAtExtremeMainZoom) {
+	AudioReviewPlan plan{10000,18000,800};
+	for(double main_ms_per_pixel:{20.0,1.0,0.1,0.01}){
+		int old_source_columns=int(8000/main_ms_per_pixel);
+		EXPECT_LE(plan.SliceCount()*AudioReviewPlan::columns_per_slice,
+			plan.width+AudioReviewPlan::columns_per_slice-1);
+		EXPECT_EQ(800,plan.width);
+		EXPECT_EQ(4,plan.SliceCount());
+		if(main_ms_per_pixel<=0.1)EXPECT_GT(old_source_columns,plan.width*10);
+	}
 }
 TEST(Timing39Session, InputClockWrapAndStaleEventSafety) {
 	InputClockMapper mapper;mapper.Anchor(0xfffffff0u,5000);
