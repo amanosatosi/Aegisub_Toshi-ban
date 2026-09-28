@@ -108,8 +108,7 @@ TEST(Timing39Karaoke, MixedTagsEscapesAndLeadingPunctuation) {
 	d.Text=u8"「み」\\Nく";a=AnalyzeDialogue(d);r=Match(a,b);ASSERT_FALSE(r.paths.empty());
 	ASSERT_TRUE(Serialize(d,a,b,r.paths[0].assignments,out,error))<<error;
 	EXPECT_NE(std::string::npos,out.find(u8"{\\k0}「"));
-	EXPECT_NE(std::string::npos,out.find(u8"{\\k0}」"));
-	EXPECT_NE(std::string::npos,out.find("{\\k0}\\N"));
+	EXPECT_NE(std::string::npos,out.find(u8"{\\k0}」\\N"));
 }
 
 TEST(Timing39Karaoke, PunctuationAndRubyRemainZeroTimeInActualParser) {
@@ -127,6 +126,8 @@ TEST(Timing39Karaoke, PunctuationAndRubyRemainZeroTimeInActualParser) {
 	ASSERT_TRUE(Serialize(d,a,blocks,match.paths[0].assignments,committed,error))<<error;
 	for(auto const& atom:plan.atoms)preview+=atom.fragment;
 	EXPECT_EQ(output,preview);EXPECT_EQ(output,committed);
+	EXPECT_EQ(u8"{\\k4}{\\k0}「<好|{\\k4}す>{\\k2}き{\\k11}{\\k10}だ{\\k10}よ"
+		u8"{\\k0}、{\\k10}ず{\\k10}っ{\\k7}と{\\k0}」{\\k2}",output);
 	EXPECT_NE(std::string::npos,output.find(u8"{\\k0}「"));
 	EXPECT_NE(std::string::npos,output.find(u8"{\\k0}、"));
 	EXPECT_NE(std::string::npos,output.find(u8"{\\k0}」"));
@@ -170,11 +171,11 @@ TEST(Timing39Karaoke, MultipleJapanesePunctuationMarksStayZeroTime) {
 	auto match=Match(a,blocks);ASSERT_FALSE(match.paths.empty())<<match.reason;
 	std::string output,error;
 	ASSERT_TRUE(Serialize(d,a,blocks,match.paths[0].assignments,output,error))<<error;
-	for(auto const& punctuation:{u8"「",u8"……",u8"？",u8"」"})
+	for(auto const& punctuation:{u8"「",u8"……",u8"？」"})
 		EXPECT_NE(std::string::npos,output.find(std::string("{\\k0}")+punctuation));
 	AssDialogue rendered(d);rendered.Text=output;AssKaraoke parsed(&rendered,false,false);
 	for(auto const& syl:parsed)if(syl.text==u8"「"||syl.text==u8"……"||
-		syl.text==u8"？"||syl.text==u8"」")EXPECT_EQ(0,syl.duration);
+		syl.text==u8"？」")EXPECT_EQ(0,syl.duration);
 }
 TEST(Timing39Karaoke, RubyGapIdeographicSpaceAndPunctuationRemainIndependent) {
 	AssDialogue d;d.Start=0;d.End=500;d.Text=u8"<君|きみ>　と、く";
