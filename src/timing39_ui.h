@@ -97,14 +97,19 @@ inline std::string CompactResultReason(SessionResult const& result,int lane) {
 		text+="\n"+match.reason;
 	}
 	else text=match.reason;
-	if(capture.status==PartitionStatus::AmbiguousSungCrossing)
-		text+="\nSung block crosses the line end by more than "+std::to_string(sung_checkpoint_clamp_tolerance_ms)+" ms; review required";
+	if(capture.status==PartitionStatus::NeedsReview)
+		text+="\nTwo target lines claim the same sung block equally; review its owner";
+	if(capture.status==PartitionStatus::Invalid)
+		text+="\nInvalid zero/negative-duration sung block in this line";
 	auto ambiguity=CompactAmbiguity(result.target.analysis,match);
 	if(!ambiguity.empty())text+="\n\n"+ambiguity;
 	return text;
 }
 
-enum class ReviewOwnership { Gap, Owned, ExcludedPreviousTail, HarmlessEndClamp, CrossingNeedsReview };
+enum class ReviewOwnership {
+	Gap, Owned, ExcludedPreviousTail, ExcludedOtherLine,
+	HarmlessStartClamp, HarmlessEndClamp, HarmlessBothClamp, CrossingNeedsReview
+};
 struct ReviewBlock {
 	TimingBlock raw, adjusted;
 	ReviewOwnership ownership;
@@ -144,14 +149,24 @@ inline LocalReviewModel BuildLocalReviewModel(SessionResult const& result, int l
 				int64_t(value) + correction_ms)));
 		};
 		TimingBlock shifted{shift(at->start), shift(at->end), at->gap};
+		auto index = size_t(at - raw.begin());
+		auto const& lane_result = result.lanes[lane];
+		auto const& capture = lane_result.timing_override_active ?
+			lane_result.automatic_capture : lane_result.capture;
 		ReviewOwnership ownership = ReviewOwnership::Owned;
 		if (at->gap) ownership = ReviewOwnership::Gap;
-		else if (shifted.start < view.line_start && shifted.end > view.line_start)
-			ownership = ReviewOwnership::ExcludedPreviousTail;
-		else if (shifted.start >= view.line_start && shifted.start < view.line_end &&
-			shifted.end > view.line_end)
-			ownership = shifted.end - view.line_end <= sung_checkpoint_clamp_tolerance_ms
-				? ReviewOwnership::HarmlessEndClamp : ReviewOwnership::CrossingNeedsReview;
+		else if (!std::binary_search(capture.raw_indices.begin(), capture.raw_indices.end(), index))
+			ownership = shifted.start < view.line_start ? ReviewOwnership::ExcludedPreviousTail :
+				ReviewOwnership::ExcludedOtherLine;
+		else if (std::binary_search(capture.disputed_raw_indices.begin(),
+			capture.disputed_raw_indices.end(), index))
+			ownership = ReviewOwnership::CrossingNeedsReview;
+		else if (shifted.start < view.line_start && shifted.end > view.line_end)
+			ownership = ReviewOwnership::HarmlessBothClamp;
+		else if (shifted.start < view.line_start)
+			ownership = ReviewOwnership::HarmlessStartClamp;
+		else if (shifted.end > view.line_end)
+			ownership = ReviewOwnership::HarmlessEndClamp;
 		view.raw.push_back({*at, shifted, ownership});
 	}
 	view.local = result.lanes[lane].capture.blocks;

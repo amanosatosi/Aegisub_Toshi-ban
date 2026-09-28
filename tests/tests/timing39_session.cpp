@@ -186,7 +186,7 @@ TEST(Timing39Session, ManualMergeAndCorrectionInvalidation) {
 	ASSERT_TRUE(s.SetTimingCorrection(10));
 	EXPECT_EQ(mapping,result.lanes[0].Assignments());
 	EXPECT_EQ(ResolutionSource::UserManualRepair,result.resolution);
-	ASSERT_TRUE(s.SetTimingCorrection(-10));
+	ASSERT_TRUE(s.SetTimingCorrection(-110));
 	EXPECT_TRUE(result.manual_invalidated);
 	EXPECT_FALSE(result.lanes[0].manual_active);
 	EXPECT_EQ(ResolutionSource::Automatic,result.resolution);
@@ -240,17 +240,25 @@ TEST(Timing39Session, FailedLineDoesNotShiftLaterLinesAndRetakeIsIsolated) {
 	EXPECT_EQ(primary_raw,s.Raw(0));EXPECT_EQ(secondary,s.Results()[0].lanes[1].capture.blocks);EXPECT_EQ(later,s.Results()[1].lanes[0].capture.blocks);
 	ASSERT_EQ(1u,s.retakes.size());EXPECT_EQ(1u,s.retakes[0].target);EXPECT_EQ(0,s.retakes[0].lane);
 }
-TEST(Timing39Session, MeaningfulSungCheckpointCrossingRequiresReviewOnlyForOwner) {
-	Timing39Session s;s.Prepare({Target(1,100,200,u8"み"),Target(2,200,320,u8"く")},true,"opaque style",0,320);Start(s);
-	Tap(s,'F',150,280);Tap(s,'J',290,310);s.Stop(320);ASSERT_EQ(2u,s.Results().size());
-	EXPECT_EQ(PartitionStatus::AmbiguousSungCrossing,s.Results()[0].lanes[0].capture.status);
+TEST(Timing39Session, EqualMajorityOverlapNeedsReviewButNeverDuplicatesAttack) {
+	Timing39Session s;s.Prepare({Target(1,100,220,u8"み"),Target(2,180,300,u8"く")},true,"opaque style",0,300);Start(s);
+	Tap(s,'F',170,230);Tap(s,'J',240,270);s.Stop(300);ASSERT_EQ(2u,s.Results().size());
+	EXPECT_EQ(PartitionStatus::NeedsReview,s.Results()[0].lanes[0].capture.status);
 	EXPECT_EQ(Confidence::Yellow,s.Results()[0].GetConfidence());
-	EXPECT_EQ(1u,s.Results()[1].lanes[0].capture.preceding_sung_tails);
+	EXPECT_EQ(1u,s.Results()[0].lanes[0].capture.disputed_raw_indices.size());
 	auto const& second=s.Results()[1].lanes[0].capture.blocks;
 	EXPECT_EQ(1u,std::count_if(second.begin(),second.end(),[](TimingBlock const& b){return !b.gap;}));
-	EXPECT_NE(second.end(),std::find(second.begin(),second.end(),TimingBlock{290,310,false}));
+	EXPECT_NE(second.end(),std::find(second.begin(),second.end(),TimingBlock{240,270,false}));
 	EXPECT_EQ(Confidence::Green,s.Results()[1].GetConfidence());
-	EXPECT_EQ((TimingBlock{150,280,false}),s.Raw(0)[1]);
+	EXPECT_EQ((TimingBlock{170,230,false}),s.Raw(0)[1]);
+}
+TEST(Timing39Session, GreatestOverlapWinsWithoutBlanketOverlapWarning) {
+	Timing39Session s;s.Prepare({Target(1,100,220,u8"み"),Target(2,180,300,u8"く")},true,"opaque style",0,300);Start(s);
+	Tap(s,'F',150,230);Tap(s,'J',240,270);s.Stop(300);ASSERT_EQ(2u,s.Results().size());
+	EXPECT_EQ(Confidence::Green,s.Results()[0].GetConfidence());
+	EXPECT_EQ(Confidence::Green,s.Results()[1].GetConfidence());
+	EXPECT_EQ(1u,agi::timing39::ui::SungTapCount(s.Results()[0].lanes[0].capture));
+	EXPECT_EQ(1u,agi::timing39::ui::SungTapCount(s.Results()[1].lanes[0].capture));
 }
 TEST(Timing39Session, ExplicitCandidateChoiceIsImmediatelyGreen) {
 	Timing39Session s;s.Prepare({Target(1,1000,1500,u8"こーー")},true,"opaque style",900,1500);Start(s);
@@ -281,7 +289,8 @@ TEST(Timing39Session, TimingCorrectionDerivesFromImmutableRawAndCanReset) {
 	ASSERT_TRUE(s.SetTimingCorrection(-30));
 	EXPECT_EQ(-30,s.TimingCorrection());
 	EXPECT_EQ(original,s.Raw(0));
-	EXPECT_EQ(Confidence::Red,s.Results()[0].GetConfidence());
+	EXPECT_EQ(Confidence::Green,s.Results()[0].GetConfidence());
+	EXPECT_EQ(PartitionStatus::HarmlessClamp,s.Results()[0].lanes[0].capture.status);
 	ASSERT_TRUE(s.SetTimingCorrection(0));
 	EXPECT_EQ(original,s.Raw(0));
 	EXPECT_EQ(Confidence::Green,s.Results()[0].GetConfidence());
@@ -360,11 +369,11 @@ TEST(Timing39Session, CancelledRetakeLeavesExistingResultUntouched) {
 }
 
 TEST(Timing39Session, HarmlessSungOverhangsKeepMatchStatus) {
-	for(int overhang:{5,27,50}) {
-		auto capture=PartitionCapture({{100,180,false},{180,200+overhang,false}},100,200);
+	for(int overhang:{5,27}) {
+		auto capture=PartitionCapture({{100,140,false},{150,200+overhang,false}},100,200);
 		EXPECT_EQ(PartitionStatus::HarmlessClamp,capture.status);
 		ASSERT_EQ(2u,capture.blocks.size());
-		EXPECT_EQ((TimingBlock{180,200,false}),capture.blocks[1]);
+		EXPECT_EQ((TimingBlock{150,200,false}),capture.blocks[1]);
 		SessionResult result;result.lane=0;result.lanes[0].capture=capture;
 		result.lanes[0].match=Match(Analyze(u8"みく"),capture.blocks);
 		EXPECT_EQ(Confidence::Green,result.lanes[0].match.confidence);
@@ -375,6 +384,80 @@ TEST(Timing39Session, HarmlessSungOverhangsKeepMatchStatus) {
 	SessionResult result;result.lane=0;result.lanes[0].capture=gap;
 	result.lanes[0].match=Match(Analyze(u8"み"),gap.blocks);
 	EXPECT_EQ(Confidence::Green,result.GetConfidence());
+	auto impossible=PartitionCapture({{100,140,false},{150,227,false}},100,200);
+	result.lanes[0].capture=impossible;
+	result.lanes[0].match=Match(Analyze(u8"み"),impossible.blocks);
+	EXPECT_EQ(PartitionStatus::HarmlessClamp,impossible.status);
+	EXPECT_EQ(Confidence::Red,result.GetConfidence());
+}
+
+TEST(Timing39Session, SungOwnershipUsesStrictMajorityBeforeSymmetricClamp) {
+	auto early=std::vector<TimingBlock>{{970,1120,false}};
+	EXPECT_EQ(120,SungOverlapDuration(early[0],1000,2000));
+	EXPECT_TRUE(SungMajorityOwned(early[0],1000,2000));
+	auto owned=PartitionCapture(early,1000,2000);
+	ASSERT_EQ(1u,owned.blocks.size());
+	EXPECT_EQ((TimingBlock{1000,1120,false}),owned.blocks[0]);
+	EXPECT_EQ(PartitionStatus::HarmlessClamp,owned.status);
+	SessionResult result;result.lane=0;result.lanes[0].capture=owned;
+	result.lanes[0].match=Match(Analyze(u8"み"),owned.blocks);
+	EXPECT_EQ(Confidence::Green,result.GetConfidence());
+	EXPECT_EQ((TimingBlock{970,1120,false}),early[0]);
+	EXPECT_TRUE(PartitionCapture({{800,1050,false}},1000,2000).blocks.empty());
+	EXPECT_EQ(100,SungOverlapDuration({900,1100,false},1000,2000));
+	EXPECT_FALSE(SungMajorityOwned({900,1100,false},1000,2000));
+	EXPECT_TRUE(PartitionCapture({{900,1100,false}},1000,2000).blocks.empty());
+	auto late=PartitionCapture({{1900,2030,false}},1000,2000);
+	ASSERT_EQ(1u,late.blocks.size());
+	EXPECT_EQ((TimingBlock{1900,2000,false}),late.blocks[0]);
+	EXPECT_EQ(PartitionStatus::HarmlessClamp,late.status);
+	EXPECT_TRUE(PartitionCapture({{1950,2200,false}},1000,2000).blocks.empty());
+	SessionResult invalid;invalid.lane=0;
+	invalid.lanes[0].capture=PartitionCapture({{1100,1100,false}},1000,2000);
+	invalid.lanes[0].match.confidence=Confidence::Green;
+	EXPECT_EQ(PartitionStatus::Invalid,invalid.lanes[0].capture.status);
+	EXPECT_EQ(Confidence::Red,invalid.GetConfidence());
+}
+
+TEST(Timing39Session, OrdinaryEarlyAndLateSongTapsStayGreenAcrossTwelveLines) {
+	std::vector<SessionTarget> targets;
+	for (int line = 1; line <= 12; ++line)
+		targets.push_back(Target(line, line * 1000, line * 1000 + 600, u8"みく"));
+	Timing39Session session;
+	session.Prepare(targets, true, "opaque style", 0, 12700);
+	Start(session);
+	for (int line = 1; line <= 12; ++line) {
+		int start = line * 1000;
+		Tap(session, 'F', start + (line % 2 ? -30 : 20), start + 120);
+		Tap(session, 'J', start + 450, start + 670);
+	}
+	ASSERT_TRUE(session.Stop(12700));
+	auto raw = session.Raw(0);
+	ASSERT_EQ(12u, session.Results().size());
+	size_t green = 0, yellow = 0, red = 0;
+	for (auto const& result : session.Results()) {
+		EXPECT_EQ(PartitionStatus::HarmlessClamp, result.lanes[0].capture.status);
+		EXPECT_EQ(2u, agi::timing39::ui::SungTapCount(result.lanes[0].capture));
+		switch (result.GetConfidence()) {
+			case Confidence::Green: ++green; break;
+			case Confidence::Yellow: ++yellow; break;
+			case Confidence::Red: ++red; break;
+		}
+	}
+	EXPECT_EQ(12u, green); EXPECT_EQ(0u, yellow); EXPECT_EQ(0u, red);
+	ASSERT_TRUE(session.SetTimingCorrection(-10));
+	for (auto const& result : session.Results()) EXPECT_EQ(Confidence::Green, result.GetConfidence());
+	EXPECT_EQ(raw, session.Raw(0));
+}
+
+TEST(Timing39Session, EarlyMajorityReviewRailShowsClampRatherThanExcludedTail) {
+	SessionResult result;result.target=Target(1,1000,2000,u8"み");
+	std::vector<TimingBlock> raw{{970,1120,false}};
+	result.lanes[0].capture=PartitionCapture(raw,1000,2000);
+	auto view=agi::timing39::ui::BuildLocalReviewModel(result,0,raw,0);
+	ASSERT_EQ(1u,view.raw.size());
+	EXPECT_EQ(agi::timing39::ui::ReviewOwnership::HarmlessStartClamp,view.raw[0].ownership);
+	EXPECT_EQ((TimingBlock{1000,1120,false}),view.local[0]);
 }
 
 TEST(Timing39Session, PreviousLineSungTailIsNotANewSekaiMadeTap) {

@@ -26,18 +26,19 @@ struct SessionTarget {
 	bool selected = false, lyric_evidence = false;
 	std::string discovery_reason;
 };
-// Sung blocks are owned by the dialogue in which they start. This prevents a
-// held note from being duplicated as a new tap merely because its tail crosses
-// the next dialogue start. Gaps are geometric context and may be clipped at
-// either checkpoint without affecting confidence.
-constexpr int sung_checkpoint_clamp_tolerance_ms = 50;
-enum class PartitionStatus { Clean, HarmlessClamp, AmbiguousSungCrossing };
+// A sung block is eligible for a line only when strictly more than half its
+// original (globally corrected, but not locally clipped) duration is inside.
+// Gaps are geometric context and can be clipped without affecting confidence.
+enum class PartitionStatus { Clean, HarmlessClamp, NeedsReview, Invalid };
 struct PartitionedCapture {
 	std::vector<TimingBlock> blocks;
 	std::vector<size_t> raw_indices;
+	std::vector<size_t> disputed_raw_indices;
 	PartitionStatus status = PartitionStatus::Clean;
 	size_t preceding_sung_tails = 0;
 };
+int64_t SungOverlapDuration(TimingBlock const&, int start, int end);
+bool SungMajorityOwned(TimingBlock const&, int start, int end);
 PartitionedCapture PartitionCapture(std::vector<TimingBlock> const&, int start, int end);
 std::vector<TimingBlock> ShiftCapture(std::vector<TimingBlock> const&, int correction_ms);
 bool HasSungBlocks(std::vector<TimingBlock> const&);

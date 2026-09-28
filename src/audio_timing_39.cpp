@@ -269,15 +269,13 @@ class Timing39ReviewView final : public wxPanel {
 		for(auto const& item:model.raw) {
 			if(item.raw.gap)continue;
 			int x=X(item.raw.start),end=X(item.raw.end);
-			wxColour colour=item.ownership==t39ui::ReviewOwnership::ExcludedPreviousTail?neutral:
-				item.ownership==t39ui::ReviewOwnership::CrossingNeedsReview?red:neutral;
+			bool excluded=item.ownership==t39ui::ReviewOwnership::ExcludedPreviousTail ||
+				item.ownership==t39ui::ReviewOwnership::ExcludedOtherLine;
+			wxColour colour=item.ownership==t39ui::ReviewOwnership::CrossingNeedsReview?red:neutral;
 			dc.SetPen(wxPen(colour,1));
-			dc.SetBrush(item.ownership==t39ui::ReviewOwnership::ExcludedPreviousTail?
+			dc.SetBrush(excluded?
 				wxBrush(colour,wxBRUSHSTYLE_FDIAGONAL_HATCH):*wxTRANSPARENT_BRUSH);
 			dc.DrawRectangle(x,123,std::max(2,end-x),17);
-			if(item.ownership==t39ui::ReviewOwnership::HarmlessEndClamp) {
-				dc.SetPen(wxPen(neutral,1,wxPENSTYLE_DOT));dc.DrawLine(X(model.line_end),119,end,119);
-			}
 		}
 		for(size_t i=0;i<model.local.size();++i) {
 			auto const& b=model.local[i];if(b.gap)continue;
@@ -287,15 +285,19 @@ class Timing39ReviewView final : public wxPanel {
 			dc.DrawRectangle(x,150,std::max(2,end-x),20);
 		}
 		for(auto const& item:model.raw) {
-			if(item.ownership==t39ui::ReviewOwnership::ExcludedPreviousTail) {
+			if(item.ownership==t39ui::ReviewOwnership::ExcludedPreviousTail ||
+				item.ownership==t39ui::ReviewOwnership::ExcludedOtherLine) {
 				dc.SetPen(wxPen(neutral,1,wxPENSTYLE_DOT));
 				dc.SetBrush(wxBrush(neutral,wxBRUSHSTYLE_FDIAGONAL_HATCH));
 				dc.DrawRectangle(X(item.adjusted.start),150,
 					std::max(2,X(item.adjusted.end)-X(item.adjusted.start)),20);
 			}
-			else if(item.ownership==t39ui::ReviewOwnership::HarmlessEndClamp) {
+			else {
 				dc.SetPen(wxPen(neutral,1,wxPENSTYLE_DOT));
-				dc.DrawLine(X(model.line_end),173,X(item.adjusted.end),173);
+				if(item.adjusted.start<model.line_start)
+					dc.DrawLine(X(item.adjusted.start),173,X(model.line_start),173);
+				if(item.adjusted.end>model.line_end)
+					dc.DrawLine(X(model.line_end),173,X(item.adjusted.end),173);
 			}
 		}
 		for(auto block:pending)if(block<model.local.size()){
@@ -335,7 +337,7 @@ class Timing39ReviewView final : public wxPanel {
 			int x=X(playback_cursor);dc.SetPen(wxPen(text,1));dc.DrawLine(x,18,x,118);
 		}
 		dc.SetTextForeground(neutral);
-		dc.DrawText(_("Hatch: previous-line tail excluded   ·   dotted: harmless clamp"),5,218);
+		dc.DrawText(_("Hatch: sung block owned elsewhere   ·   dotted: harmless clamp"),5,218);
 	}
 public:
 	Timing39ReviewView(wxWindow* parent,AudioBox* audio):wxPanel(parent,wxID_ANY,wxDefaultPosition,wxSize(-1,238)),audio_box(audio){
@@ -552,7 +554,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   UpdateManualProgress();
   size_t visible_choices=0;
   if(r->GetConfidence()==t39::Confidence::Yellow &&
-     lane.capture.status!=t39::PartitionStatus::AmbiguousSungCrossing && !lane.match.paths.empty()) {
+     lane.capture.status!=t39::PartitionStatus::NeedsReview && !lane.match.paths.empty()) {
    for(size_t i=0;i<lane.match.paths.size();++i) {
     if(i && (lane.match.confidence!=t39::Confidence::Yellow ||
        lane.match.paths[i].cost-lane.match.paths[0].cost>=t39::ScoringModel{}.ambiguity_margin))break;
@@ -690,7 +692,8 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   std::string out;for(size_t i=0;i<x.mora_count;++i)out+=a.morae[x.first_mora+i].text;return out;
   }
   static std::string PartitionName(t39::PartitionedCapture const& capture) {
-   if(capture.status==t39::PartitionStatus::AmbiguousSungCrossing)return "ambiguous sung checkpoint crossing";
+   if(capture.status==t39::PartitionStatus::Invalid)return "invalid sung block";
+   if(capture.status==t39::PartitionStatus::NeedsReview)return "equal-overlap owner tie; review needed";
    if(capture.status==t39::PartitionStatus::HarmlessClamp)return "harmless checkpoint clamp";
    return "clean";
   }
@@ -719,6 +722,35 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    }
    if(!any)text+="(none)\n";
    text+="\nLOCAL RAW INDICES ";for(auto index:l.capture.raw_indices)text+=std::to_string(index)+" ";text+="\n";
+   auto const& raw=session.RawForResult(size_t(&r-session.Results().data()),selected_lane);
+   auto const& ownership=l.timing_override_active?l.automatic_capture:l.capture;
+   text+="\nLOCAL OWNERSHIP\n";
+   for(auto index:ownership.raw_indices)if(index<raw.size()&&!raw[index].gap){
+    auto shifted=t39::ShiftCapture({raw[index]},session.TimingCorrection())[0];
+    auto inside=t39::SungOverlapDuration(shifted,r.target.start,r.target.end);
+    auto duration=int64_t(shifted.end)-shifted.start;
+    text+=std::to_string(index)+" "+std::to_string(raw[index].start)+".."+std::to_string(raw[index].end)+
+     " -> "+std::to_string(shifted.start)+".."+std::to_string(shifted.end)+
+     " overlap "+std::to_string(inside)+"/"+std::to_string(duration)+" ms ("+
+     std::to_string(duration>0?int(inside*100/duration):0)+"%), current-owned; local "+
+     std::to_string(std::max(shifted.start,r.target.start))+".."+
+     std::to_string(std::min(shifted.end,r.target.end))+
+     (std::binary_search(ownership.disputed_raw_indices.begin(),
+      ownership.disputed_raw_indices.end(),index)?" [owner tie]":"")+"\n";
+   }
+   auto first=std::lower_bound(raw.begin(),raw.end(),r.target.start-session.TimingCorrection(),
+    [](t39::TimingBlock const& b,int t){return b.end<t;});
+   for(auto at=first;at!=raw.end()&&at->start<r.target.end-session.TimingCorrection();++at){
+    auto index=size_t(at-raw.begin());
+    if(at->gap||std::binary_search(ownership.raw_indices.begin(),ownership.raw_indices.end(),index))continue;
+    auto shifted=t39::ShiftCapture({*at},session.TimingCorrection())[0];
+    auto inside=t39::SungOverlapDuration(shifted,r.target.start,r.target.end);
+    if(!inside)continue;
+    auto duration=int64_t(shifted.end)-shifted.start;
+    text+=std::to_string(index)+" "+std::to_string(at->start)+".."+std::to_string(at->end)+
+     " overlap "+std::to_string(inside)+"/"+std::to_string(duration)+" ms ("+
+     std::to_string(duration>0?int(inside*100/duration):0)+"%), excluded from this line\n";
+   }
    if(show_full_session_raw) {
     text+="\nSESSION RAW F/J\n";for(auto const& b:session.Raw(0))text+=std::to_string(b.start)+" "+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");
     text+="SESSION RAW D/K\n";for(auto const& b:session.Raw(1))text+=std::to_string(b.start)+" "+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");

@@ -27,33 +27,86 @@ std::string SessionPlaybackStart::Describe() const {
 bool HasSungBlocks(std::vector<TimingBlock> const& blocks) {
 	return std::any_of(blocks.begin(), blocks.end(), [](TimingBlock const& b) { return !b.gap; });
 }
-PartitionedCapture PartitionCapture(std::vector<TimingBlock> const& raw, int start, int end) {
-	PartitionedCapture out;
+int64_t SungOverlapDuration(TimingBlock const& block, int start, int end) {
+	if (block.end <= block.start || end <= start) return 0;
+	return std::max<int64_t>(0, std::min<int64_t>(block.end, end) -
+		std::max<int64_t>(block.start, start));
+}
+bool SungMajorityOwned(TimingBlock const& block, int start, int end) {
+	return block.end > block.start &&
+		2 * SungOverlapDuration(block, start, end) > int64_t(block.end) - block.start;
+}
+namespace {
+struct SungOwner { size_t row = unknown; bool disputed = false; };
+// Target ranges are in timeline order. The prefix maximum lets us stop once
+// every earlier target has already ended, even in scripts with long overlaps.
+std::vector<SungOwner> BuildSungOwners(std::vector<TimingBlock> const& raw,
+	std::vector<std::pair<int, int>> const& ranges) {
+	std::vector<SungOwner> owners(raw.size());
+	std::vector<int> prefix_max_end; prefix_max_end.reserve(ranges.size());
+	int furthest = 0;
+	for (auto const& range : ranges) {
+		furthest = std::max(furthest, range.second);
+		prefix_max_end.push_back(furthest);
+	}
 	for (size_t i = 0; i < raw.size(); ++i) {
+		auto const& block = raw[i];
+		if (block.gap || block.end <= block.start) continue;
+		auto stop = std::lower_bound(ranges.begin(), ranges.end(), block.end,
+			[](std::pair<int, int> const& range, int value) { return range.first < value; });
+		int64_t best = 0;
+		for (size_t j = size_t(stop - ranges.begin()); j-- > 0;) {
+			if (prefix_max_end[j] <= block.start) break;
+			auto inside = SungOverlapDuration(block, ranges[j].first, ranges[j].second);
+			if (2 * inside <= int64_t(block.end) - block.start) continue;
+			if (inside > best) { best = inside; owners[i] = {j, false}; }
+			else if (inside == best) {
+				owners[i].disputed = true;
+				owners[i].row = std::min(owners[i].row, j);
+			}
+		}
+	}
+	return owners;
+}
+PartitionedCapture PartitionCaptureOwned(std::vector<TimingBlock> const& raw, int start, int end,
+	std::vector<SungOwner> const* owners, size_t row) {
+	PartitionedCapture out;
+	// Raw capture is chronological and non-overlapping, so at most one block
+	// beginning before this line can reach it.
+	auto first = std::lower_bound(raw.begin(), raw.end(), start,
+		[](TimingBlock const& block, int value) { return block.start < value; });
+	if (first != raw.begin()) --first;
+	// Session resolution must not rescan an entire song for every target.
+	for (size_t i = size_t(first - raw.begin()); i < raw.size() && raw[i].start < end; ++i) {
 		auto const& b = raw[i];
+		if (b.end <= b.start) {
+			if (!b.gap && b.start >= start) out.status = PartitionStatus::Invalid;
+			continue;
+		}
 		if (b.end <= start || b.start >= end) continue;
-		if (!b.gap && b.start < start) {
-			// A physical sung block belongs to exactly one dialogue: the one in
-			// which it began. Its tail remains visible in raw diagnostics but is
-			// not manufactured into a new local timing unit.
-			++out.preceding_sung_tails;
+		if (!b.gap && (!SungMajorityOwned(b, start, end) ||
+			(owners && (*owners)[i].row != row))) {
+			if (b.start < start) ++out.preceding_sung_tails;
 			continue;
 		}
 		TimingBlock local{std::max(start, b.start), std::min(end, b.end), b.gap};
 		if (local.end <= local.start) continue;
-		if (b.gap && (local.start != b.start || local.end != b.end))
-			out.status = std::max(out.status, PartitionStatus::HarmlessClamp);
-		else if (!b.gap && b.end > end) {
-			auto crossing = b.end - end;
-			out.status = std::max(out.status, crossing <= sung_checkpoint_clamp_tolerance_ms
-				? PartitionStatus::HarmlessClamp : PartitionStatus::AmbiguousSungCrossing);
+		if (owners && !b.gap && (*owners)[i].disputed) {
+			out.status = std::max(out.status, PartitionStatus::NeedsReview);
+			out.disputed_raw_indices.push_back(i);
 		}
+		else if (local.start != b.start || local.end != b.end)
+			out.status = std::max(out.status, PartitionStatus::HarmlessClamp);
 		out.blocks.push_back(local);
 		out.raw_indices.push_back(i);
 	}
 	// An untouched lane is absent, not a line full of artificial gaps.
 	if (!HasSungBlocks(out.blocks)) { out.blocks.clear(); out.raw_indices.clear(); }
 	return out;
+}
+}
+PartitionedCapture PartitionCapture(std::vector<TimingBlock> const& raw, int start, int end) {
+	return PartitionCaptureOwned(raw, start, end, nullptr, unknown);
 }
 std::vector<TimingBlock> ShiftCapture(std::vector<TimingBlock> const& raw, int correction_ms) {
 	std::vector<TimingBlock> adjusted;
@@ -118,17 +171,19 @@ std::vector<SessionTarget> DiscoverTargets(std::vector<SessionTarget> const& can
 }
 Confidence SessionResult::GetConfidence() const {
 	if (lane < 0 || lane > 1) return Confidence::Yellow;
+	if (lanes[lane].capture.status == PartitionStatus::Invalid) return Confidence::Red;
 	if (resolution == ResolutionSource::UserManualRepair && !manual_invalidated &&
 		lanes[lane].manual_active &&
 		ValidManualAssignments(target.analysis, lanes[lane].capture.blocks,
 			lanes[lane].manual_assignments)) {
-		return lanes[lane].capture.status == PartitionStatus::AmbiguousSungCrossing
+		return lanes[lane].capture.status == PartitionStatus::NeedsReview
 			? Confidence::Yellow : Confidence::Green;
 	}
 	auto status = lanes[lane].match.confidence;
 	if (status == Confidence::Red) return status;
-	if (lanes[lane].capture.status == PartitionStatus::AmbiguousSungCrossing) return Confidence::Yellow;
-	if (!reviewed && (association_ambiguous || overlap)) return Confidence::Yellow;
+	if (lanes[lane].capture.status == PartitionStatus::NeedsReview || manual_invalidated)
+		return Confidence::Yellow;
+	if (!reviewed && association_ambiguous) return Confidence::Yellow;
 	if (resolution == ResolutionSource::UserSelected && !manual_invalidated &&
 		ValidAssignments(target.analysis, lanes[lane].capture.blocks, lanes[lane].editor.Get()))
 		return Confidence::Green;
@@ -248,6 +303,7 @@ bool Timing39Session::SetManualTiming(size_t row, int lane, std::vector<TimingBl
 	selected.timing_override_active = true;
 	selected.capture.blocks = selected.timing_override;
 	selected.capture.raw_indices.clear();
+	selected.capture.disputed_raw_indices.clear();
 	selected.capture.status = PartitionStatus::Clean;
 	selected.capture.preceding_sung_tails = 0;
 	selected.match = Match(result.target.analysis, selected.capture.blocks);
@@ -293,21 +349,29 @@ bool Timing39Session::SetTimingCorrection(int correction_ms) {
 	timing_correction_ms = correction_ms;
 	std::array<std::vector<TimingBlock>, 2> adjusted{{
 		ShiftCapture(Raw(0), correction_ms), ShiftCapture(Raw(1), correction_ms)}};
-	for (auto& r : results) {
+	std::vector<std::pair<int, int>> ranges; ranges.reserve(results.size());
+	for (auto const& r : results) ranges.emplace_back(r.target.start, r.target.end);
+	std::array<std::vector<SungOwner>, 2> owners{{
+		BuildSungOwners(adjusted[0], ranges), BuildSungOwners(adjusted[1], ranges)}};
+	for (size_t row = 0; row < results.size(); ++row) {
+		auto& r = results[row];
 		bool previous_selected = r.resolution == ResolutionSource::UserSelected;
 		bool previous_repair = r.resolution == ResolutionSource::UserManualRepair;
 		r.manual_invalidated = false;
 		for (int lane = 0; lane < 2; ++lane) {
 			auto& l = r.lanes[lane];
 			auto const* source = &adjusted[lane];
+			auto const* source_owners = &owners[lane];
 			std::vector<TimingBlock> adjusted_retake;
 			for (auto take = retakes.rbegin(); take != retakes.rend(); ++take)
 				if (take->target == r.target.id && take->lane == lane) {
 					adjusted_retake = ShiftCapture(take->raw, correction_ms);
 					source = &adjusted_retake;
+					source_owners = nullptr;
 					break;
 				}
-			l.automatic_capture = PartitionCapture(*source, r.target.start, r.target.end);
+			l.automatic_capture = PartitionCaptureOwned(*source, r.target.start, r.target.end,
+				source_owners, row);
 			l.capture = l.timing_override_active ? PartitionCapture(l.timing_override,
 				r.target.start, r.target.end) : l.automatic_capture;
 			l.match = Match(r.target.analysis, l.capture.blocks);
@@ -326,20 +390,30 @@ bool Timing39Session::SetTimingCorrection(int correction_ms) {
 }
 void Timing39Session::Resolve() {
 	auto targets = DiscoverTargets(candidates, explicit_scope, active_style, start, captured_end);
+	std::vector<std::pair<int, int>> ranges; ranges.reserve(targets.size());
+	for (auto const& target : targets) ranges.emplace_back(target.start, target.end);
+	std::array<std::vector<SungOwner>, 2> owners{{
+		BuildSungOwners(Raw(0), ranges), BuildSungOwners(Raw(1), ranges)}};
 	std::vector<StyleEvidence> evidence;
 	auto boundaries = [](PartitionedCapture const& p) {
 		std::vector<int> out;
 		for (auto const& b : p.blocks) if (!b.gap) { out.push_back(b.start); out.push_back(b.end); }
 		std::sort(out.begin(), out.end()); out.erase(std::unique(out.begin(), out.end()), out.end()); return out;
 	};
-	for (auto const& t : targets) evidence.push_back({t.style, t.existing_boundaries,
-		boundaries(PartitionCapture(Raw(0), t.start, t.end)), boundaries(PartitionCapture(Raw(1), t.start, t.end))});
+	for (size_t row = 0; row < targets.size(); ++row) {
+		auto const& t = targets[row];
+		evidence.push_back({t.style, t.existing_boundaries,
+			boundaries(PartitionCaptureOwned(Raw(0), t.start, t.end, &owners[0], row)),
+			boundaries(PartitionCaptureOwned(Raw(1), t.start, t.end, &owners[1], row))});
+	}
 	auto styles = InferStyles(evidence);
 	bool secondary = HasSungBlocks(Raw(1));
-	for (auto const& target : targets) {
+	for (size_t row = 0; row < targets.size(); ++row) {
+		auto const& target = targets[row];
 		SessionResult r; r.target = target;
 		for (int i = 0; i < 2; ++i) {
-			r.lanes[i].capture = PartitionCapture(Raw(i), target.start, target.end);
+			r.lanes[i].capture = PartitionCaptureOwned(Raw(i), target.start, target.end,
+				&owners[i], row);
 			r.lanes[i].automatic_capture = r.lanes[i].capture;
 		}
 		if (secondary && !styles.ambiguous) {
