@@ -24,6 +24,7 @@
 #include <libaegisub/timing39_session.h>
 #include <libaegisub/timing39_input_clock.h>
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <map>
 #include <set>
@@ -47,6 +48,7 @@
 #include <wx/vlbox.h>
 #include <wx/filedlg.h>
 #include <wx/ffile.h>
+#include <wx/font.h>
 
 namespace {
 namespace t39 = agi::timing39;
@@ -399,6 +401,17 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  wxScrolledWindow *review_scroll=nullptr;
  Timing39ReviewView *review_view=nullptr;
  wxPanel *manual_pane=nullptr;
+ wxPanel *placement_pane=nullptr;
+ t39::MoraPlacementDraft placement_draft;
+ bool placement_mode=false;
+ size_t placement_row=0;
+ int placement_lane=0;
+ wxListBox *commit_blocks=nullptr;
+ wxTextCtrl *commit_preview=nullptr;
+ wxChoice *latin_words=nullptr;
+ wxSpinCtrl *latin_cut=nullptr;
+ wxStaticText *placement_hint=nullptr,*candidate_guidance=nullptr;
+ std::vector<size_t> commit_row_assignments,latin_mora_indices;
  wxPanel *timing_pane=nullptr;
  wxButton *reset_timing=nullptr;
  toshiki_timing::Draft timing_draft;
@@ -518,6 +531,50 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   if(auto summary=AudioPerf::Instance().MaybeSummary();!summary.empty())
    wxLogMessage(wxString::FromUTF8(summary.c_str()));
  }
+ void RefreshCommitPreview() {
+  if(!commit_blocks||!commit_preview)return;
+  auto r=Current();int selected_block=commit_blocks->GetSelection();
+  commit_blocks->Clear();commit_row_assignments.clear();
+  if(!r||selected_lane<0||selected_lane>1){commit_preview->ChangeValue("");return;}
+  auto event=events.find(r->target.id);
+  if(event==events.end()){commit_preview->ChangeValue(_("Source event unavailable"));return;}
+  bool draft=placement_mode&&placement_row==selected&&placement_lane==selected_lane;
+  auto const& analysis=draft?placement_draft.CurrentAnalysis():r->target.analysis;
+  auto const& lane=r->lanes[selected_lane];
+  auto const& mapping=draft?placement_draft.Assignments():lane.Assignments();
+  t39::CommitPlan plan;std::string output,error;
+  if(!t39::BuildCommitPlan(*event->second,analysis,lane.capture.blocks,mapping,plan,error,
+   draft||lane.manual_active)||!t39::SerializeCommitPlan(*event->second,plan,output,error)){
+   commit_preview->ChangeValue(to_wx("No complete commit preview: "+error));return;
+  }
+  for(auto const& atom:plan.atoms){
+   std::string role=atom.kind==t39::CommitAtomKind::Sung?"SUNG  ":
+    atom.kind==t39::CommitAtomKind::CapturedGap?"GAP    ":"ZERO   ";
+   commit_blocks->Append(to_wx(role+atom.fragment));
+   commit_row_assignments.push_back(atom.assignment);
+  }
+  if(selected_block>=0&&selected_block<int(commit_blocks->GetCount()))
+   commit_blocks->SetSelection(selected_block);
+  commit_preview->ChangeValue(to_wx(output));
+  if(draft&&latin_words){
+   int prior=latin_words->GetSelection();latin_words->Clear();latin_mora_indices.clear();
+   for(size_t i=0;i<analysis.morae.size();++i){
+    auto const& word=analysis.morae[i].text;
+    if(word.empty()||!std::isalpha(static_cast<unsigned char>(word.front()))||
+     !std::all_of(word.begin(),word.end(),[](unsigned char ch){
+      return ch<128&&(std::isalpha(ch)||ch=='\''||ch=='-');}))continue;
+    latin_mora_indices.push_back(i);
+    latin_words->Append(to_wx(word+" (mora "+std::to_string(i+1)+")"));
+   }
+   if(!latin_mora_indices.empty())latin_words->SetSelection(std::max(0,std::min(prior,int(latin_mora_indices.size()-1))));
+   if(latin_cut&&latin_words->GetSelection()>=0){
+    auto const& word=analysis.morae[latin_mora_indices[size_t(latin_words->GetSelection())]].text;
+    latin_cut->SetRange(1,std::max(1,int(word.size())-1));
+    latin_cut->Enable(word.size()>1);
+   }
+   else if(latin_cut)latin_cut->Disable();
+  }
+ }
  void UpdatePane() {
   AudioPerf::Scope pane_timer(AudioPerf::ResultsPane);
   if(!correction_pane)return;
@@ -528,6 +585,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    if(resolved_label)resolved_label->Hide();
    if(reset_manual)reset_manual->Disable();
    if(review_view)review_view->SetReview({},t39::Analysis{}, {},t39::Confidence::Red);
+   RefreshCommitPreview();
    if(review_scroll)review_scroll->FitInside();return;
   }
   auto readable=t39ui::PrepareLyricDisplay(r->target.analysis).plain;
@@ -537,10 +595,16 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    explanation="Selected assignment resolved this line.";
   if(r->resolution==t39::ResolutionSource::UserManualRepair && r->GetConfidence()==t39::Confidence::Green)
    explanation="Mora placement resolved this line; raw attacks are unchanged.";
+  if(r->resolution==t39::ResolutionSource::UserEnglishSegmentation && r->GetConfidence()==t39::Confidence::Green)
+   explanation="English segmentation resolved this line; spelling and raw attacks are unchanged.";
   if(r->resolution==t39::ResolutionSource::UserManualTiming && r->GetConfidence()==t39::Confidence::Green)
    explanation="Manual timing resolved this line; raw attacks are unchanged.";
   if(r->manual_invalidated)explanation="Previous selected assignment no longer fits the corrected taps.\n"+explanation;
   reason->SetLabel(to_wx(explanation));
+  if(candidate_guidance){
+   candidate_guidance->SetLabel(to_wx(t39ui::PossibleGroupingGuidance(r->target.analysis)));
+   candidate_guidance->Wrap(std::max(250,review_scroll->GetClientSize().x-24));
+  }
   line_title->Wrap(std::max(250,review_scroll->GetClientSize().x-24));
   reason->Wrap(std::max(250,review_scroll->GetClientSize().x-24));
   AudioPerf::Scope candidate_timer(AudioPerf::ResultsCandidates);
@@ -551,7 +615,9 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    session.RawForResult(selected,selected_lane),session.TimingCorrection()),r->target.analysis,
    lane.match.uncertain_boundaries,r->GetConfidence());
   if(manual_mode&&(manual_row!=selected||manual_lane!=selected_lane))CloseManual();
+  if(placement_mode&&(placement_row!=selected||placement_lane!=selected_lane))ClosePlacement();
   UpdateManualProgress();
+  RefreshCommitPreview();
   size_t visible_choices=0;
   if(r->GetConfidence()==t39::Confidence::Yellow &&
      lane.capture.status!=t39::PartitionStatus::NeedsReview && !lane.match.paths.empty()) {
@@ -564,6 +630,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
      auto option=new wxButton(review_scroll,wxID_ANY,to_wx(label));
      choice_sizer->Add(option,0,wxEXPAND|wxALL,4);candidate_buttons.push_back(option);
      option->Bind(wxEVT_BUTTON,[this,i](wxCommandEvent&){
+      if(!MayLeavePlacement())return;
       if(session.ChooseAssignment(selected,selected_lane,i)){notice.clear();panel->CallAfter([this]{Update();});}
      });
     }
@@ -582,6 +649,95 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   if(review_view&&Current())review_view->SetDraft(Current()->lanes[selected_lane].Assignments(),{});
   if(manual_pane){manual_pane->Hide();review_scroll->FitInside();}
  }
+ void ClosePlacement() {
+  placement_mode=false;
+  if(placement_pane){placement_pane->Hide();review_scroll->FitInside();}
+  if(review_view&&Current())review_view->SetDraft(Current()->lanes[selected_lane].Assignments(),{});
+ }
+ bool MayLeavePlacement() {
+  if(!placement_mode)return true;
+  if(placement_draft.Changed()){
+   wxMessageDialog confirm(panel,_("Discard unapplied mora placement changes?"),
+    _("39 Mode mora placement"),wxYES_NO|wxNO_DEFAULT|wxICON_QUESTION);
+   if(confirm.ShowModal()!=wxID_YES)return false;
+  }
+  ClosePlacement();return true;
+ }
+ void StartPlacement() {
+  auto r=Current();if(!r||r->committed)return;
+  if(placement_mode&&!MayLeavePlacement())return;
+  if(timing_mode&&!MayLeaveTimingDraft())return;
+  if(manual_mode)CloseManual();
+  auto const& lane=r->lanes[selected_lane];
+  if(!t39ui::SungTapCount(lane.capture)||r->target.analysis.morae.empty()){
+   notice="Mora placement needs at least one sung attack and readable source text.";Update();return;
+  }
+  placement_draft.Begin(r->target.analysis,lane.capture.blocks,lane.Assignments());
+  placement_mode=true;placement_row=selected;placement_lane=selected_lane;
+  placement_pane->Show();
+  review_view->SetDraft(placement_draft.Assignments(),{});
+  notice="Mora placement is a draft until Apply placement.";Update();
+ }
+ void UpdatePlacementDraft() {
+  if(!placement_mode)return;
+  if(review_view)review_view->SetDraft(placement_draft.Assignments(),{});
+  RefreshCommitPreview();
+  placement_pane->Layout();review_scroll->FitInside();
+ }
+ size_t SelectedPlacementDivider() const {
+  if(!commit_blocks)return t39::unknown;
+  int row=commit_blocks->GetSelection();
+  return row>=0&&size_t(row)<commit_row_assignments.size()?
+   commit_row_assignments[size_t(row)]:t39::unknown;
+ }
+ void MovePlacement(int delta) {
+  auto divider=SelectedPlacementDivider();
+  if(!placement_mode||divider==t39::unknown||!placement_draft.Move(divider,delta)){
+   placement_hint->SetLabel(_("Select the sung block on the right of a movable boundary."));return;
+  }
+  placement_hint->SetLabel(_("Boundary moved; capture timestamps and source anchors are unchanged."));
+  UpdatePlacementDraft();
+ }
+ void MergePlacement() {
+  auto divider=SelectedPlacementDivider();
+  if(!placement_mode||divider==t39::unknown||!placement_draft.Merge(divider)){
+   placement_hint->SetLabel(_("Select the right sung block of two adjacent assignments."));return;
+  }
+  placement_hint->SetLabel(_("Neighboring attacks now share one source group."));
+  UpdatePlacementDraft();
+ }
+ void CutLatin(bool remove) {
+  int choice=latin_words?latin_words->GetSelection():-1;
+  if(!placement_mode||choice<0||size_t(choice)>=latin_mora_indices.size())return;
+  size_t mora=latin_mora_indices[size_t(choice)];
+  bool changed=remove?placement_draft.RemoveLatinCut(mora):
+   placement_draft.CutLatin(mora,size_t(latin_cut->GetValue()));
+  placement_hint->SetLabel(changed?_("Latin cut changed; spelling and source order are unchanged."):
+   _("Choose a character boundary inside a Latin segment, or move the assignment boundary before removing a cut."));
+  if(changed)UpdatePlacementDraft();
+ }
+ void ApplyPlacement() {
+  if(!placement_mode||placement_row!=selected||placement_lane!=selected_lane)return;
+  auto r=Current();if(!r)return;
+  auto old_analysis=r->target.analysis;
+  auto old_original=r->original_analysis;
+  auto& lane=r->lanes[selected_lane];
+  auto old_match=lane.match,old_editor=lane.editor;
+  if(placement_draft.HasLatinCuts()&&!r->original_analysis)
+   r->original_analysis=std::make_shared<t39::Analysis>(old_analysis);
+  r->target.analysis=placement_draft.CurrentAnalysis();
+  lane.match=t39::Match(r->target.analysis,lane.capture.blocks);
+  lane.editor.Reset(lane.match.paths.empty()?std::vector<t39::TimingAssignment>{}:
+   lane.match.paths[0].assignments);
+  if(!session.SetManualAssignment(selected,selected_lane,placement_draft.Assignments())){
+   r->target.analysis=std::move(old_analysis);r->original_analysis=std::move(old_original);
+   lane.match=std::move(old_match);lane.editor=std::move(old_editor);
+   placement_hint->SetLabel(_("Placement is incomplete; no source text was changed."));return;
+  }
+  if(placement_draft.HasLatinCuts())r->resolution=t39::ResolutionSource::UserEnglishSegmentation;
+  notice="Mora placement applied locally; source will change only on Commit all GREEN.";
+  ClosePlacement();Update();
+ }
  void CloseTimingDraft() {
   timing_mode=false;
   if(review_view)review_view->SetTimingDraft(nullptr);
@@ -598,6 +754,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  }
  void StartTimingDraft() {
   auto r=Current();if(!r||r->committed)return;
+  if(!MayLeavePlacement())return;
   if(timing_mode&&!MayLeaveTimingDraft())return;
   if(manual_mode)CloseManual();
   timing_draft.Begin(r->target.start,r->target.end,r->lanes[selected_lane].capture.blocks);
@@ -616,6 +773,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  }
  void StartManual() {
   auto r=Current();if(!r||r->committed)return;
+  if(!MayLeavePlacement())return;
   if(timing_mode&&!MayLeaveTimingDraft())return;
   if(!t39ui::SungTapCount(r->lanes[selected_lane].capture)||r->target.analysis.morae.empty()){
    notice="Manual repair needs a sung attack and a readable mora; retake or provide a reading.";Update();return;
@@ -706,7 +864,8 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    text+="Previous-line sung tails excluded: "+std::to_string(l.capture.preceding_sung_tails)+"\n";
   text+="Partition: "+PartitionName(l.capture)+"\n\n";
    text+="Timing correction: "+std::to_string(session.TimingCorrection())+" ms (negative earlier; raw unchanged)\n";
-   text+="Resolution source: "+std::string(r.resolution==t39::ResolutionSource::UserManualRepair?"user mora placement":
+   text+="Resolution source: "+std::string(r.resolution==t39::ResolutionSource::UserEnglishSegmentation?"user English segmentation":
+    r.resolution==t39::ResolutionSource::UserManualRepair?"user mora placement":
     r.resolution==t39::ResolutionSource::UserManualTiming?"user manual timing":
     r.resolution==t39::ResolutionSource::UserSelected?"user selected":
     r.resolution==t39::ResolutionSource::Retake?"retake":"automatic")+"\n\n";
@@ -781,7 +940,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  void ApplyTimingCorrection() {
   AudioPerf::Scope timer(AudioPerf::ResultsCorrection);
   if(!offset_spin)return;
-  if(!MayLeaveTimingDraft()){
+  if(!MayLeaveTimingDraft()||!MayLeavePlacement()){
    offset_spin->SetValue(session.TimingCorrection());UpdateOffsetDirection();return;
   }
   int offset=offset_spin->GetValue();
@@ -801,7 +960,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   for(size_t step=1;step<=count;++step) {
    size_t candidate=size_t((int(selected)+int(count)+delta*int(step)%int(count))%int(count));
    if(!problems_only||session.Results()[candidate].GetConfidence()!=t39::Confidence::Green) {
-    if(!MayLeaveTimingDraft())return;
+    if(!MayLeaveTimingDraft()||!MayLeavePlacement())return;
     selected=candidate;selected_lane=std::max(0,session.Results()[selected].lane);
     if(review_scroll)review_scroll->Scroll(0,0);
     notice.clear();Update();return;
@@ -830,6 +989,12 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   line_title=new wxStaticText(review_scroll,wxID_ANY,"");right->Add(line_title,0,wxEXPAND|wxALL,8);
   lane_choice=new wxChoice(review_scroll,wxID_ANY);lane_choice->Append(_("Unresolved lane"));lane_choice->Append(_("F/J primary"));lane_choice->Append(_("D/K secondary"));right->Add(lane_choice,0,wxLEFT|wxRIGHT|wxBOTTOM,8);
   reason=new wxStaticText(review_scroll,wxID_ANY,"");right->Add(reason,0,wxEXPAND|wxLEFT|wxRIGHT|wxBOTTOM,8);
+  right->Add(new wxStaticText(review_scroll,wxID_ANY,_("Possible grouping (39 Mode candidates)")),0,wxLEFT|wxRIGHT|wxTOP,8);
+  candidate_guidance=new wxStaticText(review_scroll,wxID_ANY,"");
+  right->Add(candidate_guidance,0,wxEXPAND|wxLEFT|wxRIGHT|wxBOTTOM,8);
+  choice_sizer=new wxBoxSizer(wxVERTICAL);right->Add(choice_sizer,0,wxEXPAND|wxLEFT|wxRIGHT,6);
+  resolved_label=new wxStaticText(review_scroll,wxID_ANY,_("Assignment resolved — ready to commit"));
+  choice_sizer->Add(resolved_label,0,wxEXPAND|wxALL,4);
   review_view=new Timing39ReviewView(review_scroll,c->audioBox);
   right->Add(review_view,0,wxEXPAND|wxLEFT|wxRIGHT|wxBOTTOM,8);
   auto playback=new wxBoxSizer(wxHORIZONTAL);
@@ -845,6 +1010,46 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   });
   Button(review_scroll,playback,_("Stop"),[this]{c->audioController->Stop();if(review_view)review_view->SetPlaybackCursor(-1);});
   right->Add(playback,0,wxLEFT|wxRIGHT|wxBOTTOM,5);
+  right->Add(new wxStaticText(review_scroll,wxID_ANY,_("Will commit — exact serialized blocks (select the right SUNG block to edit its left boundary)")),
+   0,wxLEFT|wxRIGHT|wxTOP,8);
+  commit_blocks=new wxListBox(review_scroll,wxID_ANY,wxDefaultPosition,wxSize(-1,150));
+  commit_blocks->SetFont(wxFontInfo(9).Family(wxFONTFAMILY_TELETYPE));
+  right->Add(commit_blocks,0,wxEXPAND|wxLEFT|wxRIGHT|wxBOTTOM,8);
+  right->Add(new wxStaticText(review_scroll,wxID_ANY,_("Full commit preview — literal ASS/Mangetsu text")),0,wxLEFT|wxRIGHT,8);
+  commit_preview=new wxTextCtrl(review_scroll,wxID_ANY,"",wxDefaultPosition,wxSize(-1,85),
+   wxTE_MULTILINE|wxTE_READONLY|wxTE_DONTWRAP);
+  commit_preview->SetFont(wxFontInfo(9).Family(wxFONTFAMILY_TELETYPE));
+  right->Add(commit_preview,0,wxEXPAND|wxLEFT|wxRIGHT|wxBOTTOM,8);
+  commit_blocks->Bind(wxEVT_LISTBOX,[this](wxCommandEvent&){
+   int row=commit_blocks->GetSelection();
+   if(row>=0)commit_blocks->SetToolTip(commit_blocks->GetString(size_t(row)));
+  });
+  placement_pane=new wxPanel(review_scroll);
+  auto placement_sizer=new wxBoxSizer(wxVERTICAL);
+  placement_hint=new wxStaticText(placement_pane,wxID_ANY,
+   _("Select a SUNG block above. These are draft text assignments, not timestamp edits."));
+  placement_sizer->Add(placement_hint,0,wxEXPAND|wxALL,4);
+  auto placement_actions=new wxBoxSizer(wxHORIZONTAL);
+  Button(placement_pane,placement_actions,_("Move boundary ←"),[this]{MovePlacement(-1);});
+  Button(placement_pane,placement_actions,_("Move boundary →"),[this]{MovePlacement(1);});
+  Button(placement_pane,placement_actions,_("Merge neighboring"),[this]{MergePlacement();});
+  placement_sizer->Add(placement_actions,0,wxEXPAND);
+  auto latin_actions=new wxBoxSizer(wxHORIZONTAL);
+  latin_words=new wxChoice(placement_pane,wxID_ANY);latin_actions->Add(latin_words,1,wxALL,3);
+  latin_cut=new wxSpinCtrl(placement_pane,wxID_ANY,"",wxDefaultPosition,wxSize(68,-1),wxSP_ARROW_KEYS,1,100,1);
+  latin_actions->Add(latin_cut,0,wxALL,3);
+  Button(placement_pane,latin_actions,_("Cut word"),[this]{CutLatin(false);});
+  Button(placement_pane,latin_actions,_("Remove cut before"),[this]{CutLatin(true);});
+  placement_sizer->Add(latin_actions,0,wxEXPAND);
+  auto placement_finish=new wxBoxSizer(wxHORIZONTAL);
+  Button(placement_pane,placement_finish,_("Undo"),[this]{if(placement_draft.Undo())UpdatePlacementDraft();});
+  Button(placement_pane,placement_finish,_("Redo"),[this]{if(placement_draft.Redo())UpdatePlacementDraft();});
+  Button(placement_pane,placement_finish,_("Reset draft"),[this]{if(placement_draft.Reset())UpdatePlacementDraft();});
+  Button(placement_pane,placement_finish,_("Apply placement"),[this]{ApplyPlacement();});
+  Button(placement_pane,placement_finish,_("Cancel"),[this]{ClosePlacement();Update();});
+  placement_sizer->Add(placement_finish,0,wxEXPAND);
+  placement_pane->SetSizer(placement_sizer);right->Add(placement_pane,0,wxEXPAND|wxALL,6);
+  placement_pane->Hide();
   manual_pane=new wxPanel(review_scroll);
   auto manual_sizer=new wxBoxSizer(wxVERTICAL);
   manual_progress=new wxStaticText(manual_pane,wxID_ANY,"");
@@ -869,18 +1074,16 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   timing_sizer->Add(timing_buttons,0,wxEXPAND);
   timing_pane->SetSizer(timing_sizer);right->Add(timing_pane,0,wxEXPAND|wxALL,6);
   timing_pane->Hide();
-  choice_sizer=new wxBoxSizer(wxVERTICAL);right->Add(choice_sizer,0,wxEXPAND|wxALL,6);
-  resolved_label=new wxStaticText(review_scroll,wxID_ANY,_("Assignment resolved — ready to commit"));
-  choice_sizer->Add(resolved_label,0,wxEXPAND|wxALL,4);
   auto actions=new wxBoxSizer(wxHORIZONTAL);
   Button(review_scroll,actions,_("Retake"),[this]{Retake();});
-  Button(review_scroll,actions,_("Fix mora placement"),[this]{StartManual();});
+  Button(review_scroll,actions,_("Fix mora placement"),[this]{StartPlacement();});
   Button(review_scroll,actions,_("Manual timing"),[this]{StartTimingDraft();});
   right->Add(actions,0,wxLEFT|wxRIGHT|wxBOTTOM,5);
   auto reset_actions=new wxBoxSizer(wxHORIZONTAL);
   reset_manual=new wxButton(review_scroll,wxID_ANY,_("Reset mora placement"));
   reset_actions->Add(reset_manual,0,wxALL,3);
   reset_manual->Bind(wxEVT_BUTTON,[this](wxCommandEvent&){
+   if(placement_mode)ClosePlacement();
    if(session.ResetManualAssignment(selected,selected_lane)){notice="Automatic assignment restored; raw capture unchanged.";CloseManual();Update();}
   });
   reset_timing=new wxButton(review_scroll,wxID_ANY,_("Reset manual timing"));
@@ -903,14 +1106,14 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   panel->SetSizer(root);
   rows->Bind(wxEVT_LISTBOX,[this](wxCommandEvent&){
    AudioPerf::Scope timer(AudioPerf::ResultsRowSelect);
-   if(!MayLeaveTimingDraft()){rows->SetSelection(int(selected));return;}
+   if(!MayLeaveTimingDraft()||!MayLeavePlacement()){rows->SetSelection(int(selected));return;}
    selected=size_t(rows->GetSelection());if(auto r=Current())selected_lane=std::max(0,r->lane);
    if(review_scroll)review_scroll->Scroll(0,0);notice.clear();Update();
   });
   lane_choice->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){
    AudioPerf::Scope timer(AudioPerf::ResultsLaneSwitch);
    if(refreshing)return;
-   if(!MayLeaveTimingDraft()){if(auto r=Current())lane_choice->SetSelection(r->lane+1);return;}
+   if(!MayLeaveTimingDraft()||!MayLeavePlacement()){if(auto r=Current())lane_choice->SetSelection(r->lane+1);return;}
    if(auto r=Current()){r->lane=lane_choice->GetSelection()-1;selected_lane=std::max(0,r->lane);r->reviewed=r->lane>=0;notice.clear();Update();}
   });
   correction_timer.Bind(wxEVT_TIMER,[this](wxTimerEvent&){ApplyTimingCorrection();});
@@ -918,6 +1121,13 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   offset_spin->Bind(wxEVT_TEXT_ENTER,[this](wxCommandEvent&){correction_timer.Stop();UpdateOffsetDirection();ApplyTimingCorrection();});
   panel->Bind(wxEVT_CHAR_HOOK,[this](wxKeyEvent& e){
    int key=e.GetKeyCode();
+   if(placement_mode){
+    if(key==WXK_ESCAPE){ClosePlacement();Update();return;}
+    if(key=='Z'&&e.ControlDown()){if(placement_draft.Undo())UpdatePlacementDraft();return;}
+    if(key=='Y'&&e.ControlDown()){if(placement_draft.Redo())UpdatePlacementDraft();return;}
+    if(key==WXK_LEFT&&e.AltDown()){MovePlacement(-1);return;}
+    if(key==WXK_RIGHT&&e.AltDown()){MovePlacement(1);return;}
+   }
    if(key==WXK_UP||key==WXK_DOWN)
     for(auto focus=wxWindow::FindFocus();focus;focus=focus->GetParent())
      if(focus==offset_spin){e.Skip();return;}
@@ -936,7 +1146,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
     if(key=='Z'&&e.ControlDown()){if(timing_draft.Undo())review_view->Refresh(false);return;}
     if(key=='Y'&&e.ControlDown()){if(timing_draft.Redo())review_view->Refresh(false);return;}
    }
-   if(key==WXK_ESCAPE){if(MayLeaveTimingDraft())panel->Hide();return;}
+   if(key==WXK_ESCAPE){if(MayLeaveTimingDraft()&&MayLeavePlacement())panel->Hide();return;}
    if(key=='R'&&!e.ControlDown()&&!e.AltDown()){Retake();return;}
    if((key==WXK_UP||key==WXK_DOWN)&&!e.AltDown()){
     Navigate(key==WXK_DOWN?1:-1,e.ControlDown());return;
@@ -944,14 +1154,15 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    if(key==WXK_RETURN){
     auto focus=wxWindow::FindFocus();
     for(size_t i=0;i<candidate_buttons.size();++i)if(focus==candidate_buttons[i]){
-     if(session.ChooseAssignment(selected,selected_lane,i)){notice.clear();panel->CallAfter([this]{Update();});}return;
+     if(MayLeavePlacement()&&session.ChooseAssignment(selected,selected_lane,i)){
+      notice.clear();panel->CallAfter([this]{Update();});}return;
     }
    }
    e.Skip();
   });
   panel->Bind(wxEVT_CLOSE_WINDOW,[this](wxCloseEvent& e){
    if(e.CanVeto()){
-    e.Veto();if(MayLeaveTimingDraft())panel->Hide();
+    e.Veto();if(MayLeaveTimingDraft()&&MayLeavePlacement())panel->Hide();
    }else e.Skip();
   });
  }
@@ -960,7 +1171,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   if(!inspector) {
    inspector=new wxDialog(panel,wxID_ANY,_("39 Mode — selected line Inspector"),wxDefaultPosition,wxSize(800,650),wxDEFAULT_DIALOG_STYLE|wxRESIZE_BORDER);
    auto root=new wxBoxSizer(wxVERTICAL);reading=new wxTextCtrl(inspector,wxID_ANY);root->Add(reading,0,wxEXPAND|wxALL,6);
-   Button(inspector,root,_("Apply explicit reading"),[this]{auto r=Current();if(!r)return;auto a=t39::Analyze(from_wx(reading->GetValue()));if(!a.error.empty()){notice=a.error;Update();return;}a.source=r->target.analysis.source;r->target.analysis=std::move(a);session.Rematch(selected,0);session.Rematch(selected,1);rows->RebuildRow(selected,r->target.analysis,r->GetConfidence());Update();});
+   Button(inspector,root,_("Apply explicit reading"),[this]{auto r=Current();if(!r||!MayLeavePlacement())return;auto a=t39::Analyze(from_wx(reading->GetValue()));if(!a.error.empty()){notice=a.error;Update();return;}a.source=r->target.analysis.source;r->target.analysis=std::move(a);r->original_analysis.reset();session.Rematch(selected,0);session.Rematch(selected,1);rows->RebuildRow(selected,r->target.analysis,r->GetConfidence());Update();});
     root->Add(new wxStaticText(inspector,wxID_ANY,_("Advanced candidate paths (full line)")),0,wxLEFT|wxRIGHT|wxTOP,6);
     paths=new wxChoice(inspector,wxID_ANY);root->Add(paths,0,wxEXPAND|wxALL,6);
    assignments=new wxListBox(inspector,wxID_ANY);root->Add(assignments,1,wxEXPAND|wxALL,6);
@@ -969,18 +1180,18 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
     raw_toggle=new wxButton(inspector,wxID_ANY,_("Show full session raw capture"));root->Add(raw_toggle,0,wxLEFT|wxRIGHT|wxBOTTOM,6);
     raw_toggle->Bind(wxEVT_BUTTON,[this](wxCommandEvent&){show_full_session_raw=!show_full_session_raw;UpdateInspector();});
    Button(inspector,root,_("Save inspection"),[this]{wxFileDialog save(inspector,_("Save inspection"),"","39-mode.txt",_("Text files (*.txt)|*.txt"),wxFD_SAVE|wxFD_OVERWRITE_PROMPT);if(save.ShowModal()==wxID_OK){wxFFile f(save.GetPath(),"w");if(f.IsOpened())f.Write(details->GetValue(),wxConvUTF8);}});
-   paths->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){int p=paths->GetSelection();if(p<0)return;if(session.ChooseAssignment(selected,selected_lane,size_t(p))){notice.clear();Update();}});
+   paths->Bind(wxEVT_CHOICE,[this](wxCommandEvent&){int p=paths->GetSelection();if(p<0||!MayLeavePlacement())return;if(session.ChooseAssignment(selected,selected_lane,size_t(p))){notice.clear();Update();}});
    assignments->Bind(wxEVT_KEY_DOWN,[this](wxKeyEvent& e){if(e.GetKeyCode()==WXK_LEFT)Move(-1);else if(e.GetKeyCode()==WXK_RIGHT)Move(1);else e.Skip();});
    inspector->SetSizer(root);inspector->Bind(wxEVT_CLOSE_WINDOW,[this](wxCloseEvent& e){if(e.CanVeto()){e.Veto();inspector->Hide();}else e.Skip();});
   }
   UpdateInspector();inspector->Show();inspector->Raise();
  }
- void Move(int delta){if(auto r=Current()){if(!r->lanes[selected_lane].editor.Move(r->target.analysis,size_t(std::max(0,assignments->GetSelection())),delta))notice="Protected divider; choose a complete alternative path.";else {notice="Assignment moved; raw timestamps unchanged";r->resolution=t39::ResolutionSource::UserSelected;r->reviewed=true;}Update();}}
- void History(bool redo){if(auto r=Current()){auto& e=r->lanes[selected_lane].editor;if(redo)e.Redo();else e.Undo();r->resolution=t39::ResolutionSource::UserSelected;r->reviewed=true;Update();}}
+ void Move(int delta){if(auto r=Current()){if(!MayLeavePlacement())return;if(!r->lanes[selected_lane].editor.Move(r->target.analysis,size_t(std::max(0,assignments->GetSelection())),delta))notice="Protected divider; choose a complete alternative path.";else {notice="Assignment moved; raw timestamps unchanged";r->resolution=t39::ResolutionSource::UserSelected;r->reviewed=true;}Update();}}
+ void History(bool redo){if(auto r=Current()){if(!MayLeavePlacement())return;auto& e=r->lanes[selected_lane].editor;if(redo)e.Redo();else e.Undo();r->resolution=t39::ResolutionSource::UserSelected;r->reviewed=true;Update();}}
  void Retake(){
   auto current=Current();
   if(!current||current->committed||session.State()!=t39::SessionState::Results)return;
-  if(!MayLeaveTimingDraft())return;
+  if(!MayLeaveTimingDraft()||!MayLeavePlacement())return;
   if(correction_timer.IsRunning()){correction_timer.Stop();ApplyTimingCorrection();}
   c->videoController->Stop();c->audioController->Stop();
   if(session.Retake(selected,selected_lane,Preroll())){
@@ -991,6 +1202,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  }
  void CommitResults() {
   if(Is39SessionActive())return;
+  if(placement_mode){notice="Apply or cancel the mora placement draft before committing.";Update();return;}
   struct Write{t39::SessionResult* result;AssDialogue* event;std::string text;};std::vector<Write> writes;
   for(auto& r:session.Results()) {
    if(r.committed||r.lane<0)continue;

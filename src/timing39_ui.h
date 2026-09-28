@@ -67,6 +67,16 @@ inline size_t LegalMergeCandidateCount(Analysis const& analysis) {
 	for(auto const& edges:analysis.graph)for(auto const& edge:edges)if(edge.count>1)++count;
 	return count;
 }
+inline std::string PossibleGroupingGuidance(Analysis const& analysis) {
+	std::string text;
+	for(auto const& edges:analysis.graph)for(auto const& edge:edges)if(edge.count>1) {
+		std::string group;
+		for(size_t i=0;i<edge.count;++i)group+=analysis.morae[edge.first+i].text;
+		if(!text.empty())text+="   ";
+		text+="["+group+"] "+(edge.features.strength==CandidateStrength::Soft?"soft": "strong");
+	}
+	return text.empty()?"No supported automatic pairings; manual placement can still be used.":text;
+}
 
 inline std::string CompactAmbiguity(Analysis const& analysis,MatchResult const& match) {
 	if(match.ambiguous_mora_boundaries.empty())return {};
