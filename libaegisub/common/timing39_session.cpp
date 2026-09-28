@@ -172,7 +172,8 @@ std::vector<SessionTarget> DiscoverTargets(std::vector<SessionTarget> const& can
 Confidence SessionResult::GetConfidence() const {
 	if (lane < 0 || lane > 1) return Confidence::Yellow;
 	if (lanes[lane].capture.status == PartitionStatus::Invalid) return Confidence::Red;
-	if (resolution == ResolutionSource::UserManualRepair && !manual_invalidated &&
+	if ((resolution == ResolutionSource::UserManualRepair ||
+		resolution == ResolutionSource::UserEnglishSegmentation) && !manual_invalidated &&
 		lanes[lane].manual_active &&
 		ValidManualAssignments(target.analysis, lanes[lane].capture.blocks,
 			lanes[lane].manual_assignments)) {
@@ -280,6 +281,11 @@ bool Timing39Session::SetManualAssignment(size_t row, int lane, std::vector<Timi
 bool Timing39Session::ResetManualAssignment(size_t row, int lane) {
 	if (state != SessionState::Results || row >= results.size() || lane < 0 || lane > 1 ||
 		results[row].committed || !results[row].lanes[lane].manual_active) return false;
+	if (results[row].original_analysis) {
+		results[row].target.analysis = *results[row].original_analysis;
+		results[row].original_analysis.reset();
+		Rematch(row, 1 - lane);
+	}
 	Rematch(row, lane);
 	if (results[row].lanes[lane].timing_override_active) {
 		results[row].resolution = ResolutionSource::UserManualTiming;
@@ -356,7 +362,8 @@ bool Timing39Session::SetTimingCorrection(int correction_ms) {
 	for (size_t row = 0; row < results.size(); ++row) {
 		auto& r = results[row];
 		bool previous_selected = r.resolution == ResolutionSource::UserSelected;
-		bool previous_repair = r.resolution == ResolutionSource::UserManualRepair;
+		bool previous_repair = r.resolution == ResolutionSource::UserManualRepair ||
+			r.resolution == ResolutionSource::UserEnglishSegmentation;
 		r.manual_invalidated = false;
 		for (int lane = 0; lane < 2; ++lane) {
 			auto& l = r.lanes[lane];

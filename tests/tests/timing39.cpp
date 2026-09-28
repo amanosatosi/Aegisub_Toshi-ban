@@ -96,6 +96,65 @@ TEST(Timing39, JapanesePunctuationNeverBecomesMorae) {
 	auto a=Analyze(u8"「<忘|わす>れてしまうの？」");
 	EXPECT_EQ((std::vector<std::string>{u8"わ",u8"す",u8"れ",u8"て",u8"し",u8"ま",u8"う",u8"の"}),Morae(a));
 }
+TEST(Timing39, JapaneseSourceKeepsEmbeddedLatinWordsAsSungUnits) {
+	auto analysis=Analyze(u8"君と Shining Star を歌う");
+	ASSERT_TRUE(analysis.error.empty())<<analysis.error;
+	EXPECT_EQ(1u,std::count_if(analysis.morae.begin(),analysis.morae.end(),
+		[](BaseMora const& mora){return mora.text=="Shining";}));
+	EXPECT_EQ(1u,std::count_if(analysis.morae.begin(),analysis.morae.end(),
+		[](BaseMora const& mora){return mora.text=="Star";}));
+	EXPECT_EQ(0u,std::count_if(analysis.morae.begin(),analysis.morae.end(),
+		[](BaseMora const& mora){return mora.text==" ";}));
+	EXPECT_TRUE(Analyze("Yume ni naru made").error.empty());
+	auto ruby=Analyze(u8"Yume <未|み>");
+	EXPECT_TRUE(ruby.error.empty());
+	EXPECT_EQ(0u,std::count_if(ruby.morae.begin(),ruby.morae.end(),
+		[](BaseMora const& mora){return mora.text=="Yume";}));
+}
+TEST(Timing39, PlacementDraftMovesMergesAndUndoesWithoutMovingTiming) {
+	auto analysis=Analyze(u8"だよず");
+	std::vector<TimingBlock> blocks{{0,100,false},{100,200,false}};
+	auto raw=blocks;
+	MoraPlacementDraft draft;
+	draft.Begin(analysis,blocks,{{0,0,2},{1,2,1}});
+	ASSERT_TRUE(draft.Move(1,-1));
+	EXPECT_EQ(1u,draft.Assignments()[0].mora_count);
+	EXPECT_EQ(1u,draft.Assignments()[1].first_mora);
+	EXPECT_EQ(2u,draft.Assignments()[1].mora_count);
+	ASSERT_TRUE(draft.Undo());EXPECT_EQ(2u,draft.Assignments()[0].mora_count);
+	ASSERT_TRUE(draft.Redo());EXPECT_EQ(1u,draft.Assignments()[0].mora_count);
+	ASSERT_TRUE(draft.Merge(1));
+	EXPECT_EQ(3u,draft.Assignments()[0].mora_count);
+	EXPECT_EQ(0u,draft.Assignments()[1].first_mora);
+	EXPECT_EQ(3u,draft.Assignments()[1].mora_count);
+	EXPECT_EQ(raw,blocks);
+	ASSERT_TRUE(draft.Reset());EXPECT_EQ(2u,draft.Assignments()[0].mora_count);
+}
+TEST(Timing39, PlacementDraftCutsLatinWithoutChangingSpelling) {
+	auto analysis=Analyze(u8"君と forever");
+	ASSERT_TRUE(analysis.error.empty())<<analysis.error;
+	auto at=std::find_if(analysis.morae.begin(),analysis.morae.end(),
+		[](BaseMora const& mora){return mora.text=="forever";});
+	ASSERT_NE(analysis.morae.end(),at);
+	std::vector<TimingBlock> blocks;
+	for(size_t i=0;i<analysis.morae.size()+2;++i)blocks.push_back({int(i)*100,int(i+1)*100,false});
+	MoraPlacementDraft draft;draft.Begin(analysis,blocks);
+	size_t index=size_t(at-analysis.morae.begin());
+	ASSERT_TRUE(draft.CutLatin(index,3));
+	ASSERT_TRUE(draft.CutLatin(index+1,2));
+	EXPECT_EQ("for",draft.CurrentAnalysis().morae[index].text);
+	EXPECT_EQ("ev",draft.CurrentAnalysis().morae[index+1].text);
+	EXPECT_EQ("er",draft.CurrentAnalysis().morae[index+2].text);
+	EXPECT_EQ(analysis.source,draft.CurrentAnalysis().source);
+	EXPECT_TRUE(draft.HasLatinCuts());
+	ASSERT_TRUE(draft.Undo());EXPECT_EQ("ever",draft.CurrentAnalysis().morae[index+1].text);
+	ASSERT_TRUE(draft.Redo());
+	ASSERT_TRUE(draft.RemoveLatinCut(index+2));
+	EXPECT_EQ("ever",draft.CurrentAnalysis().morae[index+1].text);
+	ASSERT_TRUE(draft.Reset());
+	EXPECT_EQ("forever",draft.CurrentAnalysis().morae[index].text);
+	EXPECT_FALSE(draft.HasLatinCuts());
+}
 TEST(Timing39, ExactCountAndNamedGroups) {
 	auto a=Analyze(u8"ゴール");auto all=Match(a,Taps(3));ASSERT_EQ(Confidence::Green,all.confidence);for(auto const& x:all.paths[0].assignments)EXPECT_EQ(1u,x.mora_count);
 	auto merge=Match(a,Taps(2));ASSERT_FALSE(merge.paths.empty());EXPECT_EQ(2u,merge.paths[0].assignments[0].mora_count);

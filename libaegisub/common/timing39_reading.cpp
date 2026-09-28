@@ -15,10 +15,32 @@ std::string Encode(std::u32string const& s) { return boost::locale::conv::utf_to
 char32_t Hira(char32_t c) { return c >= U'ァ' && c <= U'ヶ' ? c - 0x60 : c; }
 bool Separator(char32_t c) {
 	return c == U' ' || c == U'\t' || c == U'\n' || c == U'\r' || c == 0x3000 ||
-		(c >= 0x3001 && c <= 0x303f) || c == U'！' || c == U'？' || c == U'…' ||
+		(c >= 0x3001 && c <= 0x303f) || c == U'・' || c == U'！' || c == U'？' ||
+		c == U'（' || c == U'）' || c == U'…' ||
 		(c < 128 && std::ispunct(static_cast<unsigned char>(c)) && c != '-' && c != '\'');
 }
 bool Kana(char32_t c) { return (c >= U'ぁ' && c <= U'ゖ') || c == U'ー'; }
+bool LatinRun(std::string const& text) {
+	if (text.empty() || !std::isalpha(static_cast<unsigned char>(text.front()))) return false;
+	return std::all_of(text.begin(), text.end(), [](unsigned char ch) {
+		return ch < 128 && (std::isalpha(ch) || ch == '\'' || ch == '-');
+	});
+}
+bool HasJapaneseOutsideRuby(std::string const& source) {
+	for (size_t p = 0; p < source.size();) {
+		if (source[p] == '{' || source[p] == '<') {
+			auto end = source.find(source[p] == '{' ? '}' : '>', p + 1);
+			if (end != std::string::npos) { p = end + 1; continue; }
+		}
+		auto lead = static_cast<unsigned char>(source[p]);
+		size_t bytes = lead < 128 ? 1 : lead < 224 ? 2 : lead < 240 ? 3 : 4;
+		if (p + bytes > source.size()) break;
+		auto cp = Decode(source.substr(p, bytes))[0];
+		if (Kana(Hira(cp)) || (cp >= 0x3400 && cp <= 0x9fff)) return true;
+		p += bytes;
+	}
+	return false;
+}
 
 struct Lexeme { std::string source, reading; WordKind kind; bool separate_ending = false; };
 // A deliberately small, auditable vocabulary. Unknown material is never
@@ -146,6 +168,7 @@ struct Reader {
 	// consume no reading position. Ruby spans do not imply lexical boundaries.
 	void Read(std::string const& source) {
 		a.source = source; a.span_source = source;
+		bool embedded_latin = HasJapaneseOutsideRuby(source);
 		for (size_t p=0; p<source.size();) {
 			if (source[p]=='{') {
 				auto end=source.find('}',p); if(end==std::string::npos) { a.error="Unclosed ASS override"; return; }
@@ -169,7 +192,11 @@ struct Reader {
 			}
 			if (static_cast<unsigned char>(source[p])<128 && std::isalpha(static_cast<unsigned char>(source[p]))) {
 				size_t end=p+1; while(end<source.size() && (std::isalpha(static_cast<unsigned char>(source[end]))||source[end]=='\''||source[end]=='-')) ++end;
-				auto raw=source.substr(p,end-p); auto r=ConvertRomaji(raw);
+				auto raw=source.substr(p,end-p);
+				if (embedded_latin) {
+					a.surface+=raw; Span(raw,raw,p,end,false); p=end; continue;
+				}
+				auto r=ConvertRomaji(raw);
 				if(!r.valid) { a.error=r.error; return; }
 				a.surface+="<"+raw+"|"+r.kana+">"; Span(raw,r.kana,p,end,false); p=end; continue;
 			}
@@ -318,6 +345,12 @@ void TokenizeAndGate(Analysis& a) {
 	auto const& r=a.reading.characters;
 	for(size_t i=0;i<r.size();) {
 		if(Separator(r[i].kana)) {++i; continue;}
+		auto const& span=a.spans[r[i].span];
+		if (i == span.reading_begin && !span.explicit_reading && LatinRun(span.display)) {
+			size_t end=span.reading_end;
+			a.morae.push_back({span.display,i,end,r[i].logical_begin,r[end-1].logical_end,r[i].span,unknown});
+			i=end;continue;
+		}
 		if(!Kana(r[i].kana)) {a.error="Reading requires kana or strict romaji; add explicit <display|reading> for unknown text"; return;}
 		size_t end=i+1;
 		if(end<r.size() && Cluster(r[i].kana,r[end].kana)) ++end;

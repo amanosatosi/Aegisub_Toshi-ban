@@ -65,6 +65,7 @@ struct Analysis {
 	// Conservative structural/morphological alternatives, never substituted readings.
 	std::vector<std::string> language_notes;
 	std::vector<BaseMora> morae;
+	std::vector<size_t> manual_latin_cuts; // logical byte boundaries, source spelling unchanged
 	std::vector<BoundaryAnalysis> boundaries; // boundary BEFORE mora i
 	std::vector<std::vector<TimingGroupCandidate>> graph;
 	bool language_certain = false;
@@ -172,6 +173,34 @@ public:
 	bool Choose(Analysis const&, std::vector<TimingAssignment> assignments);
 	bool Undo();
 	bool Redo();
+};
+
+// Results-local, undoable text-placement draft. It never changes TimingBlock
+// timestamps or writes a dialogue until the caller explicitly applies it.
+class MoraPlacementDraft {
+	struct State {
+		Analysis analysis;
+		std::vector<TimingAssignment> assignments;
+		std::vector<size_t> latin_cuts; // logical UTF-8 byte offsets
+	};
+	std::vector<State> history;
+	std::vector<TimingBlock> blocks;
+	size_t cursor = 0;
+	bool Push(State next);
+public:
+	void Begin(Analysis const&, std::vector<TimingBlock> const&,
+		std::vector<TimingAssignment> const& initial = {});
+	Analysis const& CurrentAnalysis() const { return history[cursor].analysis; }
+	std::vector<TimingAssignment> const& Assignments() const { return history[cursor].assignments; }
+	bool HasLatinCuts() const { return !history[cursor].latin_cuts.empty(); }
+	bool Move(size_t divider, int delta);
+	bool Merge(size_t divider);
+	bool CutLatin(size_t mora, size_t byte_offset);
+	bool RemoveLatinCut(size_t boundary);
+	bool Undo();
+	bool Redo();
+	bool Reset();
+	bool Changed() const { return cursor != 0; }
 };
 
 struct StyleEvidence {

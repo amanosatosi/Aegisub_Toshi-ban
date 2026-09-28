@@ -2,6 +2,7 @@
 #pragma once
 #include <libaegisub/timing39.h>
 #include <cstdint>
+#include <memory>
 
 namespace agi { namespace timing39 {
 enum class SessionState { Idle, Countdown, Ready, Capturing, Results };
@@ -61,9 +62,10 @@ struct SessionLaneResult {
 // performer decisions and are not constrained by the candidate graph.
 bool ValidManualAssignments(Analysis const&, std::vector<TimingBlock> const&,
 	std::vector<TimingAssignment> const&);
-enum class ResolutionSource { Automatic, UserSelected, UserManualRepair, UserManualTiming, Retake };
+enum class ResolutionSource { Automatic, UserSelected, UserManualRepair, UserEnglishSegmentation, UserManualTiming, Retake };
 struct SessionResult {
 	SessionTarget target;
+	std::shared_ptr<Analysis> original_analysis; // only set when a manual Latin cut changes morae
 	std::array<SessionLaneResult, 2> lanes;
 	int lane = 0;
 	bool association_ambiguous = false, overlap = false, reviewed = false, committed = false;

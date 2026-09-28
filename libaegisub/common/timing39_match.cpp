@@ -1,7 +1,8 @@
 // Copyright (c) 2026, JibunSenyou contributors. ISC license.
-#include <libaegisub/timing39.h>
+#include <libaegisub/timing39_session.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <map>
 #include <numeric>
@@ -173,6 +174,116 @@ bool AssignmentEditor::Move(Analysis const& a,size_t divider,int delta) {
 }
 bool AssignmentEditor::Undo() {if(!cursor) return false;--cursor;return true;}
 bool AssignmentEditor::Redo() {if(cursor+1>=history.size()) return false;++cursor;return true;}
+
+bool MoraPlacementDraft::Push(State next) {
+	if(!ValidManualAssignments(next.analysis,blocks,next.assignments))return false;
+	history.resize(cursor+1);history.push_back(std::move(next));++cursor;return true;
+}
+void MoraPlacementDraft::Begin(Analysis const& analysis,std::vector<TimingBlock> const& capture,
+	std::vector<TimingAssignment> const& initial) {
+	blocks=capture;cursor=0;history.clear();
+	State state;state.analysis=analysis;state.latin_cuts=analysis.manual_latin_cuts;
+	if(ValidManualAssignments(analysis,blocks,initial))state.assignments=initial;
+	else {
+		std::vector<size_t> sung;for(size_t i=0;i<blocks.size();++i)if(!blocks[i].gap)sung.push_back(i);
+		auto morae=analysis.morae.size();
+		for(size_t i=0;i<sung.size()&&morae;++i) {
+			auto first=std::min(i,morae-1);
+			auto count=i+1==sung.size()&&sung.size()<=morae?morae-first:1;
+			state.assignments.push_back({sung[i],first,count});
+		}
+	}
+	history.push_back(std::move(state));
+}
+bool MoraPlacementDraft::Move(size_t divider,int delta) {
+	if(history.empty()||!divider||divider>=Assignments().size()||(delta!=1&&delta!=-1))return false;
+	auto next=history[cursor];
+	auto& left=next.assignments[divider-1];auto& right=next.assignments[divider];
+	if(left.first_mora==right.first_mora || (delta<0&&left.mora_count<=1) ||
+		(delta>0&&right.mora_count<=1))return false;
+	left.mora_count+=delta;right.first_mora+=delta;right.mora_count-=delta;
+	return Push(std::move(next));
+}
+bool MoraPlacementDraft::Merge(size_t divider) {
+	if(history.empty()||!divider||divider>=Assignments().size())return false;
+	auto next=history[cursor];
+	auto& left=next.assignments[divider-1];auto& right=next.assignments[divider];
+	if(left.first_mora==right.first_mora || left.first_mora+left.mora_count!=right.first_mora ||
+		(divider>1&&next.assignments[divider-2].first_mora==left.first_mora) ||
+		(divider+1<next.assignments.size()&&next.assignments[divider+1].first_mora==right.first_mora))return false;
+	auto combined=left.mora_count+right.mora_count;
+	left.mora_count=combined;right.first_mora=left.first_mora;right.mora_count=combined;
+	return Push(std::move(next));
+}
+bool MoraPlacementDraft::CutLatin(size_t mora,size_t byte_offset) {
+	if(history.empty()||mora>=CurrentAnalysis().morae.size())return false;
+	auto next=history[cursor];auto& a=next.analysis;
+	auto const& original=a.morae[mora];
+	if(byte_offset==0||byte_offset>=original.text.size()||
+		!std::all_of(original.text.begin(),original.text.end(),[](unsigned char ch){
+			return ch<128&&(std::isalpha(ch)||ch=='\''||ch=='-');}))return false;
+	auto old_graph=a.graph;
+	BaseMora left=original,right=original;
+	left.text=original.text.substr(0,byte_offset);right.text=original.text.substr(byte_offset);
+	left.logical_end=original.logical_begin+byte_offset;right.logical_begin=left.logical_end;
+	left.reading_end=original.reading_begin+byte_offset;right.reading_begin=left.reading_end;
+	a.morae[mora]=left;a.morae.insert(a.morae.begin()+mora+1,right);
+	a.boundaries.insert(a.boundaries.begin()+mora+1,{false,"manual Latin segmentation",BoundaryKind::Soft});
+	a.graph.assign(a.morae.size(),{});
+	for(size_t i=0;i<a.morae.size();++i)
+		a.graph[i].push_back({i,1,{Join::Single,false,false,false,false,CandidateStrength::Base},"base mora"});
+	for(auto const& edges:old_graph)for(auto edge:edges)if(edge.count>1) {
+		bool crosses=edge.first<=mora&&edge.first+edge.count>mora;
+		edge.first+=edge.first>mora;
+		edge.count+=crosses;
+		a.graph[edge.first].push_back(std::move(edge));
+	}
+	for(auto& mapping:next.assignments) {
+		if(mapping.first_mora>mora)++mapping.first_mora;
+		else if(mapping.first_mora+mapping.mora_count>mora)++mapping.mora_count;
+	}
+	next.latin_cuts.push_back(left.logical_end);
+	std::sort(next.latin_cuts.begin(),next.latin_cuts.end());
+	a.manual_latin_cuts=next.latin_cuts;
+	return Push(std::move(next));
+}
+bool MoraPlacementDraft::RemoveLatinCut(size_t boundary) {
+	if(history.empty()||!boundary||boundary>=CurrentAnalysis().morae.size())return false;
+	auto next=history[cursor];auto& a=next.analysis;
+	auto cut=a.morae[boundary].logical_begin;
+	auto found=std::find(next.latin_cuts.begin(),next.latin_cuts.end(),cut);
+	if(found==next.latin_cuts.end())return false;
+	for(auto const& mapping:next.assignments) {
+		bool left=mapping.first_mora<=boundary-1&&mapping.first_mora+mapping.mora_count>boundary-1;
+		bool right=mapping.first_mora<=boundary&&mapping.first_mora+mapping.mora_count>boundary;
+		if(left!=right)return false;
+	}
+	auto old_graph=a.graph;
+	a.morae[boundary-1].text+=a.morae[boundary].text;
+	a.morae[boundary-1].logical_end=a.morae[boundary].logical_end;
+	a.morae[boundary-1].reading_end=a.morae[boundary].reading_end;
+	a.morae.erase(a.morae.begin()+boundary);
+	a.boundaries.erase(a.boundaries.begin()+boundary);
+	a.graph.assign(a.morae.size(),{});
+	for(size_t i=0;i<a.morae.size();++i)
+		a.graph[i].push_back({i,1,{Join::Single,false,false,false,false,CandidateStrength::Base},"base mora"});
+	for(auto const& edges:old_graph)for(auto edge:edges)if(edge.count>1) {
+		bool crosses=edge.first<boundary&&edge.first+edge.count>boundary;
+		edge.first-=edge.first>=boundary;
+		edge.count-=crosses;
+		if(edge.count>1)a.graph[edge.first].push_back(std::move(edge));
+	}
+	for(auto& mapping:next.assignments) {
+		if(mapping.first_mora>boundary)--mapping.first_mora;
+		else if(mapping.first_mora+mapping.mora_count>boundary)--mapping.mora_count;
+	}
+	next.latin_cuts.erase(found);
+	a.manual_latin_cuts=next.latin_cuts;
+	return Push(std::move(next));
+}
+bool MoraPlacementDraft::Undo() {if(!cursor)return false;--cursor;return true;}
+bool MoraPlacementDraft::Redo() {if(cursor+1>=history.size())return false;++cursor;return true;}
+bool MoraPlacementDraft::Reset() {if(history.empty()||!cursor)return false;cursor=0;return true;}
 
 namespace {
 double BoundaryDistance(std::vector<int> const& a,std::vector<int> const& b) {
