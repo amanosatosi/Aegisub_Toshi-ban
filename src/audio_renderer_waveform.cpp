@@ -57,13 +57,28 @@ AudioWaveformRenderer::~AudioWaveformRenderer() { }
 
 void AudioWaveformRenderer::Render(wxBitmap &bmp, int start, AudioRenderingStyle style)
 {
+	double samples_per_pixel = pixel_ms * provider->GetSampleRate() / 1000.0;
+	RenderAt(bmp, start * samples_per_pixel, samples_per_pixel, style,
+		audio_buffer, audio_buffer_size, false);
+}
+
+void AudioWaveformRenderer::RenderReview(wxBitmap &bmp, double start_ms,
+	double review_ms_per_pixel, AudioRenderingStyle style)
+{
+	double sample_rate = provider->GetSampleRate() / 1000.0;
+	RenderAt(bmp, start_ms * sample_rate, review_ms_per_pixel * sample_rate,
+		style, review_audio_buffer, review_audio_buffer_size, true);
+}
+
+void AudioWaveformRenderer::RenderAt(wxBitmap &bmp, double start_sample,
+	double pixel_samples, AudioRenderingStyle style,
+	std::unique_ptr<char[]> &buffer, size_t &buffer_size, bool ensure_one_sample)
+{
 	wxMemoryDC dc(bmp);
 	wxRect rect(wxPoint(0, 0), bmp.GetSize());
 	int midpoint = rect.height / 2;
 
 	const AudioColorScheme *pal = &colors[style];
-
-	double pixel_samples = pixel_ms * provider->GetSampleRate() / 1000.0;
 
 	// Fill the background
 	dc.SetBrush(wxBrush(pal->get(0.0f)));
@@ -71,27 +86,32 @@ void AudioWaveformRenderer::Render(wxBitmap &bmp, int start, AudioRenderingStyle
 	dc.DrawRectangle(rect);
 
 	// Make sure we've got a buffer to fill with audio data
-	if (!audio_buffer)
+	int64_t sample_count = std::max<int64_t>(ensure_one_sample ? 1 : 0, int64_t(pixel_samples));
+	size_t buffer_needed = size_t(sample_count) * std::max<size_t>(sizeof(int16_t),
+		provider->GetChannels() * provider->GetBytesPerSample());
+	if (buffer_needed > buffer_size)
 	{
-		// Buffer for one pixel strip of audio
-		size_t buffer_needed = pixel_samples * provider->GetChannels() * provider->GetBytesPerSample();
-		audio_buffer.reset(new char[buffer_needed]);
+		buffer.reset(new char[buffer_needed]);
+		buffer_size = buffer_needed;
 	}
 
-	double cur_sample = start * pixel_samples;
+	double cur_sample = start_sample;
 
 	wxPen pen_peaks(wxPen(pal->get(0.4f)));
 	wxPen pen_avgs(wxPen(pal->get(0.7f)));
 
 	for (int x = 0; x < rect.width; ++x)
 	{
-		provider->GetInt16MonoAudio(reinterpret_cast<int16_t*>(audio_buffer.get()), (int64_t)cur_sample, (int64_t)pixel_samples);
+		bool has_audio = cur_sample < provider->GetDecodedSamples();
+		if (has_audio && sample_count)
+			provider->GetInt16MonoAudio(reinterpret_cast<int16_t*>(buffer.get()),
+				(int64_t)cur_sample, sample_count);
 		cur_sample += pixel_samples;
 
 		int peak_min = 0, peak_max = 0;
 		int64_t avg_min_accum = 0, avg_max_accum = 0;
-		auto aud = reinterpret_cast<const int16_t *>(audio_buffer.get());
-		for (int si = pixel_samples; si > 0; --si, ++aud)
+		auto aud = reinterpret_cast<const int16_t *>(buffer.get());
+		for (int64_t si = has_audio ? sample_count : 0; si > 0; --si, ++aud)
 		{
 			if (*aud > 0)
 			{

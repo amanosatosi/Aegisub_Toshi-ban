@@ -50,6 +50,17 @@ public:
 		++s.count;
 	}
 	void RefreshRequested() { if (enabled) ++refresh_requests; }
+	void ReviewRequested(bool cache_hit, int width, double ms_per_pixel, int slices) {
+		if (!enabled) return;
+		++review_requests;
+		if (cache_hit) ++review_cache_hits;
+		else {
+			++review_rebuilds;
+			last_review_width = width;
+			last_review_ms_per_pixel = ms_per_pixel;
+			last_review_slices = slices;
+		}
+	}
 	std::string MaybeSummary() {
 		if (!enabled) return {};
 		auto now = Clock::now();
@@ -59,7 +70,14 @@ public:
 		output << std::fixed << std::setprecision(2)
 			<< "Audio paint perf (" << seconds << " s): paints=" << samples[Paint].count
 			<< " paints/s=" << samples[Paint].count / seconds
-			<< " tracked-39-refresh-requests/s=" << refresh_requests / seconds;
+			<< " tracked-39-refresh-requests/s=" << refresh_requests / seconds
+			<< " review-requests=" << review_requests
+			<< " review-cache-hits=" << review_cache_hits
+			<< " review-rebuilds=" << review_rebuilds
+			<< " review-output-columns=" << last_review_width
+			<< " review-ms/px=" << last_review_ms_per_pixel
+			<< " review-slices=" << last_review_slices
+			<< " review-tile-work-ms=" << samples[ReviewTile].total_ms;
 		for (int i = 0; i < StageCount; ++i) {
 			auto const& s = samples[i];
 			output << " | " << Name(static_cast<Stage>(i)) << " avg="
@@ -68,6 +86,7 @@ public:
 		}
 		samples = {};
 		refresh_requests = 0;
+		review_requests = review_cache_hits = review_rebuilds = 0;
 		summary_start = now;
 		return output.str();
 	}
@@ -101,4 +120,7 @@ private:
 	Clock::time_point summary_start;
 	std::array<Sample, StageCount> samples{};
 	unsigned refresh_requests = 0;
+	unsigned review_requests = 0, review_cache_hits = 0, review_rebuilds = 0;
+	int last_review_width = 0, last_review_slices = 0;
+	double last_review_ms_per_pixel = 0;
 };

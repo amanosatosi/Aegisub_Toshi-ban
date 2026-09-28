@@ -116,6 +116,8 @@ class AudioSpectrumRenderer final : public AudioRendererBitmapProvider {
 
 	/// @brief Updates the derivation_* after a derivation_*_user change.
 	void update_derivation_values ();
+	void RenderAt(wxBitmap &bmp, double start_ms, double step_ms,
+		AudioRenderingStyle style, int main_start_pixel);
 
 #ifdef WITH_FFTW3
 	/// FFTW plan data
@@ -145,6 +147,8 @@ public:
 	/// @param start First column of pixel data in display to render
 	/// @param style Style to render audio in
 	void Render(wxBitmap &bmp, int start, AudioRenderingStyle style) override;
+	void RenderReview(wxBitmap &bmp, double start_ms, double review_ms_per_pixel,
+		AudioRenderingStyle style) override;
 
 	/// @brief Render blank area
 	void RenderBlank(wxDC &dc, const wxRect &rect, AudioRenderingStyle style) override;

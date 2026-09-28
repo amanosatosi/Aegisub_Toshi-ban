@@ -129,6 +129,8 @@ class AudioDisplay: public wxWindow {
 	/// Amplitude scaling ("vertical zoom") as a factor, 1.0 is neutral
 	float scale_amplitude = 1.f;
 	uint64_t review_generation = 0;
+	agi::signal::Signal<> AnnounceReviewAudioChanged;
+	void InvalidateReviewAudio() { ++review_generation; AnnounceReviewAudioChanged(); }
 
 	/// Top of the main audio area in pixels
 	int audio_top = 0;
@@ -247,12 +249,13 @@ class AudioDisplay: public wxWindow {
 	void OnMarkerMoved();
 
 public:
-	// Borrow the main renderer's decoded provider, spectrum analysis and bitmap
-	// tiles for a small static Results preview. Never changes the main zoom.
+	// Render Results at its own time-per-output-pixel scale while sharing the
+	// decoded provider and spectrum analysis cache with the main audio view.
 	wxBitmap RenderReviewAudio(int start_ms, int end_ms, wxSize size);
-	int ReviewAudioSliceCount(int start_ms, int end_ms) const;
+	int ReviewAudioSliceCount(int start_ms, int end_ms, int output_width) const;
 	std::pair<int, wxBitmap> RenderReviewAudioSlice(int start_ms, int end_ms, wxSize size, int slice);
 	uint64_t ReviewGeneration() const { return review_generation; }
+	DEFINE_SIGNAL_ADDERS(AnnounceReviewAudioChanged, AddReviewAudioChangedListener)
 	AudioDisplay(wxWindow *parent, AudioController *controller, agi::Context *context);
 	~AudioDisplay();
 

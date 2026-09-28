@@ -203,6 +203,10 @@ public:
 	/// The first audio sample rendered is start*pixel_samples, and the number
 	/// of audio samples rendered is length*pixel_samples.
 	void Render(wxDC &dc, wxPoint origin, int start, int length, AudioRenderingStyle style);
+	/// Render a Results tile using its own time-to-pixel scale without changing
+	/// the main renderer's zoom or its shared spectrum analysis cache.
+	void RenderReview(wxBitmap &bmp, double start_ms, double review_ms_per_pixel,
+		AudioRenderingStyle style);
 
 	/// @brief Invalidate all cached data
 	///
@@ -259,6 +263,8 @@ public:
 	/// Deriving classes must implement this method. The bitmap in bmp holds
 	/// the width and height to render.
 	virtual void Render(wxBitmap &bmp, int start, AudioRenderingStyle style) = 0;
+	virtual void RenderReview(wxBitmap &bmp, double start_ms, double review_ms_per_pixel,
+		AudioRenderingStyle style) = 0;
 
 	/// @brief Blank audio rendering function
 	/// @param dc    The device context to render to

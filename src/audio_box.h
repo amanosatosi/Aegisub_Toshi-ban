@@ -31,6 +31,7 @@
 #include <wx/sashwin.h>
 #include <wx/bitmap.h>
 #include <utility>
+#include <functional>
 #include <cstdint>
 
 #include <libaegisub/signal.h>
@@ -87,9 +88,10 @@ class AudioBox final : public wxSashWindow {
 
 public:
 	wxBitmap RenderReviewAudio(int start_ms, int end_ms, wxSize size);
-	int ReviewAudioSliceCount(int start_ms, int end_ms) const;
+	int ReviewAudioSliceCount(int start_ms, int end_ms, int output_width) const;
 	std::pair<int, wxBitmap> RenderReviewAudioSlice(int start_ms, int end_ms, wxSize size, int slice);
 	uint64_t ReviewGeneration() const;
+	agi::signal::UnscopedConnection AddReviewAudioChangedListener(std::function<void()> fn);
 	AudioBox(wxWindow *parent, agi::Context *context);
 
 	void ShowKaraokeBar(bool show);

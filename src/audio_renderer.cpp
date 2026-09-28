@@ -219,6 +219,14 @@ void AudioRenderer::Render(wxDC &dc, wxPoint origin, const int start, const int 
 	}
 }
 
+void AudioRenderer::RenderReview(wxBitmap &bmp, double start_ms,
+	double review_ms_per_pixel, AudioRenderingStyle style)
+{
+	if (!provider || !renderer || !bmp.IsOk() || review_ms_per_pixel <= 0) return;
+	renderer->RenderReview(bmp, start_ms, review_ms_per_pixel, style);
+	renderer->AgeCache(cache_renderer_maxsize);
+}
+
 void AudioRenderer::Invalidate()
 {
 	for (auto& bmp : bitmaps) bmp.Age(0);

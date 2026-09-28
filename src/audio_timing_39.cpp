@@ -11,6 +11,7 @@
 #include "ass_file.h"
 #include "audio_box.h"
 #include "audio_perf.h"
+#include "audio_review_plan.h"
 #include "audio_controller.h"
 #include "audio_rendering_style.h"
 #include "compat.h"
@@ -137,6 +138,8 @@ class Timing39ReviewView final : public wxPanel {
 	bool cache_valid=false;
 	int playback_cursor=-1;
 	bool rebuild_queued=false;
+	agi::signal::Connection review_change_connection;
+	wxTimer resize_timer;
 	uint64_t render_serial=0;
 	int render_slice=0;
 	int render_slice_count=0;
@@ -197,7 +200,11 @@ class Timing39ReviewView final : public wxPanel {
 		if(size.x<=0||model.end<=model.begin){++render_serial;cache_valid=false;audio_bitmap=wxBitmap();return;}
 		t39ui::ReviewBitmapKey key{model.begin,model.end,image_size.x,image_size.y,
 			audio_box->ReviewGeneration()};
-		if(cache_valid&&audio_bitmap.IsOk()&&cached_key==key)return;
+		AudioReviewPlan plan{model.begin,model.end,image_size.x};
+		bool hit=cache_valid&&audio_bitmap.IsOk()&&cached_key==key;
+		AudioPerf::Instance().ReviewRequested(hit,image_size.x,
+			plan.MillisecondsPerPixel(),plan.SliceCount());
+		if(hit)return;
 		++render_serial;
 		audio_bitmap=wxBitmap(image_size.x,image_size.y);
 		if(audio_bitmap.IsOk()){
@@ -207,7 +214,7 @@ class Timing39ReviewView final : public wxPanel {
 		}
 		cached_key=key;cache_valid=audio_bitmap.IsOk();
 		render_slice=0;
-		render_slice_count=audio_box->ReviewAudioSliceCount(model.begin,model.end);
+		render_slice_count=audio_box->ReviewAudioSliceCount(model.begin,model.end,image_size.x);
 		if(cache_valid&&render_slice_count>0){
 			auto serial=render_serial;
 			CallAfter([this,serial]{RenderNextSlice(serial);});
@@ -217,7 +224,7 @@ class Timing39ReviewView final : public wxPanel {
 	void RenderNextSlice(uint64_t serial){
 		if(serial!=render_serial||!cache_valid||render_slice>=render_slice_count)return;
 		if(cached_key.generation!=audio_box->ReviewGeneration()){
-			RebuildAudio();return;
+			QueueRebuild();return;
 		}
 		auto part=audio_box->RenderReviewAudioSlice(cached_key.begin,cached_key.end,
 			wxSize(cached_key.width,cached_key.height),render_slice++);
@@ -228,6 +235,11 @@ class Timing39ReviewView final : public wxPanel {
 			RefreshRect(wxRect(part.first,18,part.second.GetWidth(),part.second.GetHeight()),false);
 		}
 		if(render_slice<render_slice_count)CallAfter([this,serial]{RenderNextSlice(serial);});
+	}
+	void QueueRebuild(){
+		if(rebuild_queued)return;
+		rebuild_queued=true;
+		CallAfter([this]{rebuild_queued=false;RebuildAudio();});
 	}
 	void OnPaint(wxPaintEvent&) {
 		wxAutoBufferedPaintDC dc(this);
@@ -324,15 +336,20 @@ class Timing39ReviewView final : public wxPanel {
 		}
 		dc.SetTextForeground(neutral);
 		dc.DrawText(_("Hatch: previous-line tail excluded   ·   dotted: harmless clamp"),5,218);
-		if(cache_valid&&cached_key.generation!=audio_box->ReviewGeneration()&&!rebuild_queued){
-			rebuild_queued=true;CallAfter([this]{rebuild_queued=false;RebuildAudio();});
-		}
 	}
 public:
 	Timing39ReviewView(wxWindow* parent,AudioBox* audio):wxPanel(parent,wxID_ANY,wxDefaultPosition,wxSize(-1,238)),audio_box(audio){
 		SetBackgroundStyle(wxBG_STYLE_PAINT);
+		review_change_connection=agi::signal::Connection(audio_box->AddReviewAudioChangedListener(
+			[this]{QueueRebuild();}));
+		resize_timer.Bind(wxEVT_TIMER,[this](wxTimerEvent&){RebuildAudio();});
 		Bind(wxEVT_PAINT,&Timing39ReviewView::OnPaint,this);
-		Bind(wxEVT_SIZE,[this](wxSizeEvent& event){RebuildAudio();event.Skip();});
+		Bind(wxEVT_SIZE,[this](wxSizeEvent& event){
+			if(GetClientSize().x!=cached_key.width){
+				++render_serial;cache_valid=false;resize_timer.StartOnce(80);
+			}
+			event.Skip();
+		});
 		Bind(wxEVT_LEFT_DOWN,&Timing39ReviewView::OnLeftDown,this);
 		Bind(wxEVT_LEFT_UP,&Timing39ReviewView::OnLeftUp,this);
 		Bind(wxEVT_MOTION,&Timing39ReviewView::OnMotion,this);

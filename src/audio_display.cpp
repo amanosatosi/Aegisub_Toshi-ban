@@ -34,6 +34,7 @@
 #include "audio_display_cache.h"
 #include "audio_karaoke.h"
 #include "audio_perf.h"
+#include "audio_review_plan.h"
 #include "audio_renderer.h"
 #include "audio_renderer_spectrum.h"
 #include "audio_renderer_waveform.h"
@@ -741,7 +742,6 @@ void AudioDisplay::SetZoomLevel(int new_zoom_level)
 	double cursor_time = (scroll_left + cursor_pos) * ms_per_pixel;
 
 	ms_per_pixel = new_ms_per_pixel;
-	++review_generation;
 	pixel_audio_width = std::max(1, int(GetDuration() / ms_per_pixel));
 
 	audio_renderer->SetMillisecondsPerPixel(ms_per_pixel);
@@ -788,14 +788,15 @@ int AudioDisplay::GetZoomLevelFactor(int level)
 
 void AudioDisplay::SetAmplitudeScale(float scale)
 {
-	++review_generation;
+	if (scale_amplitude == scale) return;
+	scale_amplitude = scale;
 	audio_renderer->SetAmplitudeScale(scale);
+	InvalidateReviewAudio();
 	Refresh();
 }
 
 void AudioDisplay::ReloadRenderingSettings()
 {
-	++review_generation;
 	std::string colour_scheme_name;
 	spectrum_display = OPT_GET("Audio/Spectrum")->GetBool();
 
@@ -839,6 +840,7 @@ void AudioDisplay::ReloadRenderingSettings()
 	audio_renderer->SetRenderer(audio_renderer_provider.get());
 	scrollbar->SetColourScheme(colour_scheme_name);
 	timeline->SetColourScheme(colour_scheme_name);
+	InvalidateReviewAudio();
 
 	Refresh();
 }
@@ -846,14 +848,14 @@ void AudioDisplay::ReloadRenderingSettings()
 wxBitmap AudioDisplay::RenderReviewAudio(int start_ms, int end_ms, wxSize size)
 {
 	AudioPerf::Scope review_timer(AudioPerf::ReviewBitmap);
-	if (!provider || !audio_renderer_provider || audio_height <= 0 ||
-		ms_per_pixel <= 0 || start_ms >= end_ms || size.x <= 0 || size.y <= 0)
+	if (!provider || !audio_renderer_provider || start_ms >= end_ms ||
+		size.x <= 0 || size.y <= 0)
 		return {};
 	wxBitmap result(size.x, size.y);
 	wxMemoryDC output(result);
 	output.SetBackground(wxBrush(GetBackgroundColour()));
 	output.Clear();
-	int slice_count = ReviewAudioSliceCount(start_ms, end_ms);
+	int slice_count = ReviewAudioSliceCount(start_ms, end_ms, size.x);
 	for (int slice = 0; slice < slice_count; ++slice) {
 		auto part = RenderReviewAudioSlice(start_ms, end_ms, size, slice);
 		if (part.second.IsOk()) output.DrawBitmap(part.second, part.first, 0);
@@ -862,44 +864,24 @@ wxBitmap AudioDisplay::RenderReviewAudio(int start_ms, int end_ms, wxSize size)
 	return result;
 }
 
-int AudioDisplay::ReviewAudioSliceCount(int start_ms, int end_ms) const
+int AudioDisplay::ReviewAudioSliceCount(int start_ms, int end_ms, int output_width) const
 {
-	if (ms_per_pixel <= 0 || start_ms >= end_ms) return 0;
-	int source_start = std::max(0, AbsoluteXFromTime(start_ms));
-	int source_end = std::max(source_start + 1, AbsoluteXFromTime(end_ms));
-	return (source_end - source_start + 255) / 256;
+	return AudioReviewPlan{start_ms,end_ms,output_width}.SliceCount();
 }
 
 std::pair<int, wxBitmap> AudioDisplay::RenderReviewAudioSlice(int start_ms, int end_ms,
 	wxSize size, int slice)
 {
 	AudioPerf::Scope tile_timer(AudioPerf::ReviewTile);
-	if (!provider || !audio_renderer_provider || audio_height <= 0 ||
-		ms_per_pixel <= 0 || start_ms >= end_ms || size.x <= 0 || size.y <= 0 || slice < 0)
+	if (!provider || !audio_renderer_provider || size.y <= 0)
 		return {0, wxBitmap()};
-	// The main renderer retains the waveform/spectrum analysis cache. Each
-	// Results event renders one bounded tile, then yields to input processing.
-	int source_start = std::max(0, AbsoluteXFromTime(start_ms));
-	int source_end = std::max(source_start + 1, AbsoluteXFromTime(end_ms));
-	int source_width = source_end - source_start;
-	int offset = slice * 256;
-	if (offset >= source_width) return {0, wxBitmap()};
-	int chunk = std::min(256, source_width - offset);
-	int left = int(int64_t(offset) * size.x / source_width);
-	int right = int(int64_t(offset + chunk) * size.x / source_width);
-	if (right <= left) return {left, wxBitmap()};
-	wxBitmap tile(chunk, audio_height);
-	{
-		wxMemoryDC dc(tile);
-		audio_renderer->Render(dc, wxPoint(0, 0), source_start + offset,
-			chunk, AudioStyle_Normal);
-	}
-	AudioPerf::Scope convert_timer(AudioPerf::ReviewConvert);
-	wxImage image = tile.ConvertToImage();
-	convert_timer.Stop();
-	AudioPerf::Scope scale_timer(AudioPerf::ReviewScale);
-	wxImage scaled = image.Scale(right - left, size.y, wxIMAGE_QUALITY_HIGH);
-	return {left, wxBitmap(scaled)};
+	AudioReviewPlan plan{start_ms,end_ms,size.x};
+	auto region=plan.GetSlice(slice);
+	if (!region.width) return {0, wxBitmap()};
+	wxBitmap tile(region.width,size.y,24);
+	audio_renderer->RenderReview(tile,region.begin_ms,plan.MillisecondsPerPixel(),
+		AudioStyle_Normal);
+	return {region.x, std::move(tile)};
 }
 
 void AudioDisplay::OnLoadTimer(wxTimerEvent&)
@@ -933,6 +915,7 @@ void AudioDisplay::OnLoadTimer(wxTimerEvent&)
 	if (!provider || last_sample_decoded == provider->GetNumSamples()) {
 		load_timer.Stop();
 		audio_load_position = -1;
+		if (provider) InvalidateReviewAudio();
 	}
 }
 
@@ -1547,7 +1530,6 @@ void AudioDisplay::OnSize(wxSizeEvent &)
 	audio_height = size.GetHeight();
 	audio_height -= scrollbar->GetBounds().GetHeight();
 	audio_height -= timeline->GetHeight();
-	++review_generation;
 	audio_renderer->SetHeight(audio_height);
 
 	audio_top = timeline->GetHeight();
@@ -1571,7 +1553,6 @@ int AudioDisplay::GetDuration() const
 
 void AudioDisplay::OnAudioOpen(agi::AudioProvider *provider)
 {
-	++review_generation;
 	this->provider = provider;
 
 	if (!audio_renderer_provider)
@@ -1579,6 +1560,7 @@ void AudioDisplay::OnAudioOpen(agi::AudioProvider *provider)
 
 	audio_renderer->SetAudioProvider(provider);
 	audio_renderer->SetCacheMaxSize(OPT_GET("Audio/Renderer/Spectrum/Memory Max")->GetInt() * 1024 * 1024);
+	InvalidateReviewAudio();
 
 	timeline->ChangeAudio(GetDuration());
 
