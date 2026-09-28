@@ -347,7 +347,7 @@ void TokenizeAndGate(Analysis& a) {
 		if(Separator(r[i].kana)) {++i; continue;}
 		auto const& span=a.spans[r[i].span];
 		if (i == span.reading_begin && !span.explicit_reading &&
-			span.reading == span.display && LatinRun(span.display)) {
+			span.original_reading == span.display && LatinRun(span.display)) {
 			size_t end=span.reading_end;
 			a.morae.push_back({span.display,i,end,r[i].logical_begin,r[end-1].logical_end,r[i].span,unknown});
 			i=end;continue;
