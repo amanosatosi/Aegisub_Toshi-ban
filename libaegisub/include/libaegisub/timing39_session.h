@@ -46,6 +46,9 @@ std::vector<SessionTarget> DiscoverTargets(std::vector<SessionTarget> const&, bo
 
 struct SessionLaneResult {
 	PartitionedCapture capture;
+	PartitionedCapture automatic_capture;
+	std::vector<TimingBlock> timing_override;
+	bool timing_override_active = false;
 	MatchResult match;
 	AssignmentEditor editor;
 	std::vector<TimingAssignment> manual_assignments;
@@ -57,7 +60,7 @@ struct SessionLaneResult {
 // performer decisions and are not constrained by the candidate graph.
 bool ValidManualAssignments(Analysis const&, std::vector<TimingBlock> const&,
 	std::vector<TimingAssignment> const&);
-enum class ResolutionSource { Automatic, UserSelected, UserManualRepair, Retake };
+enum class ResolutionSource { Automatic, UserSelected, UserManualRepair, UserManualTiming, Retake };
 struct SessionResult {
 	SessionTarget target;
 	std::array<SessionLaneResult, 2> lanes;
@@ -109,6 +112,8 @@ public:
 	bool ChooseAssignment(size_t row, int lane, size_t path);
 	bool SetManualAssignment(size_t row, int lane, std::vector<TimingAssignment> mapping);
 	bool ResetManualAssignment(size_t row, int lane);
+	bool SetManualTiming(size_t row, int lane, std::vector<TimingBlock> sung_blocks);
+	bool ResetManualTiming(size_t row, int lane);
 	void Rematch(size_t result, int lane);
 	SessionState State() const { return state; }
 	int Countdown() const { return countdown; }

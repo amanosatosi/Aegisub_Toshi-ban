@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <libaegisub/timing39_session.h>
+#include <libaegisub/timing39_input_clock.h>
 #include "timing39_ui.h"
+#include "toshiki_timing_draft.h"
 using namespace agi::timing39;
 namespace {
 SessionTarget Target(uint64_t id, int start, int end, std::string text=u8"みく") {
@@ -42,6 +44,89 @@ TEST(Timing39Session, ManualReattackMapsTwoAttacksToOneMoraAndResets) {
 	EXPECT_TRUE(s.ResetManualAssignment(0,0));EXPECT_EQ(Confidence::Red,result.GetConfidence());
 	EXPECT_EQ(ResolutionSource::Automatic,result.resolution);EXPECT_EQ(raw,s.Raw(0));
 }
+TEST(Timing39Session, DelayedDispatchUsesPhysicalEventClockNotHandlerTime) {
+	InputClockMapper mapper;mapper.Anchor(1000,5000);
+	int timestamp=0;
+	ASSERT_TRUE(mapper.Map(1200,1350,4000,6000,timestamp));
+	EXPECT_EQ(5200,timestamp);
+	Timing39Session session;
+	session.Prepare({Target(1,5000,5500,u8"み")},true,"opaque style",5000,5500);
+	Start(session);
+	EXPECT_TRUE(session.Key('F',true,timestamp));
+	EXPECT_TRUE(session.Key('F',false,5250));
+	session.Stop(5500);
+	ASSERT_FALSE(session.Raw(0).empty());
+	auto sung=std::find_if(session.Raw(0).begin(),session.Raw(0).end(),
+		[](TimingBlock const& block){return !block.gap;});
+	ASSERT_NE(session.Raw(0).end(),sung);
+	EXPECT_EQ(5200,sung->start);
+	ASSERT_TRUE(mapper.Map(1200,1400,4000,6000,timestamp));
+	EXPECT_EQ(5200,timestamp);
+	mapper.Reset();EXPECT_FALSE(mapper.Map(1200,1400,4000,6000,timestamp));
+	mapper.Anchor(1400,8000);EXPECT_FALSE(mapper.Map(1200,1500,7000,9000,timestamp));
+}
+TEST(Timing39Session, ToshikiDraftApplyCancelAndResetPreserveRhythmRaw) {
+	Timing39Session session;
+	session.Prepare({Target(1,1000,1500,u8"みく")},true,"opaque style",900,1500);
+	Start(session);Tap(session,'F',1050,1400);session.Stop(1500);
+	auto raw=session.Raw(0);
+	auto& result=session.Results()[0];
+	ASSERT_EQ(Confidence::Red,result.GetConfidence());
+	toshiki_timing::Draft cancelled;
+	cancelled.Begin(1000,1500,result.lanes[0].capture.blocks);
+	ASSERT_TRUE(cancelled.Split(1200));
+	EXPECT_EQ(raw,session.Raw(0));
+	EXPECT_FALSE(result.lanes[0].timing_override_active); // Cancel: discard the draft.
+	toshiki_timing::Draft edited;
+	edited.Begin(1000,1500,result.lanes[0].capture.blocks);
+	ASSERT_TRUE(edited.Split(1200));
+	ASSERT_TRUE(edited.Move(1,true,1250));
+	EXPECT_EQ(1250,edited.Blocks()[1].start);
+	ASSERT_TRUE(edited.Undo());EXPECT_EQ(1200,edited.Blocks()[1].start);
+	ASSERT_TRUE(edited.Redo());EXPECT_EQ(1250,edited.Blocks()[1].start);
+	ASSERT_TRUE(edited.Undo());EXPECT_EQ(1200,edited.Blocks()[1].start);
+	ASSERT_TRUE(session.SetManualTiming(0,0,edited.Blocks()));
+	EXPECT_TRUE(result.lanes[0].timing_override_active);
+	EXPECT_EQ(ResolutionSource::UserManualTiming,result.resolution);
+	EXPECT_EQ(Confidence::Green,result.GetConfidence());
+	EXPECT_EQ(raw,session.Raw(0));
+	ASSERT_TRUE(session.SetTimingCorrection(20));
+	EXPECT_TRUE(result.lanes[0].timing_override_active);
+	EXPECT_EQ(Confidence::Green,result.GetConfidence());
+	EXPECT_EQ(raw,session.Raw(0));
+	ASSERT_TRUE(session.ResetManualTiming(0,0));
+	EXPECT_EQ(Confidence::Red,result.GetConfidence());
+	EXPECT_FALSE(result.lanes[0].timing_override_active);
+	EXPECT_EQ(raw,session.Raw(0));
+}
+TEST(Timing39Session, ToshikiDraftJoinAndPreviewUndoAreLocal) {
+	toshiki_timing::Draft draft;
+	draft.Begin(1000,1500,{{1050,1200,false},{1200,1400,false}});
+	auto original=draft.Blocks();
+	ASSERT_TRUE(draft.PreviewMove(1,true,1250));
+	draft.FinishPreview(original);
+	ASSERT_TRUE(draft.Changed());
+	ASSERT_TRUE(draft.Undo());EXPECT_EQ(original,draft.Blocks());
+	ASSERT_TRUE(draft.Redo());EXPECT_EQ(1250,draft.Blocks()[1].start);
+	ASSERT_TRUE(draft.Join(0));ASSERT_EQ(1u,draft.Blocks().size());
+	EXPECT_EQ((TimingBlock{1050,1400,false}),draft.Blocks()[0]);
+	ASSERT_TRUE(draft.Undo());ASSERT_EQ(2u,draft.Blocks().size());
+}
+TEST(Timing39Session, LaneOverlaysDoNotChangeStaticAudioCacheIdentity) {
+	using agi::timing39::ui::ReviewBitmapKey;
+	ReviewBitmapKey primary{39500,43500,520,100,7};
+	ReviewBitmapKey secondary{39500,43500,520,100,7};
+	EXPECT_TRUE(primary==secondary);
+	secondary.generation=8;EXPECT_FALSE(primary==secondary);
+	secondary=primary;secondary.width=580;EXPECT_FALSE(primary==secondary);
+}
+TEST(Timing39Session, InputClockWrapAndStaleEventSafety) {
+	InputClockMapper mapper;mapper.Anchor(0xfffffff0u,5000);
+	int timestamp=0;
+	ASSERT_TRUE(mapper.Map(0x00000018u,0x00000050u,4000,6000,timestamp));
+	EXPECT_EQ(5040,timestamp);
+	EXPECT_FALSE(mapper.Map(0xfffffff0u,0x00004000u,4000,6000,timestamp));
+}
 TEST(Timing39Session, ManualMergeAndCorrectionInvalidation) {
 	Timing39Session s;s.Prepare({Target(1,1000,1500,u8"ない")},true,"opaque style",900,1500);Start(s);
 	Tap(s,'F',1005,1200);s.Stop(1500);
@@ -73,6 +158,14 @@ TEST(Timing39Session, LocalReviewShowsRawCorrectionTailAndClamp) {
 	EXPECT_EQ(191937,shifted.raw[0].raw.start);
 	EXPECT_EQ(191907,shifted.raw[0].adjusted.start);
 	EXPECT_EQ(191937,raw[0].start);
+}
+TEST(Timing39Session, ReviewPlaybackUsesExactLineNotPaddedContext) {
+	SessionResult result;result.target=Target(1,40000,43000,u8"み");
+	auto view=agi::timing39::ui::BuildLocalReviewModel(result,0,{},0,500);
+	EXPECT_EQ((std::pair<int,int>{40000,43000}),
+		agi::timing39::ui::ReviewPlaybackRange(view,false));
+	EXPECT_EQ((std::pair<int,int>{39500,43500}),
+		agi::timing39::ui::ReviewPlaybackRange(view,true));
 }
 TEST(Timing39Session, ActivateCountdownCaptureAcrossLinesAndNormalStop) {
 	Timing39Session s;s.Prepare({Target(1,1000,1500),Target(2,2000,2500)},true,"opaque style",900,2500);

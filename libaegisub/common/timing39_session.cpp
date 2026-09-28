@@ -226,6 +226,64 @@ bool Timing39Session::ResetManualAssignment(size_t row, int lane) {
 	if (state != SessionState::Results || row >= results.size() || lane < 0 || lane > 1 ||
 		results[row].committed || !results[row].lanes[lane].manual_active) return false;
 	Rematch(row, lane);
+	if (results[row].lanes[lane].timing_override_active) {
+		results[row].resolution = ResolutionSource::UserManualTiming;
+		results[row].reviewed = true;
+	}
+	return true;
+}
+bool Timing39Session::SetManualTiming(size_t row, int lane, std::vector<TimingBlock> sung_blocks) {
+	if (state != SessionState::Results || row >= results.size() || lane < 0 || lane > 1 ||
+		results[row].committed || sung_blocks.empty()) return false;
+	auto& result = results[row];
+	int previous = result.target.start;
+	for (auto const& block : sung_blocks) {
+		if (block.gap || block.start < previous || block.end <= block.start ||
+			block.end > result.target.end) return false;
+		previous = block.end;
+	}
+	auto& selected = result.lanes[lane];
+	selected.timing_override = std::move(sung_blocks);
+	result.manual_invalidated = false;
+	selected.timing_override_active = true;
+	selected.capture.blocks = selected.timing_override;
+	selected.capture.raw_indices.clear();
+	selected.capture.status = PartitionStatus::Clean;
+	selected.capture.preceding_sung_tails = 0;
+	selected.match = Match(result.target.analysis, selected.capture.blocks);
+	if (selected.manual_active && !ValidManualAssignments(result.target.analysis,
+		selected.capture.blocks, selected.manual_assignments)) {
+		selected.manual_active = false; selected.manual_assignments.clear();
+		result.manual_invalidated = true;
+	}
+	selected.editor.Reset(selected.match.paths.empty() ? std::vector<TimingAssignment>{} :
+		selected.match.paths[0].assignments);
+	result.lane = lane; result.reviewed = true; result.committed = false;
+	result.resolution = selected.manual_active ? ResolutionSource::UserManualRepair :
+		ResolutionSource::UserManualTiming;
+	return true;
+}
+bool Timing39Session::ResetManualTiming(size_t row, int lane) {
+	if (state != SessionState::Results || row >= results.size() || lane < 0 || lane > 1 ||
+		results[row].committed || !results[row].lanes[lane].timing_override_active) return false;
+	auto& selected = results[row].lanes[lane];
+	results[row].manual_invalidated = false;
+	selected.timing_override_active = false; selected.timing_override.clear();
+	selected.capture = selected.automatic_capture;
+	selected.match = Match(results[row].target.analysis, selected.capture.blocks);
+	selected.editor.Reset(selected.match.paths.empty() ? std::vector<TimingAssignment>{} :
+		selected.match.paths[0].assignments);
+	if (selected.manual_active && ValidManualAssignments(results[row].target.analysis,
+		selected.capture.blocks, selected.manual_assignments)) {
+		results[row].resolution = ResolutionSource::UserManualRepair;
+		results[row].reviewed = true;
+	}
+	else {
+		if (selected.manual_active) results[row].manual_invalidated = true;
+		selected.manual_active = false; selected.manual_assignments.clear();
+		results[row].resolution = ResolutionSource::Automatic;
+		results[row].reviewed = false;
+	}
 	return true;
 }
 bool Timing39Session::SetTimingCorrection(int correction_ms) {
@@ -249,7 +307,9 @@ bool Timing39Session::SetTimingCorrection(int correction_ms) {
 					source = &adjusted_retake;
 					break;
 				}
-			l.capture = PartitionCapture(*source, r.target.start, r.target.end);
+			l.automatic_capture = PartitionCapture(*source, r.target.start, r.target.end);
+			l.capture = l.timing_override_active ? PartitionCapture(l.timing_override,
+				r.target.start, r.target.end) : l.automatic_capture;
 			l.match = Match(r.target.analysis, l.capture.blocks);
 			if (r.lane == lane && ((previous_selected &&
 				ValidAssignments(r.target.analysis, l.capture.blocks, l.editor.Get())) ||
@@ -278,7 +338,10 @@ void Timing39Session::Resolve() {
 	bool secondary = HasSungBlocks(Raw(1));
 	for (auto const& target : targets) {
 		SessionResult r; r.target = target;
-		for (int i = 0; i < 2; ++i) r.lanes[i].capture = PartitionCapture(Raw(i), target.start, target.end);
+		for (int i = 0; i < 2; ++i) {
+			r.lanes[i].capture = PartitionCapture(Raw(i), target.start, target.end);
+			r.lanes[i].automatic_capture = r.lanes[i].capture;
+		}
 		if (secondary && !styles.ambiguous) {
 			r.lane = target.style == styles.primary ? 0 : target.style == styles.secondary ? 1 : -1;
 			r.association_ambiguous = r.lane < 0;
@@ -310,6 +373,9 @@ bool Timing39Session::Stop(int ms) {
 		retakes.push_back({result.target.id, retake_lane, blocks});
 		result.lanes[retake_lane].capture = PartitionCapture(
 			ShiftCapture(blocks, timing_correction_ms), result.target.start, result.target.end);
+		result.lanes[retake_lane].automatic_capture = result.lanes[retake_lane].capture;
+		result.lanes[retake_lane].timing_override_active = false;
+		result.lanes[retake_lane].timing_override.clear();
 		Rematch(retake_result, retake_lane);
 		result.resolution = ResolutionSource::Retake;
 		retake_result = unknown;

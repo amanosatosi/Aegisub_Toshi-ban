@@ -115,6 +115,18 @@ struct LocalReviewModel {
 	std::vector<TimingBlock> local;
 	std::vector<TimingAssignment> assignments;
 };
+struct ReviewBitmapKey {
+	int begin = 0, end = 0, width = 0, height = 0;
+	uint64_t generation = 0;
+	bool operator==(ReviewBitmapKey const& rhs) const {
+		return begin == rhs.begin && end == rhs.end && width == rhs.width &&
+			height == rhs.height && generation == rhs.generation;
+	}
+};
+inline std::pair<int,int> ReviewPlaybackRange(LocalReviewModel const& view, bool context) {
+	return context ? std::make_pair(view.begin, view.end) :
+		std::make_pair(view.line_start, view.line_end);
+}
 inline LocalReviewModel BuildLocalReviewModel(SessionResult const& result, int lane,
 	std::vector<TimingBlock> const& raw, int correction_ms, int context_ms = 400) {
 	LocalReviewModel view;
