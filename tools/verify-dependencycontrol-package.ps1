@@ -74,8 +74,9 @@ OutputDir=$Sandbox
 OutputBaseFilename=depctrl-regression
 [Types]
 Name: full; Description: Full
+Name: custom; Description: Custom; Flags: iscustom
 [Components]
-Name: main; Description: Main; Types: full; Flags: fixed
+Name: main; Description: Main; Types: full custom; Flags: fixed
 Name: macros; Description: Automation; Types: full
 Name: macros\bundled; Description: Bundled; Types: full
 Name: macros\demos; Description: Demos; Types: full
@@ -92,7 +93,8 @@ if ($LASTEXITCODE -ne 0) { throw 'DependencyControl installer regression harness
 function Install-Fixture {
     param([string]$Components = 'main,macros,macros\bundled,macros\demos,macros\modules,macros\modules\depctrl,macros\modules\yutils,macros\modules\luajson')
     $process = Start-Process -FilePath "$Sandbox\depctrl-regression.exe" -WindowStyle Hidden -Wait -PassThru -ArgumentList @(
-        '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/COMPONENTS=$Components"
+        '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TYPE=custom', "/COMPONENTS=$Components",
+        "/LOG=$Sandbox\install.log"
     )
     if ($process.ExitCode -ne 0) { throw "DependencyControl fixture install failed: $($process.ExitCode)" }
 }

@@ -56,8 +56,15 @@ std::vector<AegisubUpdateDescription> FindApplicationUpdates(
 
 			auto comparison = ReadJson(fetch(ApplicationApiPath + "/compare/" +
 				EncodeRef(current_commit) + "..." + EncodeRef(tag) + "?per_page=1"));
-			// Older/identical releases and unrelated branches are not upgrades.
-			if (StringField(static_cast<json::Object const&>(comparison), "status") != "ahead") continue;
+			auto const& compared = static_cast<json::Object const&>(comparison);
+			auto status = StringField(compared, "status");
+			// The old updater compared revision counts. On diverged branches,
+			// ahead_by - behind_by is the difference in those commit counts.
+			bool newer = status == "ahead";
+			if (status == "diverged")
+				newer = static_cast<json::Integer const&>(compared.at("ahead_by")) >
+					static_cast<json::Integer const&>(compared.at("behind_by"));
+			if (!newer) continue;
 			auto name = StringField(object, "name");
 			auto url = StringField(object, "html_url");
 			updates.push_back({url.empty() ? ApplicationReleasesUrl : url,

@@ -38,14 +38,26 @@ TEST(ApplicationUpdates, PreservesSpecificReleaseUrlAndTwoPartTags) {
 	EXPECT_TRUE(updates[0].description.empty());
 }
 
-TEST(ApplicationUpdates, OlderIdenticalAndDivergedReleasesAreNotUpgrades) {
-	for (auto status : {"behind", "identical", "diverged"}) {
+TEST(ApplicationUpdates, OlderAndIdenticalReleasesAreNotUpgrades) {
+	for (auto status : {"behind", "identical"}) {
 		auto updates = FindApplicationUpdates([&](auto const& path) {
 			if (path == ReleasesPath()) return "[" + Release("1.1") + "]";
 			EXPECT_EQ(ComparePath("1.1"), path);
 			return std::string("{\"status\":\"") + status + "\"}";
 		}, "current", false);
 		EXPECT_TRUE(updates.empty());
+	}
+}
+
+TEST(ApplicationUpdates, DivergedReleasesPreserveRevisionCountOrdering) {
+	for (int ahead : {6, 81, 82}) {
+		auto updates = FindApplicationUpdates([&](auto const& path) {
+			if (path == ReleasesPath()) return "[" + Release("2.0") + "]";
+			EXPECT_EQ(ComparePath("2.0"), path);
+			return std::string("{\"status\":\"diverged\",\"ahead_by\":") +
+				std::to_string(ahead) + ",\"behind_by\":81}";
+		}, "current", false);
+		EXPECT_EQ(ahead > 81 ? 1u : 0u, updates.size());
 	}
 }
 

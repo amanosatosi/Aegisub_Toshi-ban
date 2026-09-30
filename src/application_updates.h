@@ -18,7 +18,7 @@ struct AegisubUpdateDescription {
 	std::string description;
 };
 
-// Fetch accepts a path on ApplicationApiHost. Commit ancestry preserves the
+// Fetch accepts a path on ApplicationApiHost. GitHub commit counts preserve the
 // old revision ordering for tagged and development builds, including two-part
 // Toshi-ban release tags (1.0, 1.1, 2.0).
 std::vector<AegisubUpdateDescription> FindApplicationUpdates(
