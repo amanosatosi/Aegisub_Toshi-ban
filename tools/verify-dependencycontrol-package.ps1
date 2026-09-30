@@ -137,6 +137,7 @@ foreach ($entry in @('include\l0\DependencyControl.lua', 'include\l0\DependencyC
     Seed-File "$Profile\Aegisub\automation\$entry"
 }
 Seed-File "$App\automation\autoload\garret.depctrl_config.lua"
+Set-ItemProperty -LiteralPath "$App\automation\autoload\garret.depctrl_config.lua" -Name IsReadOnly -Value $true
 $unrelated = @('automation\autoload\user-script.lua', 'automation\include\BM\UserMutex.lua',
     'automation\include\l0\UserModule.moon', 'Nudge.json', 'l0.UpdateFeed_custom.json')
 foreach ($entry in $unrelated) { Seed-File "$Profile\Aegisub\$entry" 'user state' }

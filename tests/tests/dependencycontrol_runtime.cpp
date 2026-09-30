@@ -1,3 +1,4 @@
+#include <libaegisub/fs.h>
 #include <libaegisub/lua/modules.h>
 #include <libaegisub/lua/script_reader.h>
 #include <lua.hpp>
