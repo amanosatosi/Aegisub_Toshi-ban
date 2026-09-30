@@ -50,6 +50,8 @@
 #include "include/aegisub/context.h"
 #include "libresrc/libresrc.h"
 #include "options.h"
+#include "mangetsu_renderer_offer.h"
+#include "include/aegisub/subtitles_provider.h"
 #include "project.h"
 #include "subs_controller.h"
 #include "subtitles_provider_libass.h"
@@ -208,6 +210,7 @@ bool AegisubApp::OnInit() {
 	}
 
 	try {
+		config::opt->RegisterOptional(MangetsuRendererOfferKey);
 		config::opt->ConfigUser();
 		// Drop deprecated playback speed persistence; runtime-only now.
 		config::opt->Remove("Video/Playback/Speed");
@@ -292,6 +295,22 @@ bool AegisubApp::OnInit() {
 		libass::CacheFonts();
 		libassmod::CacheFonts();
 		mangetsu::CacheFonts();
+
+		// Enumerating providers registers the available renderers. Handle the
+		// migration before creating any project/video renderer for this session.
+		StartupLog("Offer Mangetsu renderer");
+		if (HandleMangetsuRendererOffer(*config::opt, SubtitlesProviderFactory::GetClasses(), []() -> std::optional<bool> {
+			// CI GUI smoke runs must not block on an unattended migration dialog.
+			wxString ci;
+			if (wxGetEnv("CI", &ci) && ci == "true") return std::nullopt;
+			return wxMessageBox(_("New renderer \"Mangetsu\" added. Would you like to use it?"),
+				_("Subtitle renderer"), wxYES_NO | wxCENTER) == wxYES;
+		})) {
+			try { config::opt->Flush(); }
+			catch (agi::fs::FileSystemError const& e) {
+				wxMessageBox(to_wx(e.GetMessage()), "Error saving config file", wxOK | wxICON_ERROR | wxCENTER);
+			}
+		}
 
 		// Load Automation scripts
 		StartupLog("Load global Automation scripts");

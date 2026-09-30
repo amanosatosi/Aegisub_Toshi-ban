@@ -26,6 +26,7 @@ all_test_sources += [
 
     # Compile minimal Aegisub sources needed for AssKaraoke tests
     '../src/ass_attachment.cpp',
+    '../src/application_updates.cpp',
     '../src/ass_dialogue.cpp',
     '../src/ass_file_script_info.cpp',
     '../src/ass_font_tag_selection.cpp',
@@ -39,6 +40,7 @@ all_test_sources += [
     '../src/motion_tracking/motion_track_export_ae.cpp',
     '../src/motion_tracking/motion_track_segments.cpp',
     '../src/mangetsu_distort.cpp',
+    '../src/mangetsu_renderer_offer.cpp',
     '../src/mangetsu_perspective.cpp',
     '../src/mangetsu_curved_text.cpp',
     '../src/mangetsu_gradient_placement.cpp',
@@ -50,6 +52,8 @@ all_test_sources += [
     '../src/vector2d.cpp',
 
     'tests/access.cpp',
+    'tests/application_updates.cpp',
+    'tests/dependencycontrol_runtime.cpp',
     'tests/audio.cpp',
     'tests/cajun.cpp',
     'tests/calltip_provider.cpp',
@@ -80,6 +84,7 @@ all_test_sources += [
     'tests/mru.cpp',
     'tests/motion_track_segments.cpp',
     'tests/mangetsu_distort.cpp',
+    'tests/mangetsu_renderer_offer.cpp',
     'tests/mangetsu_perspective.cpp',
     'tests/mangetsu_curved_text.cpp',
     'tests/mangetsu_gradient_placement.cpp',
@@ -116,7 +121,7 @@ runner = executable(
     cpp_args : extra_args,
     link_with : all_test_dep_libs,
 )    
-test('gtest main', runner)
+test('gtest main', runner, env: ['AEGISUB_AUTOMATION_INCLUDE_DIR=' + (meson.project_source_root() / 'automation/include')])
 
 
 # setup test env

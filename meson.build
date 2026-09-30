@@ -85,6 +85,13 @@ endif
 
 cxx = meson.get_compiler('cpp')
 cc = meson.get_compiler('c')
+if get_option('enable_update_checker')
+    if host_machine.system() == 'windows'
+        deps += cc.find_library('winhttp')
+    else
+        deps += dependency('libcurl')
+    endif
+endif
 deps += cc.find_library('m', required: false)
 deps += cc.find_library('dl', required: false)
 

@@ -98,18 +98,24 @@ function Assert-FileHash {
 	}
 }
 
-. (Join-Path $SourceRoot "tools\apply-git-patch.ps1")
-
-$DepCtrlPatchDir = Join-Path $SourceRoot "tools\patches\dependencycontrol"
-
-# DepCtrl
+# DepCtrl: also retarget a cached 0.6.x checkout, discarding the old local patch.
+$DependencyControlVersion = "v0.9.0"
 if (!(Test-Path DependencyControl)) {
-	git clone https://github.com/TypesettingTools/DependencyControl.git
-	Set-Location DependencyControl
-	git checkout v0.6.3-alpha
-	Set-Location $DepsDir
+	git clone --depth 1 --branch $DependencyControlVersion https://github.com/TypesettingTools/DependencyControl.git
+	if ($LASTEXITCODE -ne 0) { throw "DependencyControl clone failed." }
 }
-Apply-GitPatch -RepoDir (Join-Path $DepsDir "DependencyControl") -PatchPath (Join-Path $DepCtrlPatchDir "0001-windows-unicode-long-paths.patch")
+else {
+	git -C DependencyControl fetch --depth 1 origin "refs/tags/${DependencyControlVersion}:refs/tags/${DependencyControlVersion}"
+	if ($LASTEXITCODE -ne 0) { throw "DependencyControl tag fetch failed." }
+}
+git -C DependencyControl checkout --force $DependencyControlVersion
+if ($LASTEXITCODE -ne 0) { throw "DependencyControl checkout failed." }
+# This is our dedicated installer dependency checkout, not user Automation data.
+$DepCtrlCheckout = (Resolve-Path -LiteralPath (Join-Path $DepsDir "DependencyControl")).ProviderPath
+$ResolvedDepsDir = (Resolve-Path -LiteralPath $DepsDir).ProviderPath
+if ((Split-Path -Parent $DepCtrlCheckout) -ne $ResolvedDepsDir) { throw "Unexpected DependencyControl checkout path." }
+git -C $DepCtrlCheckout clean -fd -- modules macros
+if ($LASTEXITCODE -ne 0) { throw "DependencyControl source cleanup failed." }
 
 # YUtils
 if (!(Test-Path YUtils)) {
@@ -195,18 +201,6 @@ if (!(Test-Path SCXVid)) {
 	if (!(Test-Path "libscxvid.dll")) {
 		throw "SCXVid archive did not contain libscxvid.dll."
 	}
-	Set-Location $DepsDir
-}
-
-# ffi-experiments
-if (!(Test-Path ffi-experiments)) {
-	Get-Command "moonc" # check to ensure Moonscript is present
-	git clone https://github.com/arch1t3cht/ffi-experiments.git
-	Set-Location ffi-experiments
-	meson build -Ddefault_library=static
-	if(!$?) { Exit $LASTEXITCODE }
-	meson compile -C build
-	if(!$?) { Exit $LASTEXITCODE }
 	Set-Location $DepsDir
 }
 

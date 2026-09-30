@@ -24,6 +24,7 @@ osx_bundle_sed_path="${builddir}/osx-bundle.sed"
 
 last_svn_revision=6962
 last_svn_hash="16cd907fe7482cb54a7374cd28b8501f138116be"
+git_commit=$(git rev-parse HEAD)
 
 git_revision=$(expr $last_svn_revision + $(git rev-list --count $last_svn_hash..HEAD))
 git_version_str=$(git describe --exact-match 2> /dev/null)
@@ -49,6 +50,7 @@ build_date="$(date "+%Y-%m-%d %H:%M %Z")"
 
 new_version_h="\
 #define BUILD_GIT_VERSION_NUMBER ${git_revision}
+#define BUILD_GIT_HASH \"${git_commit}\"
 #define BUILD_GIT_VERSION_STRING \"${git_version_str}\"
 #define TAGGED_RELEASE ${tagged_release}
 #define INSTALLER_VERSION \"${installer_version}\"

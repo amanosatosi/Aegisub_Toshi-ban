@@ -1,6 +1,8 @@
 subdir('libresrc')
 
 aegisub_src = files(
+    'application_updates.cpp',
+    'application_update_http.cpp',
     'MatroskaParser.c',
     'actor_MRU.cpp',
     'aegisublocale.cpp',
@@ -114,6 +116,7 @@ aegisub_src = files(
     'image_position_picker.cpp',
     'initial_line_state.cpp',
     'main.cpp',
+    'mangetsu_renderer_offer.cpp',
     'mangetsu_distort.cpp',
     'mangetsu_perspective.cpp',
     'mangetsu_curved_text.cpp',

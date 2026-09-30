@@ -11,7 +11,19 @@ on:
   workflow_dispatch:
 
 jobs:
+  release-preparation:
+    name: Release preparation contracts
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check renderer migration, update source and DependencyControl packaging contracts
+        run: python tests/python/test_release_preparation.py
+
   build:
+    needs: release-preparation
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.runner || matrix.config.os }}
     env:
@@ -182,7 +194,7 @@ jobs:
         if: startsWith(matrix.config.os, 'ubuntu-')
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build build-essential libx11-dev libwxgtk3.0-gtk3-dev libfreetype6-dev pkg-config libfontconfig1-dev libass-dev libasound2-dev libffms2-dev intltool libboost-all-dev libhunspell-dev libuchardet-dev libpulse-dev libopenal-dev libxxhash-dev nasm desktop-file-utils libsoundtouch-dev
+          sudo apt-get install ninja-build build-essential libx11-dev libwxgtk3.0-gtk3-dev libfreetype6-dev pkg-config libfontconfig1-dev libass-dev libasound2-dev libffms2-dev intltool libboost-all-dev libhunspell-dev libuchardet-dev libpulse-dev libopenal-dev libxxhash-dev nasm desktop-file-utils libsoundtouch-dev libcurl4-openssl-dev
 
       - name: Configure
         run: |
@@ -229,6 +241,23 @@ jobs:
       - name: Generate Windows portable installer
         if: matrix.config.os == 'windows-latest'
         run: cd build && ninja win-portable
+
+      - name: Verify DependencyControl installer migration and portable payload
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        run: >-
+          .\tools\verify-dependencycontrol-package.ps1
+          -BuildRoot "${{ github.workspace }}\build"
+          -SourceRoot "${{ github.workspace }}"
+
+      - name: Load packaged DependencyControl with Aegisub Automation runtime
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $env:AEGISUB_DEPCTRL_INCLUDE_DIR = "${{ github.workspace }}\build\aegisub-portable\automation\include"
+          $env:DEPCTRL_USER_DIR = "${{ github.workspace }}\build\depctrl-runtime-profile"
+          .\build\tests\gtest-main.exe --gtest_filter=DependencyControlRuntime.PackagedModuleLoadsWithBundledFallbacks
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged DependencyControl failed to load in Aegisub runtime.' }
 
       - name: Verify bundled ASSDraw packages
         if: matrix.config.os == 'windows-latest'

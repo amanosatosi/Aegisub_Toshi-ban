@@ -22,6 +22,7 @@
 #include <iosfwd>
 #include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 #include <libaegisub/fs_fwd.h>
@@ -44,6 +45,7 @@ public:
 
 private:
 	std::vector<std::unique_ptr<OptionValue>> values;
+	std::set<std::string> optional_names;
 
 	/// User config (file that will be written to disk)
 	const agi::fs::path config_file;
@@ -74,6 +76,12 @@ public:
 	/// Get an option value object by name throw an internal exception if the option is not found.
 	OptionValue *Get(const char *name);
 	OptionValue *Get(std::string const& name) { return Get(name.c_str()); }
+
+	/// Allow a runtime-created option to be loaded without a default entry.
+	void RegisterOptional(const char *name) { optional_names.insert(name); }
+	bool Has(const char *name) const;
+	/// Insert a runtime-created option. Existing entries must not be overwritten.
+	void Add(std::unique_ptr<OptionValue> value);
 
 	/// @brief Remove an option by name if it exists.
 	/// Used to drop deprecated keys before writing config back out.

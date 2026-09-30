@@ -34,8 +34,6 @@ $InstallerDir = Join-Path $BuildRoot "install"
 $InstallerDepsDir = Join-Path $BuildRoot "installer-deps"
 $PortableOutputDir = Join-Path $BuildRoot "aegisub-portable"
 
-. (Join-Path $SourceRoot "tools\apply-git-patch.ps1")
-
 
 Write-Output Goto building dir
 Set-Location $BuildRoot
@@ -98,20 +96,10 @@ $DepCtrlDir = Join-Path $InstallerDepsDir "DependencyControl"
 if (!(Test-Path $DepCtrlDir)) {
     throw "DependencyControl installer dependency was not found at $DepCtrlDir. Run the installer dependency setup first."
 }
-$DepCtrlPatchDir = Join-Path $SourceRoot "tools\patches\dependencycontrol"
-Apply-GitPatch -RepoDir $DepCtrlDir -PatchPath (Join-Path $DepCtrlPatchDir "0001-windows-unicode-long-paths.patch")
-Copy-New-Items "$InstallerDepsDir\DependencyControl\modules\*"  "$PortableOutputDir\automation\include\l0\"  -Recurse
+Copy-New-Items "$InstallerDepsDir\DependencyControl\modules\l0\*"  "$PortableOutputDir\automation\include\l0\"  -Recurse
 Copy-New-Items "$InstallerDepsDir\DependencyControl\macros\*"  "$PortableOutputDir\automation\autoload\"  -Recurse
 Copy-New-Item $InstallerDepsDir\Yutils\src\Yutils.lua  $PortableOutputDir\automation\include
 Copy-New-Items "$InstallerDepsDir\luajson\lua\*"  "$PortableOutputDir\automation\include\"  -Recurse
-
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\requireffi\requireffi.lua  $PortableOutputDir\automation\include\requireffi
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\bad-mutex\BadMutex.dll  $PortableOutputDir\automation\include\BM\BadMutex
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\bad-mutex\BadMutex.lua  $PortableOutputDir\automation\include\BM
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\precise-timer\PreciseTimer.dll  $PortableOutputDir\automation\include\PT\PreciseTimer
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\precise-timer\PreciseTimer.lua  $PortableOutputDir\automation\include\PT
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\download-manager\DownloadManager.dll  $PortableOutputDir\automation\include\DM\DownloadManager
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\download-manager\DownloadManager.lua  $PortableOutputDir\automation\include\DM
 
 Write-Output 'Copying - portable-config'
 Copy-New-Item $SourceRoot\packages\win_installer\portable\config.json  $PortableOutputDir
