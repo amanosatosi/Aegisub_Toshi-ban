@@ -16,7 +16,8 @@ all_test_deps += [
 ]
 all_test_deps += deps
 all_test_dep_libs += [
-    libaegisub
+    libaegisub,
+    libluabins,
 ]
 all_test_sources += [
     'support/main.cpp',
