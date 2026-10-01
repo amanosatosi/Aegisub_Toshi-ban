@@ -4,6 +4,8 @@
 
 #include "ass_tag_edit.h"
 #include "better_view.h"
+#include <libaegisub/color.h>
+#include <vector>
 
 using agi::ass::FadeSide;
 
@@ -126,4 +128,146 @@ TEST(ass_tag_edit, colored_fade_does_not_treat_transform_fad_as_line_level) {
 	auto result = agi::ass::SetColoredFade(
 		"{\\t(0,100,\\fad(20,30))\\bord3}Text", FadeSide::In, 40, "&H010101&");
 	EXPECT_EQ("{\\fad(40,0,&H010101&,)\\t(0,100,\\fad(20,30))\\bord3}Text", result.text);
+}
+
+namespace {
+using agi::ass::FadeColorChoice;
+
+// Drive the same picker/apply/commit boundary used by VideoBox, with an
+// in-memory selection and undo snapshot instead of a modal wxWidgets dialog.
+class FadeOperation : public ::testing::Test {
+protected:
+	std::vector<std::string> lines{"First", "{\\fad(25,75)}Second"};
+	std::vector<std::vector<std::string>> undo;
+	agi::Color picked{0x12, 0x34, 0x56};
+	int picker_calls = 0;
+	int apply_calls = 0;
+	bool accept_picker = true;
+
+	bool Run(FadeSide side, FadeColorChoice choice) {
+		int const duration = agi::ass::FadeDurationFromVideoTime(side, 1420, 1000, 3000);
+		auto before = lines;
+		return agi::ass::RunFadeOperation(choice,
+			[&](std::string& color) {
+				++picker_calls;
+				color = picked.GetAssOverrideFormatted();
+				return accept_picker;
+			},
+			[&](std::string const& color) {
+				++apply_calls;
+				for (auto& text : lines)
+					text = agi::ass::SetColoredFade(text, side, duration, color).text;
+				return lines != before;
+			},
+			[&] { undo.push_back(before); });
+	}
+};
+
+TEST_F(FadeOperation, MainFadeInCreatesAndUpdatesOrdinaryFadeWithoutPicker) {
+	ASSERT_TRUE(Run(FadeSide::In, FadeColorChoice::Normal));
+	EXPECT_EQ((std::vector<std::string>{"{\\fad(420,0)}First", "{\\fad(420,75)}Second"}), lines);
+	EXPECT_EQ(0, picker_calls);
+	EXPECT_EQ(1u, undo.size());
+}
+
+TEST_F(FadeOperation, MainFadeOutCreatesAndUpdatesOrdinaryFadeWithoutPicker) {
+	ASSERT_TRUE(Run(FadeSide::Out, FadeColorChoice::Normal));
+	EXPECT_EQ((std::vector<std::string>{"{\\fad(0,1580)}First", "{\\fad(25,1580)}Second"}), lines);
+	EXPECT_EQ(0, picker_calls);
+}
+
+TEST_F(FadeOperation, FadeInWhite) {
+	ASSERT_TRUE(Run(FadeSide::In, FadeColorChoice::White));
+	EXPECT_EQ("{\\fad(420,0,&HFFFFFF&,)}First", lines[0]);
+	EXPECT_EQ(0, picker_calls);
+}
+
+TEST_F(FadeOperation, FadeInBlack) {
+	ASSERT_TRUE(Run(FadeSide::In, FadeColorChoice::Black));
+	EXPECT_EQ("{\\fad(420,0,&H000000&,)}First", lines[0]);
+	EXPECT_EQ(0, picker_calls);
+}
+
+TEST_F(FadeOperation, FadeOutWhite) {
+	ASSERT_TRUE(Run(FadeSide::Out, FadeColorChoice::White));
+	EXPECT_EQ("{\\fad(0,1580,,&HFFFFFF&)}First", lines[0]);
+	EXPECT_EQ(0, picker_calls);
+}
+
+TEST_F(FadeOperation, FadeOutBlack) {
+	ASSERT_TRUE(Run(FadeSide::Out, FadeColorChoice::Black));
+	EXPECT_EQ("{\\fad(0,1580,,&H000000&)}First", lines[0]);
+	EXPECT_EQ(0, picker_calls);
+}
+
+TEST_F(FadeOperation, CustomStartColorUsesBgrAndPicksOnceForSelection) {
+	ASSERT_TRUE(Run(FadeSide::In, FadeColorChoice::Pick));
+	EXPECT_EQ("{\\fad(420,0,&H563412&,)}First", lines[0]);
+	EXPECT_EQ("{\\fad(420,75,&H563412&,)}Second", lines[1]);
+	EXPECT_EQ(1, picker_calls);
+	EXPECT_EQ(1, apply_calls);
+	ASSERT_EQ(1u, undo.size());
+	lines = undo.back();
+	EXPECT_EQ((std::vector<std::string>{"First", "{\\fad(25,75)}Second"}), lines);
+}
+
+TEST_F(FadeOperation, CustomEndColorUsesActiveDurationAndCommitsOnce) {
+	ASSERT_TRUE(Run(FadeSide::Out, FadeColorChoice::Pick));
+	EXPECT_EQ("{\\fad(0,1580,,&H563412&)}First", lines[0]);
+	EXPECT_EQ("{\\fad(25,1580,,&H563412&)}Second", lines[1]);
+	EXPECT_EQ(1, picker_calls);
+	EXPECT_EQ(1u, undo.size());
+}
+
+TEST_F(FadeOperation, CancellationNeverAppliesOrCommitsEitherSide) {
+	accept_picker = false;
+	auto before = lines;
+	for (auto side : {FadeSide::In, FadeSide::Out}) {
+		EXPECT_FALSE(Run(side, FadeColorChoice::Pick));
+		EXPECT_EQ(before, lines);
+		EXPECT_EQ(0, apply_calls);
+		EXPECT_TRUE(undo.empty());
+	}
+	EXPECT_EQ(2, picker_calls);
+}
+
+TEST_F(FadeOperation, UnchangedFadeDoesNotCommit) {
+	lines = {"{\\fad(420,75)}Text"};
+	EXPECT_FALSE(Run(FadeSide::In, FadeColorChoice::Normal));
+	EXPECT_TRUE(undo.empty());
+}
+}
+
+TEST(ass_tag_edit, normal_fade_preserves_opposite_color_and_alpha_modifier) {
+	std::string const text = "{\\fad(200,500,&H112233&+a,&H445566&+A)\\bord3}Text";
+	EXPECT_EQ("{\\fad(350,500,,&H445566&+A)\\bord3}Text",
+		agi::ass::SetColoredFade(text, FadeSide::In, 350, "").text);
+	EXPECT_EQ("{\\fad(200,600,&H112233&+a,)\\bord3}Text",
+		agi::ass::SetColoredFade(text, FadeSide::Out, 600, "").text);
+}
+
+TEST(ass_tag_edit, colored_to_ordinary_transition_collapses_empty_colors) {
+	auto first = agi::ass::SetColoredFade("{\\fad(200,500,&H112233&+a,)}Text", FadeSide::In, 350, "");
+	EXPECT_EQ("{\\fad(350,500)}Text", first.text);
+	auto colored = agi::ass::SetColoredFade(first.text, FadeSide::Out, 600, "&HFFFFFF&");
+	EXPECT_EQ("{\\fad(350,600,,&HFFFFFF&)}Text", colored.text);
+	EXPECT_EQ("{\\fad(350,600)}Text",
+		agi::ass::SetColoredFade(colored.text, FadeSide::Out, 600, "").text);
+}
+
+TEST(ass_tag_edit, color_replacement_preserves_both_alpha_modifiers) {
+	std::string const text = "{\\fad(200,500,&H112233&+a,&H445566&+A)}Text";
+	EXPECT_EQ("{\\fad(350,500,&HFFFFFF&+a,&H445566&+A)}Text",
+		agi::ass::SetColoredFade(text, FadeSide::In, 350, "&HFFFFFF&").text);
+	EXPECT_EQ("{\\fad(200,600,&H112233&+a,&H000000&+A)}Text",
+		agi::ass::SetColoredFade(text, FadeSide::Out, 600, "&H000000&").text);
+}
+
+TEST(ass_tag_edit, normal_fade_updates_existing_tag_and_preserves_selection_mapping) {
+	std::string const text = "{\\fad(200,500,&H112233&,)}Text";
+	auto result = agi::ass::SetColoredFade(text, FadeSide::In, 350, "");
+	EXPECT_EQ("{\\fad(350,500)}Text", result.text);
+	EXPECT_EQ(static_cast<int>(result.text.find("Text")),
+		agi::ass::MoveTextPositionAfterEdit(static_cast<int>(text.find("Text")),
+			result.edit_start, result.edit_end, result.replacement_length));
 }

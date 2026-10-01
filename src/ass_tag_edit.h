@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <functional>
 #include <string>
 
 namespace agi { namespace ass {
@@ -14,6 +15,15 @@ enum class FadeSide {
 	In,
 	Out
 };
+
+enum class FadeColorChoice { Normal, White, Black, Pick };
+
+/// Resolve one visible fade choice, apply it to the selection, then commit once.
+/// The picker is called only for Pick; cancellation never applies or commits.
+bool RunFadeOperation(FadeColorChoice choice,
+	std::function<bool(std::string&)> const& pick_color,
+	std::function<bool(std::string const&)> const& apply_selection,
+	std::function<void()> const& commit);
 
 struct AlignmentEditResult {
 	std::string text;
@@ -33,6 +43,8 @@ AlignmentEditResult SetLineAlignment(
 	std::string const& text, int alignment, int selection_start, int selection_end);
 
 /// Set one duration/color side of the effective line-level \fad tag.
+/// An empty color requests ordinary alpha fading on that side. The opposite
+/// side is preserved, including its color and +a modifier.
 FadeEditResult SetColoredFade(
 	std::string const& text, FadeSide side, int milliseconds, std::string const& color);
 

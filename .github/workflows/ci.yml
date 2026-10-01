@@ -21,6 +21,8 @@ jobs:
           python-version: '3.11'
       - name: Check renderer migration, update source and DependencyControl packaging contracts
         run: python tests/python/test_release_preparation.py
+      - name: Check visible fade controls and picker/selection/undo wiring
+        run: python tests/python/test_fade_controls.py
 
   build:
     needs: release-preparation

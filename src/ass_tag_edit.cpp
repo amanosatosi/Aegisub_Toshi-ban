@@ -7,6 +7,7 @@
 #include "ass_tag_edit.h"
 
 #include <libaegisub/format.h>
+#include <libaegisub/color.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -244,6 +245,23 @@ agi::ass::AlignmentEditResult InsertAlignmentTag(std::string text, int alignment
 
 namespace agi { namespace ass {
 
+bool RunFadeOperation(FadeColorChoice choice,
+	std::function<bool(std::string&)> const& pick_color,
+	std::function<bool(std::string const&)> const& apply_selection,
+	std::function<void()> const& commit) {
+	std::string color;
+	if (choice == FadeColorChoice::White)
+		color = agi::Color(255, 255, 255).GetAssOverrideFormatted();
+	else if (choice == FadeColorChoice::Black)
+		color = agi::Color(0, 0, 0).GetAssOverrideFormatted();
+	else if (choice == FadeColorChoice::Pick && !pick_color(color))
+		return false;
+	if (!apply_selection(color))
+		return false;
+	commit();
+	return true;
+}
+
 int MoveTextPositionAfterEdit(int position, int edit_start, int edit_end, int replacement_length) {
 	if (edit_start == edit_end)
 		return position < edit_start ? position : position + replacement_length;
@@ -276,17 +294,25 @@ FadeEditResult SetColoredFade(
 	std::string start_color = update_existing_fad && existing.arguments_valid && existing.has_colors ? existing.start_color : std::string();
 	std::string end_color = update_existing_fad && existing.arguments_valid && existing.has_colors ? existing.end_color : std::string();
 
+	// Color replacement should retain the edited side's optional alpha fade.
+	std::string const& old_color = side == FadeSide::In ? start_color : end_color;
+	std::string new_color = color;
+	if (!new_color.empty() && old_color.size() >= 2 &&
+		old_color[old_color.size() - 2] == '+' &&
+		(old_color.back() == 'a' || old_color.back() == 'A'))
+		new_color += old_color.substr(old_color.size() - 2);
 	if (side == FadeSide::In) {
 		fade_in = std::max(0, milliseconds);
-		start_color = color;
+		start_color = new_color;
 	}
 	else {
 		fade_out = std::max(0, milliseconds);
-		end_color = color;
+		end_color = new_color;
 	}
 
-	std::string const tag = agi::format("\\fad(%d,%d,%s,%s)",
-		fade_in, fade_out, start_color, end_color);
+	std::string const tag = start_color.empty() && end_color.empty() ?
+		agi::format("\\fad(%d,%d)", fade_in, fade_out) :
+		agi::format("\\fad(%d,%d,%s,%s)", fade_in, fade_out, start_color, end_color);
 	FadeEditResult result;
 	if (update_existing_fad) {
 		result.edit_start = static_cast<int>(existing.start);

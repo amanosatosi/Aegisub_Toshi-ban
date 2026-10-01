@@ -54,6 +54,7 @@
 #include <cctype>
 #include <cmath>
 #include <wx/clipbrd.h>
+#include <wx/button.h>
 #include <wx/cursor.h>
 #include <wx/dataobj.h>
 #include <wx/combobox.h>
@@ -181,6 +182,10 @@ VideoBox::VideoBox(wxWindow *parent, bool isDetached, agi::Context *context)
 	VideoSizer->Add(new wxStaticLine(this), 0, wxEXPAND, 0);
 	VideoSizer->Add(videoSlider, 0, wxEXPAND, 0);
 	VideoSizer->Add(videoBottomSizer, 0, wxEXPAND | wxBOTTOM, 5);
+	auto fadeSizer = new wxBoxSizer(wxHORIZONTAL);
+	MakeFadeButtons(fadeSizer, SubsReadoutKind::Start, _("Fade in from here"), 0);
+	MakeFadeButtons(fadeSizer, SubsReadoutKind::End, _("Fade out from here"), 2);
+	VideoSizer->Add(fadeSizer, 0, wxLEFT | wxRIGHT | wxBOTTOM, 5);
 	SetSizer(VideoSizer);
 
 	UpdateTimeBoxes();
@@ -204,6 +209,9 @@ VideoBox::VideoBox(wxWindow *parent, bool isDetached, agi::Context *context)
 void VideoBox::UpdateTimeBoxes() {
 	subs_offset_readout_.clear();
 	subs_remaining_readout_.clear();
+	bool const fade_available = GetFadeDuration(SubsReadoutKind::Start) >= 0;
+	for (auto button : fade_buttons_)
+		button->Enable(fade_available);
 	if (!context->project->VideoProvider()) return;
 
 	int frame = context->videoController->GetFrameN();
@@ -327,7 +335,54 @@ bool VideoBox::GetSubsReadoutForPosition(wxPoint const& position, wxString &valu
 	return true;
 }
 
-bool VideoBox::SetFadeFromHere(SubsReadoutKind kind, int milliseconds) {
+int VideoBox::GetFadeDuration(SubsReadoutKind kind) const {
+	if (!context || !context->project->VideoProvider())
+		return -1;
+	auto active = context->selectionController->GetActiveLine();
+	if (!active)
+		return -1;
+	return agi::ass::FadeDurationFromVideoTime(kind == SubsReadoutKind::Start ?
+		agi::ass::FadeSide::In : agi::ass::FadeSide::Out,
+		context->videoController->TimeAtFrame(context->videoController->GetFrameN(), agi::vfr::EXACT),
+		active->Start, active->End);
+}
+
+void VideoBox::MakeFadeButtons(wxSizer *sizer, SubsReadoutKind kind, wxString const& label, size_t index) {
+	using agi::ass::FadeColorChoice;
+	auto primary = fade_buttons_[index] = new wxButton(this, wxID_ANY, label,
+		wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+	auto dropdown = fade_buttons_[index + 1] = new wxButton(this, wxID_ANY, wxString::FromUTF8("\xE2\x96\xBE"),
+		wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+	dropdown->SetName(label + _(" color options"));
+	sizer->Add(primary, wxSizerFlags().Center());
+	sizer->Add(dropdown, wxSizerFlags().Center().Border(wxRIGHT));
+	primary->Bind(wxEVT_BUTTON, [=](wxCommandEvent&) {
+		SetFadeFromHere(kind, GetFadeDuration(kind));
+	});
+	dropdown->Bind(wxEVT_BUTTON, [=](wxCommandEvent&) {
+		int const milliseconds = GetFadeDuration(kind);
+		if (milliseconds < 0)
+			return;
+		auto active = context->selectionController->GetActiveLine();
+		wxMenu menu;
+		auto white = menu.Append(wxID_ANY, _("Color white"));
+		auto black = menu.Append(wxID_ANY, _("Color black"));
+		auto pick = menu.Append(wxID_ANY, _("Pick color…"));
+		menu.Bind(wxEVT_MENU, [=](wxCommandEvent& event) {
+			if (context->selectionController->GetActiveLine() != active)
+				return;
+			if (event.GetId() == white->GetId())
+				SetFadeFromHere(kind, milliseconds, FadeColorChoice::White);
+			else if (event.GetId() == black->GetId())
+				SetFadeFromHere(kind, milliseconds, FadeColorChoice::Black);
+			else if (event.GetId() == pick->GetId())
+				SetFadeFromHere(kind, milliseconds, FadeColorChoice::Pick);
+		});
+		dropdown->PopupMenu(&menu, wxPoint(0, dropdown->GetSize().GetHeight()));
+	});
+}
+
+bool VideoBox::SetFadeFromHere(SubsReadoutKind kind, int milliseconds, agi::ass::FadeColorChoice choice) {
 	if (!context || !context->ass || !context->selectionController || milliseconds < 0)
 		return false;
 
@@ -336,11 +391,6 @@ bool VideoBox::SetFadeFromHere(SubsReadoutKind kind, int milliseconds) {
 		return false;
 	agi::ass::FadeSide const side = kind == SubsReadoutKind::Start ?
 		agi::ass::FadeSide::In : agi::ass::FadeSide::Out;
-	agi::Color chosen = InitialFadeColor(active->Text.get(), side);
-	if (!GetColorFromUser(context->parent ? context->parent : this, chosen, false,
-		[&](agi::Color color) { chosen = color; }))
-		return false;
-
 	int raw_selection_start = 0;
 	int raw_selection_end = 0;
 	bool restore_selection = false;
@@ -353,34 +403,46 @@ bool VideoBox::SetFadeFromHere(SubsReadoutKind kind, int milliseconds) {
 			display_start, display_end, active->Text.get(), raw_selection_start, raw_selection_end);
 	}
 
-	bool changed = false;
-	auto edit_line = [&](AssDialogue *line) {
-		auto result = agi::ass::SetColoredFade(
-			line->Text.get(), side, milliseconds, chosen.GetAssOverrideFormatted());
-		if (result.text == line->Text.get())
-			return;
-		if (line == active && restore_selection) {
-			raw_selection_start = agi::ass::MoveTextPositionAfterEdit(raw_selection_start,
-				result.edit_start, result.edit_end, result.replacement_length);
-			raw_selection_end = agi::ass::MoveTextPositionAfterEdit(raw_selection_end,
-				result.edit_start, result.edit_end, result.replacement_length);
-		}
-		line->Text = result.text;
-		changed = true;
+	auto pick_color = [&](std::string& color) {
+		agi::Color chosen = InitialFadeColor(active->Text.get(), side);
+		if (!GetColorFromUser(context->parent ? context->parent : this, chosen, false,
+			[&](agi::Color value) { chosen = value; }))
+			return false;
+		color = chosen.GetAssOverrideFormatted();
+		return true;
 	};
+	auto apply_selection = [&](std::string const& color) {
+		bool changed = false;
+		auto edit_line = [&](AssDialogue *line) {
+			auto result = agi::ass::SetColoredFade(
+				line->Text.get(), side, milliseconds, color);
+			if (result.text == line->Text.get())
+				return;
+			if (line == active && restore_selection) {
+				raw_selection_start = agi::ass::MoveTextPositionAfterEdit(raw_selection_start,
+					result.edit_start, result.edit_end, result.replacement_length);
+				raw_selection_end = agi::ass::MoveTextPositionAfterEdit(raw_selection_end,
+					result.edit_start, result.edit_end, result.replacement_length);
+			}
+			line->Text = result.text;
+			changed = true;
+		};
 
-	if (selected.empty())
-		edit_line(active);
-	else {
-		for (auto line : selected)
-			edit_line(line);
-	}
-	if (!changed)
+		if (selected.empty())
+			edit_line(active);
+		else {
+			for (auto line : selected)
+				edit_line(line);
+		}
+		return changed;
+	};
+	auto commit = [&] {
+		AssDialogue *commit_line = selected.empty() ? active :
+			(selected.size() == 1 ? *selected.begin() : nullptr);
+		context->ass->Commit(_("set fade"), AssFile::COMMIT_DIAG_TEXT, -1, commit_line);
+	};
+	if (!agi::ass::RunFadeOperation(choice, pick_color, apply_selection, commit))
 		return false;
-
-	AssDialogue *commit_line = selected.empty() ? active :
-		(selected.size() == 1 ? *selected.begin() : nullptr);
-	context->ass->Commit(_("set fade"), AssFile::COMMIT_DIAG_TEXT, -1, commit_line);
 
 	if (restore_selection) {
 		context->subsEditBox->SetTextSelection(

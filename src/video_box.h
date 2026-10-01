@@ -28,7 +28,9 @@
 // Aegisub Project http://www.aegisub.org/
 
 #include <libaegisub/signal.h>
+#include "ass_tag_edit.h"
 
+#include <array>
 #include <vector>
 #include <wx/gdicmn.h>
 #include <wx/panel.h>
@@ -39,6 +41,8 @@ class wxChoice;
 class wxContextMenuEvent;
 class wxTextCtrl;
 class wxMouseEvent;
+class wxButton;
+class wxSizer;
 
 /// @class VideoBox
 /// @brief The box containing the video display and associated controls
@@ -53,6 +57,7 @@ class VideoBox final : public wxPanel {
 	wxTextCtrl *VideoPosition; ///< Current frame/time
 	wxTextCtrl *VideoSubsPos;  ///< Time relative to the active subtitle line
 	wxChoice *VideoPlaybackSpeed = nullptr; ///< Video playback speed selector
+	std::array<wxButton *, 4> fade_buttons_{};
 	wxString subs_offset_readout_;
 	wxString subs_remaining_readout_;
 
@@ -64,7 +69,10 @@ class VideoBox final : public wxPanel {
 	bool CopyReadoutToClipboard(wxString const& value);
 	bool InsertReadoutIntoEditBox(wxString const& value);
 	bool GetSubsReadoutForPosition(wxPoint const& position, wxString &value);
-	bool SetFadeFromHere(SubsReadoutKind kind, int milliseconds);
+	void MakeFadeButtons(wxSizer *sizer, SubsReadoutKind kind, wxString const& label, size_t index);
+	int GetFadeDuration(SubsReadoutKind kind) const;
+	bool SetFadeFromHere(SubsReadoutKind kind, int milliseconds,
+		agi::ass::FadeColorChoice choice = agi::ass::FadeColorChoice::Normal);
 	wxString NormalizeReadout(wxString const& value) const;
 
 public:
