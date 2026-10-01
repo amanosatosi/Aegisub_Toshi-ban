@@ -419,10 +419,8 @@ bool VideoBox::SetFadeFromHere(SubsReadoutKind kind, int milliseconds, agi::ass:
 			if (result.text == line->Text.get())
 				return;
 			if (line == active && restore_selection) {
-				raw_selection_start = agi::ass::MoveTextPositionAfterEdit(raw_selection_start,
-					result.edit_start, result.edit_end, result.replacement_length);
-				raw_selection_end = agi::ass::MoveTextPositionAfterEdit(raw_selection_end,
-					result.edit_start, result.edit_end, result.replacement_length);
+				raw_selection_start = agi::ass::MoveTextPositionAfterFadeEdit(raw_selection_start, result);
+				raw_selection_end = agi::ass::MoveTextPositionAfterFadeEdit(raw_selection_end, result);
 			}
 			line->Text = result.text;
 			changed = true;

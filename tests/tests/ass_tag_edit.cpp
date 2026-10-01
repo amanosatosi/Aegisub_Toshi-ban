@@ -108,12 +108,12 @@ TEST(ass_tag_edit, colored_fade_updates_first_valid_effective_tag_only) {
 	EXPECT_EQ("{\\fad(50,200,&H010203&,)\\fad(300,400)}Text", result.text);
 }
 
-TEST(ass_tag_edit, colored_fade_precedes_an_effective_long_form_fade) {
+TEST(ass_tag_edit, colored_fade_reuses_existing_fad_before_effective_long_form_fade) {
 	auto result = agi::ass::SetColoredFade(
 		"{\\bord3\\fade(255,0,255,0,100,900,1000)\\fad(300,400)}Text",
 		FadeSide::Out, 75, "&HABCDEF&");
 	EXPECT_EQ(
-		"{\\bord3\\fad(0,75,,&HABCDEF&)\\fade(255,0,255,0,100,900,1000)\\fad(300,400)}Text",
+		"{\\bord3\\fad(300,75,,&HABCDEF&)\\fade(255,0,255,0,100,900,1000)}Text",
 		result.text);
 }
 
@@ -270,4 +270,27 @@ TEST(ass_tag_edit, normal_fade_updates_existing_tag_and_preserves_selection_mapp
 	EXPECT_EQ(static_cast<int>(result.text.find("Text")),
 		agi::ass::MoveTextPositionAfterEdit(static_cast<int>(text.find("Text")),
 			result.edit_start, result.edit_end, result.replacement_length));
+}
+
+TEST(ass_tag_edit, moving_existing_fad_preserves_opposite_color_and_caret_positions) {
+	std::string const text = "{\\fade(255,0,255,0,100,900,1000)\\bord3}Middle{\\fad(200,500,&H112233&+a,&H445566&)}Text";
+	auto result = agi::ass::SetColoredFade(text, FadeSide::Out, 600, "");
+	EXPECT_EQ("{\\fad(200,600,&H112233&+a,)\\fade(255,0,255,0,100,900,1000)\\bord3}MiddleText", result.text);
+	for (std::string const& word : {"Middle", "Text", "\\bord3"})
+		EXPECT_EQ(static_cast<int>(result.text.find(word)),
+			agi::ass::MoveTextPositionAfterFadeEdit(static_cast<int>(text.find(word)), result));
+	EXPECT_EQ(std::string::npos, result.text.find("\\fad", result.text.find("\\fad") + 1));
+}
+
+TEST(ass_tag_edit, ordinary_fade_without_existing_fad_precedes_long_form_fade) {
+	auto result = agi::ass::SetColoredFade("{\\fade(255,0,255,0,100,900,1000)}Text", FadeSide::In, 50, "");
+	EXPECT_EQ("{\\fad(50,0)\\fade(255,0,255,0,100,900,1000)}Text", result.text);
+}
+
+TEST(ass_tag_edit, invalid_fad_before_long_form_fade_is_repaired_without_duplicate) {
+	std::string const text = "{\\fad(1,2,3)}First{\\fade(255,0,255,0,100,900,1000)}Text";
+	auto result = agi::ass::SetColoredFade(text, FadeSide::In, 50, "");
+	EXPECT_EQ("First{\\fad(50,0)\\fade(255,0,255,0,100,900,1000)}Text", result.text);
+	EXPECT_EQ(static_cast<int>(result.text.find("Text")),
+		agi::ass::MoveTextPositionAfterFadeEdit(static_cast<int>(text.find("Text")), result));
 }

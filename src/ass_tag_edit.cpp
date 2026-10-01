@@ -114,7 +114,7 @@ bool ParseLongFadeArguments(std::string const& text, size_t open, size_t close) 
 		[&](std::string const& argument) { return ParseFadeInteger(argument, value); });
 }
 
-FadeTagRange FindEffectiveFadeTag(std::string const& text) {
+FadeTagRange FindEffectiveFadeTag(std::string const& text, bool fad_only = false) {
 	FadeTagRange first_invalid;
 	for (size_t block_start = text.find('{'); block_start != std::string::npos;
 		block_start = text.find('{', block_start + 1)) {
@@ -149,7 +149,7 @@ FadeTagRange FindEffectiveFadeTag(std::string const& text) {
 
 			// Parenthesized tags such as \t are skipped as one unit, so nested
 			// \fad tags are not mistaken for line-level tags.
-			if (name == "\\fad" || name == "\\fade") {
+			if (name == "\\fad" || (!fad_only && name == "\\fade")) {
 				FadeTagRange candidate;
 				candidate.start = tag_start;
 				candidate.end = tag_end;
@@ -272,6 +272,12 @@ int MoveTextPositionAfterEdit(int position, int edit_start, int edit_end, int re
 	return edit_start + replacement_length;
 }
 
+int MoveTextPositionAfterFadeEdit(int position, FadeEditResult const& result) {
+	if (result.removal_start >= 0)
+		position = MoveTextPositionAfterEdit(position, result.removal_start, result.removal_end, 0);
+	return MoveTextPositionAfterEdit(position, result.edit_start, result.edit_end, result.replacement_length);
+}
+
 AlignmentEditResult SetLineAlignment(
 	std::string const& text, int alignment, int selection_start, int selection_end) {
 	selection_start = std::clamp(selection_start, 0, static_cast<int>(text.size()));
@@ -287,7 +293,13 @@ AlignmentEditResult SetLineAlignment(
 
 FadeEditResult SetColoredFade(
 	std::string const& text, FadeSide side, int milliseconds, std::string const& color) {
-	FadeTagRange const existing = FindEffectiveFadeTag(text);
+	FadeTagRange const effective = FindEffectiveFadeTag(text);
+	FadeTagRange existing = effective;
+	if (effective && !effective.is_fad) {
+		auto fad = FindEffectiveFadeTag(text, true);
+		if (fad)
+			existing = std::move(fad);
+	}
 	bool const update_existing_fad = existing && existing.is_fad;
 	int fade_in = update_existing_fad && existing.arguments_valid ? std::max(0, existing.fade_in) : 0;
 	int fade_out = update_existing_fad && existing.arguments_valid ? std::max(0, existing.fade_out) : 0;
@@ -314,7 +326,24 @@ FadeEditResult SetColoredFade(
 		agi::format("\\fad(%d,%d)", fade_in, fade_out) :
 		agi::format("\\fad(%d,%d,%s,%s)", fade_in, fade_out, start_color, end_color);
 	FadeEditResult result;
-	if (update_existing_fad) {
+	if (update_existing_fad && effective && !effective.is_fad) {
+		// Reuse a later fad instead of inserting a duplicate. Moving it before
+		// the effective fade preserves libassmod's first-valid-tag precedence.
+		result.removal_start = static_cast<int>(existing.start);
+		result.removal_end = static_cast<int>(existing.end);
+		if (existing.start > 0 && text[existing.start - 1] == '{' &&
+			existing.end < text.size() && text[existing.end] == '}') {
+			--result.removal_start;
+			++result.removal_end;
+		}
+		int const removed_length = result.removal_end - result.removal_start;
+		result.edit_start = result.edit_end = static_cast<int>(effective.start) -
+			(existing.start < effective.start ? removed_length : 0);
+		result.text = text;
+		result.text.erase(result.removal_start, removed_length);
+		result.text.insert(result.edit_start, tag);
+	}
+	else if (update_existing_fad) {
 		result.edit_start = static_cast<int>(existing.start);
 		result.edit_end = static_cast<int>(existing.end);
 		result.text = text.substr(0, existing.start) + tag + text.substr(existing.end);

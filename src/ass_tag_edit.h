@@ -32,10 +32,16 @@ struct AlignmentEditResult {
 
 struct FadeEditResult {
 	std::string text;
+	// Optional removal before the main edit, when moving an existing fad in
+	// front of an earlier long-form fade to keep the new operation effective.
+	int removal_start = -1;
+	int removal_end = -1;
 	int edit_start = 0;
 	int edit_end = 0;
 	int replacement_length = 0;
 };
+
+int MoveTextPositionAfterFadeEdit(int position, FadeEditResult const& result);
 
 /// Delete the selected range, set the line's alignment, and return the
 /// collapsed caret position mapped through the tag edit.
