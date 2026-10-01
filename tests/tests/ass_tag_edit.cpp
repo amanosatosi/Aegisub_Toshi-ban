@@ -279,7 +279,9 @@ TEST(ass_tag_edit, moving_existing_fad_preserves_opposite_color_and_caret_positi
 	for (std::string const& word : {"Middle", "Text", "\\bord3"})
 		EXPECT_EQ(static_cast<int>(result.text.find(word)),
 			agi::ass::MoveTextPositionAfterFadeEdit(static_cast<int>(text.find(word)), result));
-	EXPECT_EQ(std::string::npos, result.text.find("\\fad", result.text.find("\\fad") + 1));
+	auto const first_fad = result.text.find("\\fad(");
+	ASSERT_NE(std::string::npos, first_fad);
+	EXPECT_EQ(std::string::npos, result.text.find("\\fad(", first_fad + 1));
 }
 
 TEST(ass_tag_edit, ordinary_fade_without_existing_fad_precedes_long_form_fade) {
