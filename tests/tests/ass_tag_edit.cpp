@@ -5,6 +5,7 @@
 #include "ass_tag_edit.h"
 #include "better_view.h"
 #include <libaegisub/color.h>
+#include <limits>
 #include <vector>
 
 using agi::ass::FadeSide;
@@ -59,18 +60,35 @@ TEST(ass_tag_edit, alignment_caret_round_trips_through_better_view_mapping) {
 	EXPECT_EQ(13, after.MapRawToDisplay(result.caret));
 }
 
-TEST(ass_tag_edit, fade_duration_uses_active_line_and_clamps_outside) {
+TEST(ass_tag_edit, fade_duration_is_relative_to_each_lines_start_or_end) {
 	EXPECT_EQ(420, agi::ass::FadeDurationFromVideoTime(FadeSide::In, 1420, 1000, 3000));
 	EXPECT_EQ(1580, agi::ass::FadeDurationFromVideoTime(FadeSide::Out, 1420, 1000, 3000));
-	EXPECT_EQ(0, agi::ass::FadeDurationFromVideoTime(FadeSide::In, 1000, 1000, 3000));
+	EXPECT_EQ(-1, agi::ass::FadeDurationFromVideoTime(FadeSide::In, 1000, 1000, 3000));
 	EXPECT_EQ(2000, agi::ass::FadeDurationFromVideoTime(FadeSide::Out, 1000, 1000, 3000));
 	EXPECT_EQ(2000, agi::ass::FadeDurationFromVideoTime(FadeSide::In, 3000, 1000, 3000));
-	EXPECT_EQ(0, agi::ass::FadeDurationFromVideoTime(FadeSide::Out, 3000, 1000, 3000));
-	EXPECT_EQ(0, agi::ass::FadeDurationFromVideoTime(FadeSide::In, 900, 1000, 3000));
-	EXPECT_EQ(2000, agi::ass::FadeDurationFromVideoTime(FadeSide::Out, 900, 1000, 3000));
-	EXPECT_EQ(2000, agi::ass::FadeDurationFromVideoTime(FadeSide::In, 3500, 1000, 3000));
-	EXPECT_EQ(0, agi::ass::FadeDurationFromVideoTime(FadeSide::Out, 3500, 1000, 3000));
+	EXPECT_EQ(-1, agi::ass::FadeDurationFromVideoTime(FadeSide::Out, 3000, 1000, 3000));
+	EXPECT_EQ(-1, agi::ass::FadeDurationFromVideoTime(FadeSide::In, 900, 1000, 3000));
+	EXPECT_EQ(2100, agi::ass::FadeDurationFromVideoTime(FadeSide::Out, 900, 1000, 3000));
+	EXPECT_EQ(2500, agi::ass::FadeDurationFromVideoTime(FadeSide::In, 3500, 1000, 3000));
+	EXPECT_EQ(-1, agi::ass::FadeDurationFromVideoTime(FadeSide::Out, 3500, 1000, 3000));
 	EXPECT_EQ(-1, agi::ass::FadeDurationFromVideoTime(FadeSide::In, 1000, 3000, 1000));
+}
+
+TEST(ass_tag_edit, inapplicable_or_invalid_playhead_edits_leave_tags_and_caret_unchanged) {
+	std::string const text = "{\\fad(200,500,&H112233&+a,&H445566&+A)}Text";
+	for (auto side : {FadeSide::In, FadeSide::Out}) {
+		for (int time : side == FadeSide::In ? std::vector<int>{900, 1000} : std::vector<int>{3000, 3500}) {
+			auto result = agi::ass::SetFadeFromVideoTime(text, side, time, 1000, 3000, "&HFFFFFF&");
+			EXPECT_EQ(text, result.text);
+			EXPECT_EQ(50, agi::ass::MoveTextPositionAfterFadeEdit(50, result));
+		}
+		EXPECT_EQ(text, agi::ass::SetFadeFromVideoTime(text, side, 2000, 3000, 1000, "").text);
+		EXPECT_EQ(text, agi::ass::SetFadeFromVideoTime(text, side, 2000, 2000, 2000, "").text);
+	}
+	EXPECT_EQ(-1, agi::ass::FadeDurationFromVideoTime(FadeSide::In,
+		std::numeric_limits<int>::max(), -1, std::numeric_limits<int>::max()));
+	EXPECT_EQ(-1, agi::ass::FadeDurationFromVideoTime(FadeSide::Out,
+		std::numeric_limits<int>::min(), 0, std::numeric_limits<int>::max()));
 }
 
 TEST(ass_tag_edit, colored_fade_in_preserves_existing_fade_out) {
@@ -94,12 +112,11 @@ TEST(ass_tag_edit, colored_fade_without_existing_tag_uses_zero_for_other_side) {
 	EXPECT_EQ("{\\fad(0,600,,&HFFFFFF&)\\bord3}Text", fade_out.text);
 }
 
-TEST(ass_tag_edit, colored_fade_batch_reuses_one_active_line_duration) {
-	int const milliseconds = agi::ass::FadeDurationFromVideoTime(FadeSide::In, 1420, 1000, 3000);
-	auto first = agi::ass::SetColoredFade("First", FadeSide::In, milliseconds, "&H000000&");
-	auto second = agi::ass::SetColoredFade("{\\fad(25,75)}Second", FadeSide::In, milliseconds, "&H000000&");
+TEST(ass_tag_edit, colored_fade_batch_converts_shared_playhead_to_each_line) {
+	auto first = agi::ass::SetFadeFromVideoTime("First", FadeSide::In, 1420, 1000, 3000, "&H000000&");
+	auto second = agi::ass::SetFadeFromVideoTime("{\\fad(25,75)}Second", FadeSide::In, 1420, 1100, 4000, "&H000000&");
 	EXPECT_EQ("{\\fad(420,0,&H000000&,)}First", first.text);
-	EXPECT_EQ("{\\fad(420,75,&H000000&,)}Second", second.text);
+	EXPECT_EQ("{\\fad(320,75,&H000000&,)}Second", second.text);
 }
 
 TEST(ass_tag_edit, colored_fade_updates_first_valid_effective_tag_only) {
@@ -138,14 +155,23 @@ using agi::ass::FadeColorChoice;
 class FadeOperation : public ::testing::Test {
 protected:
 	std::vector<std::string> lines{"First", "{\\fad(25,75)}Second"};
+	std::vector<int> starts{1000, 1100};
+	std::vector<int> ends{3000, 4000};
+	int video_time = 1420;
 	std::vector<std::vector<std::string>> undo;
 	agi::Color picked{0x12, 0x34, 0x56};
 	int picker_calls = 0;
 	int apply_calls = 0;
 	bool accept_picker = true;
 
+	void ThreeLines() {
+		video_time = 10000;
+		starts = {8000, 9500, 7000};
+		ends = {12000, 13000, 10500};
+		lines = {"A", "{\\fad(25,75)}B", "{\\fad(35,85)}C"};
+	}
+
 	bool Run(FadeSide side, FadeColorChoice choice) {
-		int const duration = agi::ass::FadeDurationFromVideoTime(side, 1420, 1000, 3000);
 		auto before = lines;
 		return agi::ass::RunFadeOperation(choice,
 			[&](std::string& color) {
@@ -155,24 +181,25 @@ protected:
 			},
 			[&](std::string const& color) {
 				++apply_calls;
-				for (auto& text : lines)
-					text = agi::ass::SetColoredFade(text, side, duration, color).text;
+				for (size_t i = 0; i < lines.size(); ++i)
+					lines[i] = agi::ass::SetFadeFromVideoTime(
+						lines[i], side, video_time, starts[i], ends[i], color).text;
 				return lines != before;
 			},
 			[&] { undo.push_back(before); });
 	}
 };
 
-TEST_F(FadeOperation, MainFadeInCreatesAndUpdatesOrdinaryFadeWithoutPicker) {
+TEST_F(FadeOperation, OrdinaryFadeInCreatesAndUpdatesEachLineWithoutPicker) {
 	ASSERT_TRUE(Run(FadeSide::In, FadeColorChoice::Normal));
-	EXPECT_EQ((std::vector<std::string>{"{\\fad(420,0)}First", "{\\fad(420,75)}Second"}), lines);
+	EXPECT_EQ((std::vector<std::string>{"{\\fad(420,0)}First", "{\\fad(320,75)}Second"}), lines);
 	EXPECT_EQ(0, picker_calls);
 	EXPECT_EQ(1u, undo.size());
 }
 
-TEST_F(FadeOperation, MainFadeOutCreatesAndUpdatesOrdinaryFadeWithoutPicker) {
+TEST_F(FadeOperation, OrdinaryFadeOutCreatesAndUpdatesEachLineWithoutPicker) {
 	ASSERT_TRUE(Run(FadeSide::Out, FadeColorChoice::Normal));
-	EXPECT_EQ((std::vector<std::string>{"{\\fad(0,1580)}First", "{\\fad(25,1580)}Second"}), lines);
+	EXPECT_EQ((std::vector<std::string>{"{\\fad(0,1580)}First", "{\\fad(25,2580)}Second"}), lines);
 	EXPECT_EQ(0, picker_calls);
 }
 
@@ -203,7 +230,7 @@ TEST_F(FadeOperation, FadeOutBlack) {
 TEST_F(FadeOperation, CustomStartColorUsesBgrAndPicksOnceForSelection) {
 	ASSERT_TRUE(Run(FadeSide::In, FadeColorChoice::Pick));
 	EXPECT_EQ("{\\fad(420,0,&H563412&,)}First", lines[0]);
-	EXPECT_EQ("{\\fad(420,75,&H563412&,)}Second", lines[1]);
+	EXPECT_EQ("{\\fad(320,75,&H563412&,)}Second", lines[1]);
 	EXPECT_EQ(1, picker_calls);
 	EXPECT_EQ(1, apply_calls);
 	ASSERT_EQ(1u, undo.size());
@@ -211,10 +238,10 @@ TEST_F(FadeOperation, CustomStartColorUsesBgrAndPicksOnceForSelection) {
 	EXPECT_EQ((std::vector<std::string>{"First", "{\\fad(25,75)}Second"}), lines);
 }
 
-TEST_F(FadeOperation, CustomEndColorUsesActiveDurationAndCommitsOnce) {
+TEST_F(FadeOperation, CustomEndColorUsesEachLinesDurationAndCommitsOnce) {
 	ASSERT_TRUE(Run(FadeSide::Out, FadeColorChoice::Pick));
 	EXPECT_EQ("{\\fad(0,1580,,&H563412&)}First", lines[0]);
-	EXPECT_EQ("{\\fad(25,1580,,&H563412&)}Second", lines[1]);
+	EXPECT_EQ("{\\fad(25,2580,,&H563412&)}Second", lines[1]);
 	EXPECT_EQ(1, picker_calls);
 	EXPECT_EQ(1u, undo.size());
 }
@@ -235,6 +262,85 @@ TEST_F(FadeOperation, UnchangedFadeDoesNotCommit) {
 	lines = {"{\\fad(420,75)}Text"};
 	EXPECT_FALSE(Run(FadeSide::In, FadeColorChoice::Normal));
 	EXPECT_TRUE(undo.empty());
+}
+
+TEST_F(FadeOperation, ThreeLinesFadeInUseOneVideoTimestampAndDifferentDurations) {
+	ThreeLines();
+	ASSERT_TRUE(Run(FadeSide::In, FadeColorChoice::Normal));
+	EXPECT_EQ((std::vector<std::string>{"{\\fad(2000,0)}A", "{\\fad(500,75)}B", "{\\fad(3000,85)}C"}), lines);
+	EXPECT_EQ(0, picker_calls);
+	EXPECT_EQ(1u, undo.size());
+}
+
+TEST_F(FadeOperation, ThreeLinesFadeOutUseOneVideoTimestampAndDifferentDurations) {
+	ThreeLines();
+	ASSERT_TRUE(Run(FadeSide::Out, FadeColorChoice::Normal));
+	EXPECT_EQ((std::vector<std::string>{"{\\fad(0,2000)}A", "{\\fad(25,3000)}B", "{\\fad(35,500)}C"}), lines);
+	EXPECT_EQ(0, picker_calls);
+	EXPECT_EQ(1u, undo.size());
+}
+
+TEST_F(FadeOperation, EachLineKeepsItsOwnOppositeEndColorDurationAndAlphaModifier) {
+	ThreeLines();
+	lines = {"{\\fad(100,200,&H010101&,&H111111&+a)}A",
+		"{\\fad(300,400,&H020202&,&H222222&+A)}B",
+		"{\\fad(500,600,&H030303&,&H333333&)}C"};
+	ASSERT_TRUE(Run(FadeSide::In, FadeColorChoice::Normal));
+	EXPECT_EQ((std::vector<std::string>{"{\\fad(2000,200,,&H111111&+a)}A",
+		"{\\fad(500,400,,&H222222&+A)}B", "{\\fad(3000,600,,&H333333&)}C"}), lines);
+	EXPECT_EQ(1u, undo.size());
+}
+
+TEST_F(FadeOperation, SharedCustomColorPreservesEachLinesOppositeStateAndEditedAlphaModifier) {
+	ThreeLines();
+	lines = {"{\\fad(100,200,&H111111&+a,&H010101&+a)}A",
+		"{\\fad(300,400,&H222222&+A,&H020202&)}B",
+		"{\\fad(500,600,&H333333&,&H030303&+A)}C"};
+	ASSERT_TRUE(Run(FadeSide::Out, FadeColorChoice::Pick));
+	EXPECT_EQ((std::vector<std::string>{"{\\fad(100,2000,&H111111&+a,&H563412&+a)}A",
+		"{\\fad(300,3000,&H222222&+A,&H563412&)}B",
+		"{\\fad(500,500,&H333333&,&H563412&+A)}C"}), lines);
+	EXPECT_EQ(1, picker_calls);
+	EXPECT_EQ(1u, undo.size());
+}
+
+TEST_F(FadeOperation, MixedSelectionSkipsInapplicableFadeInAndInvalidLines) {
+	ThreeLines();
+	starts = {11000, 9500, 11000};
+	ends = {12000, 13000, 10500}; // A starts after playhead; C has invalid timing.
+	ASSERT_TRUE(Run(FadeSide::In, FadeColorChoice::White));
+	EXPECT_EQ((std::vector<std::string>{"A", "{\\fad(500,75,&HFFFFFF&,)}B", "{\\fad(35,85)}C"}), lines);
+	EXPECT_EQ(1u, undo.size());
+}
+
+TEST_F(FadeOperation, MixedSelectionSkipsInapplicableFadeOutWithoutCopyingActiveTiming) {
+	ThreeLines();
+	ends = {10000, 13000, 9500}; // Only B ends after the playhead.
+	ASSERT_TRUE(Run(FadeSide::Out, FadeColorChoice::Black));
+	EXPECT_EQ((std::vector<std::string>{"A", "{\\fad(25,3000,,&H000000&)}B", "{\\fad(35,85)}C"}), lines);
+	EXPECT_EQ(1u, undo.size());
+}
+
+TEST_F(FadeOperation, EntirelyInapplicableSelectionCreatesNoUndoEntry) {
+	ThreeLines();
+	auto before = lines;
+	video_time = 7000;
+	EXPECT_FALSE(Run(FadeSide::In, FadeColorChoice::Normal));
+	EXPECT_EQ(before, lines);
+	video_time = 13000;
+	EXPECT_FALSE(Run(FadeSide::Out, FadeColorChoice::Normal));
+	EXPECT_EQ(before, lines);
+	EXPECT_TRUE(undo.empty());
+}
+
+TEST_F(FadeOperation, PositiveDurationsBeyondLineLengthFollowFadeWorksWithoutClamping) {
+	lines = {"First"};
+	video_time = 3500;
+	ASSERT_TRUE(Run(FadeSide::In, FadeColorChoice::Normal));
+	EXPECT_EQ("{\\fad(2500,0)}First", lines[0]);
+	video_time = 900;
+	ASSERT_TRUE(Run(FadeSide::Out, FadeColorChoice::Normal));
+	EXPECT_EQ("{\\fad(2500,2100)}First", lines[0]);
 }
 }
 
@@ -270,6 +376,22 @@ TEST(ass_tag_edit, normal_fade_updates_existing_tag_and_preserves_selection_mapp
 	EXPECT_EQ(static_cast<int>(result.text.find("Text")),
 		agi::ass::MoveTextPositionAfterEdit(static_cast<int>(text.find("Text")),
 			result.edit_start, result.edit_end, result.replacement_length));
+}
+
+TEST(ass_tag_edit, playhead_edit_maps_active_editor_selection_through_better_view) {
+	std::string const text = "{\\fad(200,500,&H112233&,)}Hello\\Nworld";
+	auto before = agi::BuildBetterViewConversion(text, true);
+	int const start = before.MapRawToDisplay(static_cast<int>(text.find("world")));
+	int const end = before.MapRawToDisplay(static_cast<int>(text.size()));
+	int raw_start = 0, raw_end = 0;
+	ASSERT_TRUE(before.MapDisplayRangeToRaw(start, end, raw_start, raw_end));
+	auto result = agi::ass::SetFadeFromVideoTime(text, FadeSide::In, 1420, 1000, 3000, "");
+	EXPECT_EQ("{\\fad(420,500)}Hello\\Nworld", result.text);
+	auto after = agi::BuildBetterViewConversion(result.text, true);
+	EXPECT_EQ(static_cast<int>(result.text.find("world")), agi::ass::MoveTextPositionAfterFadeEdit(raw_start, result));
+	EXPECT_EQ(static_cast<int>(result.text.size()), agi::ass::MoveTextPositionAfterFadeEdit(raw_end, result));
+	EXPECT_EQ(after.MapRawToDisplay(static_cast<int>(result.text.find("world"))),
+		after.MapRawToDisplay(agi::ass::MoveTextPositionAfterFadeEdit(raw_start, result)));
 }
 
 TEST(ass_tag_edit, moving_existing_fad_preserves_opposite_color_and_caret_positions) {

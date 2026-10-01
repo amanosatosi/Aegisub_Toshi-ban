@@ -58,9 +58,16 @@ FadeEditResult SetColoredFade(
 /// when that side uses ordinary alpha fading.
 std::string GetFadeColor(std::string const& text, FadeSide side);
 
-/// Calculate a fade duration from one video time and the active line only.
-/// Returns -1 when the line has invalid timing; otherwise clamps to the line.
+/// Calculate this line's fade duration from the shared video playhead.
+/// As in FadeWorkS, only strictly positive offsets are applicable; positive
+/// durations are not capped to the line length. Returns -1 for inapplicable,
+/// invalid or unrepresentable timings, so callers can leave the line unchanged.
 int FadeDurationFromVideoTime(FadeSide side, int video_time, int line_start, int line_end);
+
+/// Apply the shared playhead and color to one line, preserving its own fade
+/// state. Inapplicable/invalid timings return the original text without an edit.
+FadeEditResult SetFadeFromVideoTime(std::string const& text, FadeSide side,
+	int video_time, int line_start, int line_end, std::string const& color);
 
 /// Map a raw text position through a single replacement.
 int MoveTextPositionAfterEdit(

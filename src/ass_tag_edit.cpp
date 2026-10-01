@@ -372,13 +372,25 @@ std::string GetFadeColor(std::string const& text, FadeSide side) {
 
 int FadeDurationFromVideoTime(FadeSide side, int video_time, int line_start, int line_end) {
 	long long const duration = static_cast<long long>(line_end) - line_start;
-	if (duration < 0)
+	if (duration <= 0)
 		return -1;
-	long long value = side == FadeSide::In ?
+	long long const value = side == FadeSide::In ?
 		static_cast<long long>(video_time) - line_start :
 		static_cast<long long>(line_end) - video_time;
-	value = std::max(0LL, std::min(value, duration));
-	return static_cast<int>(std::min(value, static_cast<long long>(std::numeric_limits<int>::max())));
+	if (value <= 0 || value > std::numeric_limits<int>::max())
+		return -1;
+	return static_cast<int>(value);
+}
+
+FadeEditResult SetFadeFromVideoTime(std::string const& text, FadeSide side,
+	int video_time, int line_start, int line_end, std::string const& color) {
+	int const duration = FadeDurationFromVideoTime(side, video_time, line_start, line_end);
+	if (duration < 0) {
+		FadeEditResult result;
+		result.text = text;
+		return result;
+	}
+	return SetColoredFade(text, side, duration, color);
 }
 
 } }
