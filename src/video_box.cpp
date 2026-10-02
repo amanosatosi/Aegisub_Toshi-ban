@@ -277,13 +277,19 @@ void VideoBox::OnSubsReadoutContextMenu(wxContextMenuEvent &event) {
 	wxMenuItem *copy = menu.Append(wxID_ANY, _("Copy"));
 	wxMenuItem *insert = menu.Append(wxID_ANY, _("Insert at cursor"));
 	menu.AppendSeparator();
-	auto normal = menu.Append(wxID_ANY, kind == SubsReadoutKind::Start ?
+	// The root menu owns the child, as with the spell-checker language menu.
+	auto fade_menu = new wxMenu;
+	auto normal = fade_menu->Append(wxID_ANY, _("Normal"));
+	fade_menu->AppendSeparator();
+	auto white = fade_menu->Append(wxID_ANY, kind == SubsReadoutKind::Start ?
+		_("From white") : _("To white"));
+	auto black = fade_menu->Append(wxID_ANY, kind == SubsReadoutKind::Start ?
+		_("From black") : _("To black"));
+	auto pick = fade_menu->Append(wxID_ANY, kind == SubsReadoutKind::Start ?
+		_("From custom color...") : _("To custom color..."));
+	auto fade = menu.AppendSubMenu(fade_menu, kind == SubsReadoutKind::Start ?
 		_("Fade in from here") : _("Fade out from here"));
-	auto white = menu.Append(wxID_ANY, _("Color white"));
-	auto black = menu.Append(wxID_ANY, _("Color black"));
-	auto pick = menu.Append(wxID_ANY, _("Pick color…"));
-	for (auto item : {normal, white, black, pick})
-		item->Enable(fade_available);
+	fade->Enable(fade_available);
 
 	menu.Bind(wxEVT_MENU, [=](wxCommandEvent& command) {
 		if (command.GetId() == copy->GetId()) {
