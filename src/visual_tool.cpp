@@ -33,7 +33,7 @@
 #include "visual_tool_clip.h"
 #include "visual_tool_curved_text.h"
 #include "visual_tool_drag.h"
-#include "visual_tool_perspective.h"
+#include "visual_tool_distort.h"
 #include "visual_tool_vector_clip.h"
 
 #include <libaegisub/ass/time.h>
@@ -755,5 +755,5 @@ template class VisualTool<VisualDraggableFeature>;
 template class VisualTool<ClipCorner>;
 template class VisualTool<VisualToolDragDraggableFeature>;
 template class VisualTool<VisualToolCurvedTextDraggableFeature>;
-template class VisualTool<VisualToolPerspectiveDraggableFeature>;
+template class VisualTool<VisualToolDistortDraggableFeature>;
 template class VisualTool<VisualToolVectorClipDraggableFeature>;

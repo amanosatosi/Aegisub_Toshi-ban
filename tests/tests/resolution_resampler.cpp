@@ -4,7 +4,6 @@
 
 #include "ass_dialogue.h"
 #include "ass_file.h"
-#include "mangetsu_perspective.h"
 #include "ass_style.h"
 #include "project_properties.h"
 #include "resolution_resampler.h"
@@ -223,17 +222,21 @@ TEST(resolution_resampler, conjugates_stable_perspective_plane) {
 		Settings(1000, 1000, 2000, 3000));
 	AssDialogue line;
 	line.Text = text;
-	auto plane = GetMangetsuPerspective(line);
-	ASSERT_TRUE(plane.enabled);
-	ASSERT_TRUE(plane.plane);
-	EXPECT_NEAR(1, plane.matrix[0], 1e-8);
-	EXPECT_NEAR(2, plane.matrix[1], 1e-8);
-	EXPECT_NEAR(20, plane.matrix[2], 1e-8);
-	EXPECT_NEAR(3, plane.matrix[3], 1e-8);
-	EXPECT_NEAR(1, plane.matrix[4], 1e-8);
-	EXPECT_NEAR(60, plane.matrix[5], 1e-8);
-	EXPECT_NEAR(0.005, plane.matrix[6], 1e-8);
-	EXPECT_NEAR(0.02 / 3, plane.matrix[7], 1e-8);
+	// Legacy resampling remains supported without the removed GUI authoring helper.
+	auto blocks = line.ParseTags();
+	ASSERT_EQ(AssBlockType::OVERRIDE, blocks.front()->GetType());
+	auto const& tag = static_cast<AssDialogueBlockOverride const&>(*blocks.front()).Tags.front();
+	ASSERT_EQ("\\perspective", tag.Name);
+	ASSERT_EQ(9u, tag.Params.size());
+	EXPECT_NEAR(1, tag.Params[0].Get<float>(), 1e-8);
+	EXPECT_NEAR(2, tag.Params[1].Get<float>(), 1e-8);
+	EXPECT_NEAR(20, tag.Params[2].Get<float>(), 1e-8);
+	EXPECT_NEAR(3, tag.Params[3].Get<float>(), 1e-8);
+	EXPECT_NEAR(1, tag.Params[4].Get<float>(), 1e-8);
+	EXPECT_NEAR(60, tag.Params[5].Get<float>(), 1e-8);
+	EXPECT_NEAR(0.005, tag.Params[6].Get<float>(), 1e-8);
+	EXPECT_NEAR(0.02 / 3, tag.Params[7].Get<float>(), 1e-8);
+	EXPECT_EQ(1, tag.Params[8].Get<int>());
 }
 
 TEST(resolution_resampler, preserves_mangetsu_non_spatial_parameters) {
