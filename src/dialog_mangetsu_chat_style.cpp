@@ -35,6 +35,16 @@
 
 namespace {
 using namespace mangetsu;
+// The Linux targets still support wxWidgets 3.0. Newer builds can convert
+// logical sizes per monitor; older builds use their native pixel coordinates.
+template<class T> T DialogPixels(wxWindow const* window, T value) {
+#if wxCHECK_VERSION(3, 1, 0)
+	return window->FromDIP(value);
+#else
+	(void)window;
+	return value;
+#endif
+}
 enum class Element {
 	Panel, Header, Title, LeftName, LeftText, LeftFill, LeftBorder, LeftOutline,
 	RightName, RightText, RightFill, RightBorder, RightOutline, Receipt, Count
@@ -87,8 +97,8 @@ class ChatPreview final : public wxPanel {
 	std::function<void(Element)> select;
 	void Arrange() {
 		auto size = GetClientSize();
-		int margin = FromDIP(12), width = FromDIP(165);
-		int h = std::max(1, size.y - 2 * margin), left = margin + width + FromDIP(35);
+		int margin = DialogPixels(this, 12), width = DialogPixels(this, 165);
+		int h = std::max(1, size.y - 2 * margin), left = margin + width + DialogPixels(this, 35);
 		phone = wxRect(left, margin, std::max(1, size.x - 2 * left), h);
 		// Native, keyboard-accessible controls flank the geometry they edit.
 		for (size_t i = 0; i < callouts.size(); ++i) {
@@ -103,7 +113,7 @@ class ChatPreview final : public wxPanel {
 				row = rows[i - static_cast<size_t>(Element::RightName)];
 			}
 			callouts[i]->SetSize(on_left ? margin : size.x - margin - width,
-				margin + static_cast<int>(row * h), width, FromDIP(30));
+				margin + static_cast<int>(row * h), width, DialogPixels(this, 30));
 		}
 		Refresh();
 	}
@@ -115,7 +125,7 @@ class ChatPreview final : public wxPanel {
 		double x = phone.x, y = phone.y, w = phone.width, h = phone.height;
 		// Checkerboard under the phone makes ASS transparency unambiguous.
 		g->SetPen(*wxTRANSPARENT_PEN);
-		int cell = FromDIP(12);
+		int cell = DialogPixels(this, 12);
 		for (int cy = phone.y; cy < phone.GetBottom(); cy += cell)
 			for (int cx = phone.x; cx < phone.GetRight(); cx += cell) {
 				g->SetBrush(wxBrush(((cx - phone.x) / cell + (cy - phone.y) / cell) % 2 ? wxColour(185, 185, 185) : wxColour(235, 235, 235)));
@@ -139,17 +149,17 @@ class ChatPreview final : public wxPanel {
 			wxString speaker = left ? wxS("Yurf") : wxS("Miku");
 			g->GetTextExtent(speaker, &tw, &th);
 			double nx = left ? bx : bx + bw - tw;
-			g->DrawText(speaker, nx, by - th - FromDIP(7));
-			targets[base] = wxPoint(nx + tw / 2, by - th / 2 - FromDIP(7));
+			g->DrawText(speaker, nx, by - th - DialogPixels(this, 7));
+			targets[base] = wxPoint(nx + tw / 2, by - th / 2 - DialogPixels(this, 7));
 			// This is representative geometry, not a renderer. A logarithmic
 			// width keeps even very large script-coordinate sizes inspectable.
-			double border = std::log1p(style.border_size) * FromDIP(2);
+			double border = std::log1p(style.border_size) * DialogPixels(this, 2);
 			g->SetPen(border > 0 ? wxPen(PaintColor(style.border), border) : *wxTRANSPARENT_PEN);
-			g->SetBrush(wxBrush(PaintColor(style.fill))); g->DrawRoundedRectangle(bx, by, bw, bh, FromDIP(10));
+			g->SetBrush(wxBrush(PaintColor(style.fill))); g->DrawRoundedRectangle(bx, by, bw, bh, DialogPixels(this, 10));
 			font.SetPointSize(11);
-			double tx = bx + FromDIP(12), ty = by + FromDIP(12);
+			double tx = bx + DialogPixels(this, 12), ty = by + DialogPixels(this, 12);
 			wxString message = left ? wxS("Hey, are\nyou there?") : wxS("Yeah");
-			double outline = std::log1p(style.outline_size) * FromDIP(1);
+			double outline = std::log1p(style.outline_size) * DialogPixels(this, 1);
 			// Draw each line explicitly; wxGraphicsContext::DrawText is single-line.
 			auto draw_message = [&](wxColour color, double dx, double dy) {
 				g->SetFont(font, color);
@@ -165,42 +175,42 @@ class ChatPreview final : public wxPanel {
 				draw_message(PaintColor(style.outline), std::cos(angle) * outline, std::sin(angle) * outline);
 			}
 			draw_message(PaintColor(style.text), 0, 0);
-			targets[base + 1] = wxPoint(tx + FromDIP(18), ty + FromDIP(8));
+			targets[base + 1] = wxPoint(tx + DialogPixels(this, 18), ty + DialogPixels(this, 8));
 			targets[base + 2] = wxPoint(bx + bw * .75, by + bh * .45);
 			targets[base + 3] = wxPoint(left ? bx : bx + bw, by + bh * .80);
-			targets[base + 4] = wxPoint(tx + FromDIP(6), ty + FromDIP(16));
+			targets[base + 4] = wxPoint(tx + DialogPixels(this, 6), ty + DialogPixels(this, 16));
 			if (!left) {
-				double rx = bx + bw - FromDIP(27), ry = by + bh - FromDIP(13);
-				g->SetPen(wxPen(PaintColor(style.text), FromDIP(2)));
+				double rx = bx + bw - DialogPixels(this, 27), ry = by + bh - DialogPixels(this, 13);
+				g->SetPen(wxPen(PaintColor(style.text), DialogPixels(this, 2)));
 				for (int i = 0; i < appearance.read_mark; ++i) {
-					auto path = g->CreatePath(); double xx = rx + i * FromDIP(9);
-					path.MoveToPoint(xx, ry); path.AddLineToPoint(xx + FromDIP(4), ry + FromDIP(4));
-					path.AddLineToPoint(xx + FromDIP(11), ry - FromDIP(5)); g->StrokePath(path);
+					auto path = g->CreatePath(); double xx = rx + i * DialogPixels(this, 9);
+					path.MoveToPoint(xx, ry); path.AddLineToPoint(xx + DialogPixels(this, 4), ry + DialogPixels(this, 4));
+					path.AddLineToPoint(xx + DialogPixels(this, 11), ry - DialogPixels(this, 5)); g->StrokePath(path);
 				}
-				targets[static_cast<size_t>(Element::Receipt)] = wxPoint(rx + FromDIP(9), ry);
+				targets[static_cast<size_t>(Element::Receipt)] = wxPoint(rx + DialogPixels(this, 9), ry);
 			}
 		};
 		bubble(appearance.left, true); bubble(appearance.right, false);
-		g->SetBrush(*wxTRANSPARENT_BRUSH); g->SetPen(wxPen(GetForegroundColour(), FromDIP(1)));
-		g->DrawRoundedRectangle(x, y, w, h, FromDIP(10));
+		g->SetBrush(*wxTRANSPARENT_BRUSH); g->SetPen(wxPen(GetForegroundColour(), DialogPixels(this, 1)));
+		g->DrawRoundedRectangle(x, y, w, h, DialogPixels(this, 10));
 		// The active callout stands out; inactive leaders stay deliberately quiet.
 		for (size_t i = 0; i < callouts.size(); ++i) {
 			auto rect = callouts[i]->GetRect(); bool left = i <= static_cast<size_t>(Element::LeftOutline);
 			double sx = left ? rect.GetRight() : rect.GetLeft(), sy = rect.y + rect.height / 2;
 			auto target = targets[i]; bool active = i == static_cast<size_t>(selected);
-			g->SetPen(wxPen(active ? wxColour(0, 120, 215) : wxColour(140, 140, 140), FromDIP(active ? 2 : 1)));
+			g->SetPen(wxPen(active ? wxColour(0, 120, 215) : wxColour(140, 140, 140), DialogPixels(this, active ? 2 : 1)));
 			auto path = g->CreatePath(); path.MoveToPoint(sx, sy);
-			path.AddLineToPoint(left ? x - FromDIP(12) : x + w + FromDIP(12), sy);
+			path.AddLineToPoint(left ? x - DialogPixels(this, 12) : x + w + DialogPixels(this, 12), sy);
 			path.AddLineToPoint(target.x, target.y); g->StrokePath(path);
 			g->SetBrush(wxBrush(active ? wxColour(0, 120, 215) : wxColour(140, 140, 140)));
-			g->DrawEllipse(target.x - FromDIP(2), target.y - FromDIP(2), FromDIP(4), FromDIP(4));
+			g->DrawEllipse(target.x - DialogPixels(this, 2), target.y - DialogPixels(this, 2), DialogPixels(this, 4), DialogPixels(this, 4));
 		}
 	}
 public:
 	ChatPreview(wxWindow* parent, ChatAppearance const& appearance, std::function<void(Element)> select)
 	: wxPanel(parent), appearance(appearance), select(std::move(select)) {
 		SetBackgroundStyle(wxBG_STYLE_PAINT);
-		SetMinSize(FromDIP(wxSize(820, 420)));
+		SetMinSize(DialogPixels(this, wxSize(820, 420)));
 		auto labels = Labels();
 		for (size_t i = 0; i < callouts.size(); ++i) {
 			callouts[i] = new wxToggleButton(this, wxID_ANY, labels[i]);
@@ -322,46 +332,46 @@ public:
 		valid_presets = presets.Load(OPT_GET("Tool/Mangetsu Chat/Presets")->GetString());
 		auto root = new wxBoxSizer(wxVERTICAL);
 		auto preset_row = new wxBoxSizer(wxHORIZONTAL);
-		preset_row->Add(new wxStaticText(this, wxID_ANY, _("Preset:")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(6));
-		preset_choice = new wxChoice(this, wxID_ANY); preset_row->Add(preset_choice, 1, wxRIGHT, FromDIP(6));
-		auto add_button = [&](wxString const& label) { auto button = new wxButton(this, wxID_ANY, label); preset_row->Add(button, 0, wxRIGHT, FromDIP(4)); return button; };
+		preset_row->Add(new wxStaticText(this, wxID_ANY, _("Preset:")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, DialogPixels(this, 6));
+		preset_choice = new wxChoice(this, wxID_ANY); preset_row->Add(preset_choice, 1, wxRIGHT, DialogPixels(this, 6));
+		auto add_button = [&](wxString const& label) { auto button = new wxButton(this, wxID_ANY, label); preset_row->Add(button, 0, wxRIGHT, DialogPixels(this, 4)); return button; };
 		auto new_button = add_button(_("New / Save As...")); save_button = add_button(_("Save"));
 		rename_button = add_button(_("Rename...")); delete_button = add_button(_("Delete"));
-		root->Add(preset_row, 0, wxEXPAND | wxALL, FromDIP(10));
-		root->Add(new wxStaticText(this, wxID_ANY, _("Select a callout to edit that part of the phone. Alpha: 0 = opaque, 255 = transparent.")), 0, wxLEFT | wxRIGHT, FromDIP(12));
+		root->Add(preset_row, 0, wxEXPAND | wxALL, DialogPixels(this, 10));
+		root->Add(new wxStaticText(this, wxID_ANY, _("Select a callout to edit that part of the phone. Alpha: 0 = opaque, 255 = transparent.")), 0, wxLEFT | wxRIGHT, DialogPixels(this, 12));
 		preview = new ChatPreview(this, state.appearance, [this](Element element) { selected = element; RefreshInspector(); });
-		root->Add(preview, 1, wxEXPAND | wxALL, FromDIP(4));
+		root->Add(preview, 1, wxEXPAND | wxALL, DialogPixels(this, 4));
 		auto inspector = new wxBoxSizer(wxHORIZONTAL);
-		element_title = new wxStaticText(this, wxID_ANY, wxString()); inspector->Add(element_title, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(10));
-		color_button = new wxButton(this, wxID_ANY, _("Color...")); inspector->Add(color_button, 0, wxRIGHT, FromDIP(12));
-		alpha_label = new wxStaticText(this, wxID_ANY, _("Alpha:")); inspector->Add(alpha_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
-		alpha = new wxSpinCtrl(this, wxID_ANY, wxString(), wxDefaultPosition, FromDIP(wxSize(80, -1)), wxSP_ARROW_KEYS, 0, 255);
-		inspector->Add(alpha, 0, wxRIGHT, FromDIP(12));
-		size_label = new wxStaticText(this, wxID_ANY, _("Width:")); inspector->Add(size_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
-		width = new wxSpinCtrlDouble(this, wxID_ANY, wxString(), wxDefaultPosition, FromDIP(wxSize(100, -1)), wxSP_ARROW_KEYS, 0, 10000, 0, .25);
-		width->SetDigits(3); inspector->Add(width, 0, wxRIGHT, FromDIP(12));
+		element_title = new wxStaticText(this, wxID_ANY, wxString()); inspector->Add(element_title, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, DialogPixels(this, 10));
+		color_button = new wxButton(this, wxID_ANY, _("Color...")); inspector->Add(color_button, 0, wxRIGHT, DialogPixels(this, 12));
+		alpha_label = new wxStaticText(this, wxID_ANY, _("Alpha:")); inspector->Add(alpha_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, DialogPixels(this, 4));
+		alpha = new wxSpinCtrl(this, wxID_ANY, wxString(), wxDefaultPosition, DialogPixels(this, wxSize(80, -1)), wxSP_ARROW_KEYS, 0, 255);
+		inspector->Add(alpha, 0, wxRIGHT, DialogPixels(this, 12));
+		size_label = new wxStaticText(this, wxID_ANY, _("Width:")); inspector->Add(size_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, DialogPixels(this, 4));
+		width = new wxSpinCtrlDouble(this, wxID_ANY, wxString(), wxDefaultPosition, DialogPixels(this, wxSize(100, -1)), wxSP_ARROW_KEYS, 0, 10000, 0, .25);
+		width->SetDigits(3); inspector->Add(width, 0, wxRIGHT, DialogPixels(this, 12));
 		width->SetToolTip(_("Width in ASS script coordinates. The preview uses representative geometry."));
-		receipt_label = new wxStaticText(this, wxID_ANY, _("Read mark:")); inspector->Add(receipt_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
+		receipt_label = new wxStaticText(this, wxID_ANY, _("Read mark:")); inspector->Add(receipt_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, DialogPixels(this, 4));
 		receipt = new wxChoice(this, wxID_ANY); receipt->Append(_("None")); receipt->Append(_("Sent")); receipt->Append(_("Read"));
-		inspector->Add(receipt, 0, wxRIGHT, FromDIP(12));
-		delay_label = new wxStaticText(this, wxID_ANY, _("Read delay (ms):")); inspector->Add(delay_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(4));
-		delay = new wxSpinCtrl(this, wxID_ANY, wxString(), wxDefaultPosition, FromDIP(wxSize(135, -1)), wxSP_ARROW_KEYS, 0, std::numeric_limits<int>::max()); inspector->Add(delay, 0);
-		root->Add(inspector, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(12));
+		inspector->Add(receipt, 0, wxRIGHT, DialogPixels(this, 12));
+		delay_label = new wxStaticText(this, wxID_ANY, _("Read delay (ms):")); inspector->Add(delay_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, DialogPixels(this, 4));
+		delay = new wxSpinCtrl(this, wxID_ANY, wxString(), wxDefaultPosition, DialogPixels(this, wxSize(135, -1)), wxSP_ARROW_KEYS, 0, std::numeric_limits<int>::max()); inspector->Add(delay, 0);
+		root->Add(inspector, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, DialogPixels(this, 12));
 		auto footer = new wxBoxSizer(wxHORIZONTAL);
 		origin_label = new wxStaticText(this, wxID_ANY, wxString()); footer->Add(origin_label, 1, wxALIGN_CENTER_VERTICAL);
-		auto swap = new wxButton(this, wxID_ANY, _("Swap Left / Right")); footer->Add(swap, 0, wxRIGHT, FromDIP(6));
-		auto reset = new wxButton(this, wxID_ANY, _("Reset selected")); footer->Add(reset, 0, wxRIGHT, FromDIP(6));
+		auto swap = new wxButton(this, wxID_ANY, _("Swap Left / Right")); footer->Add(swap, 0, wxRIGHT, DialogPixels(this, 6));
+		auto reset = new wxButton(this, wxID_ANY, _("Reset selected")); footer->Add(reset, 0, wxRIGHT, DialogPixels(this, 6));
 		auto reset_all = new wxButton(this, wxID_ANY, _("Reset All")); footer->Add(reset_all, 0);
-		root->Add(footer, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(12));
+		root->Add(footer, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, DialogPixels(this, 12));
 		wxString status = state.has_chat_mode ? _("Preview is illustrative. Apply changes the active line only.") :
 			_("Current line has no \\chatmode tag; style tags can still be prepared.");
 		if (!valid_presets) status += wxS("  ") + _("Saved presets could not be read.");
-		root->Add(new wxStaticText(this, wxID_ANY, status), 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(12));
-		root->Add(CreateSeparatedButtonSizer(wxOK | wxAPPLY | wxCANCEL), 0, wxEXPAND | wxALL, FromDIP(10));
+		root->Add(new wxStaticText(this, wxID_ANY, status), 0, wxLEFT | wxRIGHT | wxBOTTOM, DialogPixels(this, 12));
+		root->Add(CreateSeparatedButtonSizer(wxOK | wxAPPLY | wxCANCEL), 0, wxEXPAND | wxALL, DialogPixels(this, 10));
 		SetSizer(root);
 		RefreshPresets(); RefreshInspector();
 		SetMinSize(root->CalcMin() + (GetSize() - GetClientSize()));
-		SetSize(FromDIP(wxSize(970, 750)));
+		SetSize(DialogPixels(this, wxSize(970, 750)));
 		persist = std::make_unique<PersistLocation>(this, "Tool/Mangetsu Chat", true);
 
 		color_button->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
