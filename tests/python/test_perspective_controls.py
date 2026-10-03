@@ -58,7 +58,13 @@ class PerspectiveControls(unittest.TestCase):
 
     def test_config_keeps_arch_settings_and_defaults_to_distort(self):
         for path in ("src/libresrc/default_config.json", "src/libresrc/osx/default_config.json"):
-            config = json.loads((ROOT / path).read_text())["Tool"]["Visual"]["Perspective"]
+            # The full Aegisub config permits trailing commas. This flat settings
+            # block is standard JSON, so inspect it without imposing Python's
+            # stricter parser on unrelated defaults.
+            block = re.search(r'"Perspective"\s*:\s*(\{[^{}]*\})',
+                              (ROOT / path).read_text())
+            self.assertIsNotNone(block, path)
+            config = json.loads(block.group(1))
             self.assertEqual(1 << 8, config["Mode"])
             for key in ("Outer", "Outer Locked", "Grid", "Org Mode"):
                 self.assertIn(key, config)
