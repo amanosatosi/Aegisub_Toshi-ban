@@ -69,6 +69,7 @@ void ShowJumpToDialog(agi::Context *c);
 void ShowKanjiTimerDialog(agi::Context *c);
 void ShowLogWindow(agi::Context *c);
 void ShowMangetsuGradientDialog(agi::Context *c);
+void ShowMangetsuChatStyleDialog(agi::Context *c);
 /// Show Preferences and return whether a committed setting change requested a restart.
 bool ShowPreferences(wxWindow *parent);
 void ShowPropertiesDialog(agi::Context *c);

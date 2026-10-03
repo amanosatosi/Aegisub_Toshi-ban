@@ -489,6 +489,16 @@
 	},
 
 	"Tool" : {
+		"Mangetsu Chat" : {
+			"Presets" : "{\"version\":1,\"presets\":{}}",
+			"Last" : {
+				"X" : -1,
+				"Y" : -1,
+				"Width" : -1,
+				"Height" : -1
+			},
+			"Maximized" : false
+		},
 		"Colour Picker" : {
 			"Mode" : 4,
 			"Recent Colours" : [

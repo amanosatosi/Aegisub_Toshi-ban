@@ -23,6 +23,8 @@ jobs:
         run: python tests/python/test_release_preparation.py
       - name: Check subtitle-relative readout fade menu wiring
         run: python tests/python/test_fade_controls.py
+      - name: Check Mangetsu chat style toolbar wiring
+        run: python tests/python/test_chat_style_controls.py
 
   build:
     needs: release-preparation

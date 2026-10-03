@@ -297,6 +297,10 @@ SubsEditBox::SubsEditBox(wxWindow *parent, agi::Context *context)
 	MakeButton("edit/color/shadow");
 	MakeButton("edit/color/insert_value");
 	MakeButton("edit/color/gradient");
+	auto chat_style_button = MakeButton("edit/chat/style");
+	chat_style_button->Bind(wxEVT_UPDATE_UI, [this](wxUpdateUIEvent& event) {
+		event.Enable(cmd::get("edit/chat/style")->Validate(c));
+	});
 	middle_right_sizer->AddSpacer(5);
 	MakeButton("grid/line/next/create");
 	middle_right_sizer->AddSpacer(10);

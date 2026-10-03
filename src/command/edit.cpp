@@ -2544,6 +2544,45 @@ struct edit_color_gradient final : public Command {
 	}
 };
 
+struct edit_chat_style final : public Command {
+	CMD_NAME("edit/chat/style")
+	STR_MENU("Mangetsu Chat Style...")
+	STR_DISP("Mangetsu Chat Style")
+	STR_HELP("Edit Mangetsu phone/chat appearance")
+	CMD_TYPE(COMMAND_VALIDATE)
+
+	bool Validate(const agi::Context *c) override {
+		return c->selectionController && c->selectionController->GetActiveLine();
+	}
+
+	wxBitmap Icon(int size, double scale = 1.0, wxLayoutDirection = wxLayout_LeftToRight) const override {
+		int pixels = std::max(16, static_cast<int>(size * scale));
+		wxBitmap bitmap(pixels, pixels, 32);
+		wxMemoryDC dc(bitmap);
+		dc.SetBackground(*wxTRANSPARENT_BRUSH); dc.Clear();
+		int unit = std::max(1, pixels / 16);
+		// Contrasting phone rim and two distinct bubbles remain readable on
+		// both light and dark toolbar backgrounds, without an extra asset.
+		dc.SetPen(wxPen(wxColour(35, 40, 50), unit));
+		dc.SetBrush(wxBrush(wxColour(245, 247, 250)));
+		dc.DrawRoundedRectangle(unit * 2, unit, pixels - unit * 4, pixels - unit * 2, unit * 2);
+		dc.SetPen(*wxTRANSPARENT_PEN);
+		dc.SetBrush(wxBrush(wxColour(40, 90, 145)));
+		dc.DrawRoundedRectangle(unit * 4, unit * 4, pixels - unit * 8, unit * 3, unit);
+		dc.DrawPolygon(3, std::array<wxPoint, 3>{{{unit * 4, unit * 6}, {unit * 4, unit * 8}, {unit * 6, unit * 6}}}.data());
+		dc.SetBrush(wxBrush(wxColour(0, 135, 90)));
+		dc.DrawRoundedRectangle(unit * 6, unit * 9, pixels - unit * 9, unit * 3, unit);
+		dc.DrawPolygon(3, std::array<wxPoint, 3>{{{pixels - unit * 3, unit * 11}, {pixels - unit * 3, unit * 13}, {pixels - unit * 5, unit * 11}}}.data());
+		dc.SelectObject(wxNullBitmap);
+#if wxCHECK_VERSION(3, 1, 0)
+		bitmap.SetScaleFactor(scale);
+#endif
+		return bitmap;
+	}
+
+	void operator()(agi::Context *c) override { ShowMangetsuChatStyleDialog(c); }
+};
+
 struct edit_font final : public Command {
 	CMD_NAME("edit/font")
 	CMD_ICON(button_fontname)
@@ -3624,6 +3663,7 @@ namespace cmd {
 		reg(agi::make_unique<edit_color_shadow>());
 		reg(agi::make_unique<edit_color_insert_value>());
 		reg(agi::make_unique<edit_color_gradient>());
+		reg(agi::make_unique<edit_chat_style>());
 		reg(agi::make_unique<edit_font>());
 		reg(agi::make_unique<edit_find_replace>());
 		reg(agi::make_unique<edit_line_copy>());
