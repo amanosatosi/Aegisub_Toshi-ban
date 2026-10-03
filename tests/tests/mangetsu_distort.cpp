@@ -8,7 +8,7 @@
 
 #include "ass_dialogue.h"
 #include "mangetsu_distort.h"
-#include "quad_geometry.h"
+#include "perspective_geometry.h"
 
 namespace {
 AssDialogue MakeLine(std::string const& text) {

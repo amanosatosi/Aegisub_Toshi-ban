@@ -10,6 +10,8 @@
 
 #include <vector>
 
+void Solve2x2(float a11, float a12, float a21, float a22, float b1, float b2, float& x1, float& x2);
+Vector2D QuadMidpoint(std::vector<Vector2D> const& quad);
 Vector2D XYToUV(std::vector<Vector2D> const& quad, Vector2D xy);
 Vector2D UVToXY(std::vector<Vector2D> const& quad, Vector2D uv);
 std::vector<Vector2D> MakeRect(Vector2D a, Vector2D b);

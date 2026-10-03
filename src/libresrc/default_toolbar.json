@@ -78,7 +78,7 @@
         "video/tool/rotate/z",
         "video/tool/rotate/xy",
         "video/tool/curved_text",
-        "video/tool/distort",
+        "video/tool/perspective",
         "video/tool/scale",
         "video/tool/clip",
         "video/tool/vector_clip",

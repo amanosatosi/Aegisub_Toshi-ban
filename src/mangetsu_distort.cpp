@@ -7,7 +7,7 @@
 #include "mangetsu_distort.h"
 
 #include "ass_dialogue.h"
-#include "quad_geometry.h"
+#include "perspective_geometry.h"
 #include "utils.h"
 
 #include <algorithm>

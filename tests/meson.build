@@ -46,7 +46,7 @@ all_test_sources += [
     '../src/mangetsu_gradient_placement.cpp',
     '../src/mangetsu_gradient_scope.cpp',
     '../src/mangetsu_chat_style.cpp',
-    '../src/quad_geometry.cpp',
+    '../src/perspective_geometry.cpp',
     '../src/project_properties.cpp',
     '../src/resolution_resampler.cpp',
     '../src/style_import.cpp',
