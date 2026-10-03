@@ -37,7 +37,7 @@ all_test_sources += [
     '../src/motion_tracking/motion_track_segments.cpp',
     '../src/mangetsu_distort.cpp',
     '../src/mangetsu_gradient_placement.cpp',
-    '../src/perspective_geometry.cpp',
+    '../src/quad_geometry.cpp',
     '../src/project_properties.cpp',
     '../src/resolution_resampler.cpp',
     '../src/style_import.cpp',

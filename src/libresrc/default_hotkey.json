@@ -393,7 +393,7 @@
 		"video/tool/drag" : [
 			"S"
 		],
-		"video/tool/perspective": [
+		"video/tool/distort": [
 			"G"
 		],
 		"video/tool/rotate/xy" : [

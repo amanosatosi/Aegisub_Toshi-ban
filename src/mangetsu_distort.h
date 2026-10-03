@@ -21,10 +21,15 @@ struct MangetsuDistortState {
 		Vector2D(0, 0), Vector2D(1, 0), Vector2D(1, 1), Vector2D(0, 1)
 	}};
 	bool enabled = false;
-	bool extended = false;
+	// Source form only: it distinguishes renderer domains, never GUI output.
+	bool source_eight_values = false;
 };
 
 MangetsuDistortState GetMangetsuDistort(AssDialogue const& line);
+// First editable rendering scope, including its complete multiline text.
+std::string GetMangetsuDistortUnitText(AssDialogue const& line);
+// Normalize only plain-text breaks/spaces for the existing extent calculator.
+std::string GetMangetsuDistortMeasurementText(AssDialogue const& line, int wrap_style);
 std::string FormatMangetsuDistort(MangetsuDistortState const& state);
 bool SetMangetsuDistortCorner(MangetsuDistortState& state, size_t corner, Vector2D position);
 bool SetMangetsuDistort(AssDialogue& line, MangetsuDistortState const& state, int changed_corner = -1);

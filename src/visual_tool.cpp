@@ -32,7 +32,7 @@
 #include "video_display.h"
 #include "visual_tool_clip.h"
 #include "visual_tool_drag.h"
-#include "visual_tool_perspective.h"
+#include "visual_tool_distort.h"
 #include "visual_tool_vector_clip.h"
 
 #include <libaegisub/ass/time.h>
@@ -734,5 +734,5 @@ void VisualToolBase::SetOverride(AssDialogue* line, std::string const& tag, std:
 template class VisualTool<VisualDraggableFeature>;
 template class VisualTool<ClipCorner>;
 template class VisualTool<VisualToolDragDraggableFeature>;
-template class VisualTool<VisualToolPerspectiveDraggableFeature>;
+template class VisualTool<VisualToolDistortDraggableFeature>;
 template class VisualTool<VisualToolVectorClipDraggableFeature>;

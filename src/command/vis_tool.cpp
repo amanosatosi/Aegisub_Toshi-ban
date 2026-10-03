@@ -27,7 +27,7 @@
 #include "../visual_tool_clip.h"
 #include "../visual_tool_cross.h"
 #include "../visual_tool_drag.h"
-#include "../visual_tool_perspective.h"
+#include "../visual_tool_distort.h"
 #include "../visual_tool_rotatexy.h"
 #include "../visual_tool_rotatez.h"
 #include "../visual_tool_scale.h"
@@ -76,53 +76,6 @@ namespace {
 		}
 	};
 
-	template<VisualToolPerspectiveSetting M>
-	struct visual_tool_persp_setting : public Command {
-		CMD_TYPE(COMMAND_VALIDATE | COMMAND_TOGGLE)
-
-		bool Validate(const agi::Context *c) override {
-			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)) &&
-				(c->videoDisplay->GetSubTool() & PERSP_MODE) == PERSP_MODE_ARCH1T3CHT;
-		}
-
-		virtual const bool CheckActive(int subtool) {
-			return subtool & M;
-		}
-
-		virtual const int UpdateSubTool(int subtool) {
-			return subtool ^ M;
-		}
-
-		bool IsActive(const agi::Context *c) override {
-			return Validate(c) && CheckActive(c->videoDisplay->GetSubTool());
-		}
-
-		void operator()(agi::Context *c) override {
-			if (!c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)))
-				c->videoDisplay->SetTool(agi::make_unique<VisualToolPerspective>(c->videoDisplay, c));
-			c->videoDisplay->SetSubTool(UpdateSubTool(c->videoDisplay->GetSubTool()));
-		}
-	};
-
-	template<VisualToolPerspectiveSetting M>
-	struct visual_tool_persp_mode : public Command {
-		CMD_TYPE(COMMAND_VALIDATE | COMMAND_RADIO)
-
-		bool Validate(const agi::Context *c) override {
-			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective));
-		}
-
-		bool IsActive(const agi::Context *c) override {
-			return Validate(c) && (c->videoDisplay->GetSubTool() & PERSP_MODE) == M;
-		}
-
-		void operator()(agi::Context *c) override {
-			if (!c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)))
-				c->videoDisplay->SetTool(agi::make_unique<VisualToolPerspective>(c->videoDisplay, c));
-			c->videoDisplay->SetSubTool((c->videoDisplay->GetSubTool() & ~PERSP_MODE) | M);
-		}
-	};
-
 	struct visual_mode_cross final : public visual_tool_command<VisualToolCross> {
 		CMD_NAME("video/tool/cross")
 		CMD_ICON(visual_standard)
@@ -155,12 +108,17 @@ namespace {
 		STR_HELP("Rotate subtitles on their X and Y axes")
 	};
 
-	struct visual_mode_perspective final : public visual_tool_command<VisualToolPerspective> {
+	struct visual_mode_distort : public visual_tool_command<VisualToolDistort> {
+		CMD_NAME("video/tool/distort")
+		CMD_ICON(visual_distort)
+		STR_MENU("Mangetsu Distort")
+		STR_DISP("Mangetsu Distort")
+		STR_HELP("Edit eight-value Mangetsu distortion with four corner handles")
+	};
+
+	// Compatibility for existing user hotkeys; activates only the Distort tool.
+	struct visual_mode_perspective final : public visual_mode_distort {
 		CMD_NAME("video/tool/perspective")
-		CMD_ICON(visual_perspective)
-		STR_MENU("Perspective / Distort")
-		STR_DISP("Perspective / Distort")
-		STR_HELP("Edit Mangetsu distortion or use arch1t3cht's ASS perspective tool")
 	};
 
 	struct visual_mode_scale final : public visual_tool_command<VisualToolScale> {
@@ -209,133 +167,6 @@ namespace {
 			c->dialog->Show<DialogMotionTrack>(c);
 		}
 	};
-
-	struct visual_mode_perspective_distort final : public visual_tool_persp_mode<PERSP_MODE_DISTORT> {
-		CMD_NAME("video/tool/perspective/distort")
-		CMD_ICON(visual_vector_clip)
-		STR_MENU("Mangetsu Distort")
-		STR_DISP("Mangetsu Distort")
-		STR_HELP("Edit Mangetsu \\distort with four normalized quad handles")
-	};
-
-	struct visual_mode_perspective_arch1t3cht final : public visual_tool_persp_mode<PERSP_MODE_ARCH1T3CHT> {
-		CMD_NAME("video/tool/perspective/arch1t3cht")
-		CMD_ICON(visual_perspective)
-		STR_MENU("Perspective (arch1t3cht)")
-		STR_DISP("Perspective (arch1t3cht)")
-		STR_HELP("Use the existing perspective quad based on ASS rotation, shear, scale and position tags")
-	};
-
-	// Perspective settings
-	struct visual_mode_perspective_plane final : public visual_tool_persp_setting<PERSP_OUTER> {
-		CMD_NAME("video/tool/perspective/plane")
-		CMD_ICON(visual_perspective_plane)
-		STR_MENU("Show Surrounding Plane")
-		STR_DISP("Show Surrounding Plane")
-		STR_HELP("Toggles showing a second quad for the ambient 3D plane.")
-	};
-
-	// Perspective settings
-	struct visual_mode_perspective_lock_inner final : public visual_tool_persp_setting<PERSP_LOCK_OUTER> {
-		CMD_NAME("video/tool/perspective/lock_outer")
-		CMD_ICON(visual_perspective_lock_outer)
-		STR_MENU("Lock Outer Quad")
-		STR_DISP("Lock Outer Quad")
-		STR_HELP("When the surrounding plane is also visible, switches which quad is locked. If inactive, the inner quad can only be resized without changing the perspective plane. If active, this holds for the outer quad instead.")
-
-		bool Validate(const agi::Context *c) override {
-			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)) &&
-				(c->videoDisplay->GetSubTool() & PERSP_MODE) == PERSP_MODE_ARCH1T3CHT &&
-				(c->videoDisplay->GetSubTool() & PERSP_OUTER);
-		}
-	};
-
-	struct visual_mode_perspective_grid final : public visual_tool_persp_setting<PERSP_GRID> {
-		CMD_NAME("video/tool/perspective/grid")
-		CMD_ICON(visual_perspective_grid)
-		STR_MENU("Show Grid")
-		STR_DISP("Show Grid")
-		STR_HELP("Toggles showing a 3D grid in the visual perspective tool")
-	};
-
-	struct visual_mode_perspective_orgmode_center : public visual_tool_persp_setting<PERSP_ORGMODE_CENTER> {
-		CMD_NAME("video/tool/perspective/orgmode/center")
-		CMD_ICON(visual_perspective_orgmode_center)
-		STR_MENU("\\org Mode: Center")
-		STR_DISP("\\org Mode: Center")
-		STR_HELP("Puts \\org at the center of the perspective quad")
-
-		const bool CheckActive(int subtool) override {
-			return (subtool & PERSP_ORGMODE) == PERSP_ORGMODE_CENTER;
-		}
-
-		const int UpdateSubTool(int subtool) override {
-			return (subtool & ~PERSP_ORGMODE) | PERSP_ORGMODE_CENTER;
-		}
-	};
-
-	struct visual_mode_perspective_orgmode_nofax : public visual_tool_persp_setting<PERSP_ORGMODE_NOFAX> {
-		CMD_NAME("video/tool/perspective/orgmode/nofax")
-		CMD_ICON(visual_perspective_orgmode_nofax)
-		STR_MENU("\\org Mode: No \\fax")
-		STR_DISP("\\org Mode: No \\fax")
-		STR_HELP("Finds a value for \\org where \\fax can be zero, if possible. Use this mode if your event contains line breaks.")
-
-		const bool CheckActive(int subtool) override {
-			return (subtool & PERSP_ORGMODE) == PERSP_ORGMODE_NOFAX;
-		}
-
-		const int UpdateSubTool(int subtool) override {
-			return (subtool & ~PERSP_ORGMODE) | PERSP_ORGMODE_NOFAX;
-		}
-	};
-
-	struct visual_mode_perspective_orgmode_keep : public visual_tool_persp_setting<PERSP_ORGMODE_KEEP> {
-		CMD_NAME("video/tool/perspective/orgmode/keep")
-		CMD_ICON(visual_perspective_orgmode_keep)
-		STR_MENU("\\org Mode: Keep")
-		STR_DISP("\\org Mode: Keep")
-		STR_HELP("Fixes the position of \\org")
-
-		const bool CheckActive(int subtool) override {
-			return (subtool & PERSP_ORGMODE) == PERSP_ORGMODE_KEEP;
-		}
-
-		const int UpdateSubTool(int subtool) override {
-			return (subtool & ~PERSP_ORGMODE) | PERSP_ORGMODE_KEEP;
-		}
-	};
-
-	struct visual_mode_perspective_orgmode_cycle : public visual_tool_persp_setting<PERSP_ORGMODE> {
-		CMD_NAME("video/tool/perspective/orgmode/cycle")
-		STR_MENU("Cycle \\org mode")
-		STR_DISP("Cycle \\org mode")
-		STR_HELP("Cycles through the three \\org modes")
-
-		const bool CheckActive(int subtool) override {
-			return false;
-		}
-
-		const int UpdateSubTool(int subtool) override {
-			int newtool = 0;
-			switch (subtool & PERSP_ORGMODE) {
-				case PERSP_ORGMODE_CENTER:
-					newtool = PERSP_ORGMODE_NOFAX;
-					break;
-				case PERSP_ORGMODE_NOFAX:
-					newtool = PERSP_ORGMODE_KEEP;
-					break;
-				case PERSP_ORGMODE_KEEP:
-					newtool = PERSP_ORGMODE_CENTER;
-					break;
-				default:
-					break;
-			}
-			return (subtool & ~PERSP_ORGMODE) | newtool;
-		}
-	};
-
-	// Vector clip tools
 
 	struct visual_mode_vclip_drag final : public visual_tool_vclip_command<VCLIP_DRAG> {
 		CMD_NAME("video/tool/vclip/drag")
@@ -402,21 +233,12 @@ namespace cmd {
 		reg(agi::make_unique<visual_mode_drag>());
 		reg(agi::make_unique<visual_mode_rotate_z>());
 		reg(agi::make_unique<visual_mode_rotate_xy>());
+		reg(agi::make_unique<visual_mode_distort>());
 		reg(agi::make_unique<visual_mode_perspective>());
 		reg(agi::make_unique<visual_mode_scale>());
 		reg(agi::make_unique<visual_mode_clip>());
 		reg(agi::make_unique<visual_mode_vector_clip>());
 		reg(agi::make_unique<visual_motion_track>());
-
-		reg(agi::make_unique<visual_mode_perspective_distort>());
-		reg(agi::make_unique<visual_mode_perspective_arch1t3cht>());
-		reg(agi::make_unique<visual_mode_perspective_plane>());
-		reg(agi::make_unique<visual_mode_perspective_lock_inner>());
-		reg(agi::make_unique<visual_mode_perspective_grid>());
-		reg(agi::make_unique<visual_mode_perspective_orgmode_center>());
-		reg(agi::make_unique<visual_mode_perspective_orgmode_nofax>());
-		reg(agi::make_unique<visual_mode_perspective_orgmode_keep>());
-		reg(agi::make_unique<visual_mode_perspective_orgmode_cycle>());
 
 		reg(agi::make_unique<visual_mode_vclip_drag>());
 		reg(agi::make_unique<visual_mode_vclip_line>());
