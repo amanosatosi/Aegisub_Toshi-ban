@@ -70,7 +70,7 @@ jobs:
               -Dpaddleocr=enabled
               -Dopencv=enabled
               -Dwith_mangetsu=true
-          - name: Windows MSVC Release (wx 3.3.3)
+          - name: Windows MSVC Release (wx master)
             os: windows-latest
             runner: windows-2022
             msvc: true
