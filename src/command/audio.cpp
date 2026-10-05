@@ -566,7 +566,7 @@ struct audio_karaoke_toshiki_ktiming final : public validate_audio_open {
 
 struct audio_karaoke_39 final : public validate_audio_open {
 	CMD_NAME("audio/karaoke/39")
-	CMD_ICON(kara_spectrogram_timing)
+	CMD_ICON(kara_39_mode)
 	STR_MENU("39 Mode")
 	STR_DISP("39 Mode")
 	STR_HELP("Capture Japanese karaoke with F/J and D/K, then review mora assignments")

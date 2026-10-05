@@ -276,6 +276,11 @@ button/jumpto_button_24.png
 button/jumpto_button_32.png
 button/jumpto_button_48.png
 button/jumpto_button_64.png
+button/kara_39_mode_16.png
+button/kara_39_mode_24.png
+button/kara_39_mode_32.png
+button/kara_39_mode_48.png
+button/kara_39_mode_64.png
 button/kara_mode_16.png
 button/kara_mode_24.png
 button/kara_mode_32.png
@@ -971,6 +976,11 @@ button_dark/jumpto_button_24.png
 button_dark/jumpto_button_32.png
 button_dark/jumpto_button_48.png
 button_dark/jumpto_button_64.png
+button_dark/kara_39_mode_16.png
+button_dark/kara_39_mode_24.png
+button_dark/kara_39_mode_32.png
+button_dark/kara_39_mode_48.png
+button_dark/kara_39_mode_64.png
 button_dark/kara_mode_16.png
 button_dark/kara_mode_24.png
 button_dark/kara_mode_32.png

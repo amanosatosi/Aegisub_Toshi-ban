@@ -41,3 +41,22 @@ Blank rounded blocks, a centered hit line and timer-driven particles use the
 existing waveform/spectrum renderer. Style mapping
 uses accumulated timestamp evidence, never style-name semantics; ambiguity
 requires explicit target selection before writing secondary capture.
+
+## Mode icon
+
+`audio/karaoke/39` uses the dedicated `kara_39_mode` command resource. The
+user-supplied `39-mode-logo.svg` is preserved byte-for-byte as
+`docs/art-sources/buttons/kara_39_mode.svg` and the identical dark-theme source
+in `buttons_dark`. Both themes intentionally keep the supplied colors/artwork.
+The 16/24/32/48/64 px transparent PNGs in `src/bitmaps/button` and `button_dark`
+are exported from the SVG page with Inkscape (the existing `renderDark.py`
+exporter), preserving its square viewBox, proportions and padding. Registering
+them in `manifest.respack` lets Meson/respack generate the normal resource
+tables; `CMD_ICON` selects the physical size for the toolbar's HiDPI scale.
+There is no separate SVG runtime loader in this resource system.
+
+The audio toolbar and default Audio menus (including macOS) reference the
+existing command, so no IDs, tooltips, hotkeys or menu behavior change. The
+39 Mode selector/results/Inspector have no dedicated bitmap to replace.
+The old `kara_spectrogram_timing` source and bitmaps remain shared by Toshiki
+K-Timing and must not be removed. Application/window icons are unchanged.
