@@ -204,6 +204,8 @@ SourceGeometry Geometry(AssDialogue const& source,
 	int width, int height, double time) {
 	SourceGeometry g;
 	int align = style ? style->alignment : 2;
+	bool found_alignment = false;
+	int legacy_alignment = 0;
 	auto margin = source.Margin;
 	if (style) for (int i = 0; i < 3; ++i) if (!margin[i]) margin[i] = style->Margin[i];
 	for (auto const& block : blocks) {
@@ -211,8 +213,8 @@ SourceGeometry Geometry(AssDialogue const& source,
 		if (!b) continue;
 		for (auto const& t : b->Tags) {
 			if (!t.IsValid()) continue;
-			if (t.Name == "\\an") align = static_cast<int>(Param(t,0,align));
-			if (t.Name == "\\a") align = AssStyle::SsaToAss(static_cast<int>(Param(t,0,2)));
+			if (t.Name == "\\an" && !found_alignment) { align = static_cast<int>(Param(t,0,align)); found_alignment = true; }
+			if (t.Name == "\\a" && !legacy_alignment) legacy_alignment = AssStyle::SsaToAss(static_cast<int>(Param(t,0,2)));
 			if (!g.found_position && (t.Name == "\\pos" || t.Name == "\\move")) {
 				g.position = {Param(t,0), Param(t,1)};
 				g.found_position = true;
@@ -230,6 +232,7 @@ SourceGeometry Geometry(AssDialogue const& source,
 			}
 		}
 	}
+	if (!found_alignment && legacy_alignment) align = legacy_alignment;
 	align = std::clamp(align,1,9);
 	if (!g.found_position) {
 		int horizontal = (align-1)%3, vertical = (align-1)/3;
@@ -316,6 +319,9 @@ State BuildState(AssDialogue const& source, MotionStyleResolver const& styles,
 		}
 		out.Text("{");
 		for (auto const& t : b->Tags) {
+			if ((t.Name == "\\mover" || t.Name == "\\moves3" || t.Name == "\\moves4") ||
+				(t.Name == "\\frs" && o.rotation))
+				throw std::invalid_argument("Normalize existing Mangetsu motion tags to pos/move and frz before native Apply.");
 			if (t.IsValid() && (t.Name == "\\pos" || t.Name == "\\move" || (o.follow_origin && t.Name == "\\org"))) continue;
 			if (t.IsValid() && t.Name == "\\r") {
 				EmitScalars(out,values,motion,o);
@@ -505,11 +511,14 @@ MotionApplication BuildMotionApplication(AssDialogue const& source,
 			if (ClipTag(t) && t.Params.size() == 2 && o.vector_clips) has_vector = true;
 			if (clip && (t.Name == "\\clippos" || t.Name == "\\clips" || t.Name == "\\movevc"))
 				throw std::invalid_argument("Remove existing animated clip offsets before tracking the clip.");
-			if (t.Name == "\\t" && clip) {
+			if (t.Name == "\\t") {
 				auto effect = Transform(t,source.End-source.Start).effect;
-				for (auto const& nested : effect->Tags)
-					if (ClipTag(nested) || nested.Name == "\\clippos")
+				for (auto const& nested : effect->Tags) {
+					if (nested.Name == "\\pos" || nested.Name == "\\move" || nested.Name == "\\org")
+						throw std::invalid_argument("Normalize source position/origin transforms before native Apply.");
+					if (clip && (ClipTag(nested) || nested.Name == "\\clippos"))
 						throw std::invalid_argument("Animated source clips cannot yet be combined with a clip track.");
+				}
 			}
 		}
 	}
@@ -517,6 +526,8 @@ MotionApplication BuildMotionApplication(AssDialogue const& source,
 		auto const& r = Sample(*clip,reference);
 		for (int f = first; f <= last; ++f)
 			if (std::abs(Sample(*clip,f).rotation_deg-r.rotation_deg) > 0.000001) rotated_clip = true;
+		if (rotated_clip && !o.vector_clips && o.rectangular_clips)
+			throw std::invalid_argument("Rotated rectangular clips require vector clip handling. Enable it in Advanced Apply.");
 	}
 	std::vector<State> states;
 	std::vector<MotionSample> samples;

@@ -82,9 +82,14 @@ MotionAnalysis OptimizeMotion(std::vector<MotionSample> const& samples,
 		return result;
 	}
 	std::set<size_t> knots{0, samples.size()-1};
+	// Prefer a single accurate linear segment before looking for local holds.
+	// Otherwise a legitimate slow drift could be chopped into tiny "holds".
+	Simplify(samples,0,samples.size()-1,tolerance,knots);
+	bool single_linear = knots.size() == 2;
+	knots = {0,samples.size()-1};
 	// A hold has at least three samples and bounded total range; accumulated
 	// slow movement cannot masquerade as stationary just because its steps are small.
-	for (size_t a = 0; a + 2 < samples.size();) {
+	for (size_t a = 0; !single_linear && a + 2 < samples.size();) {
 		if (!Hold(samples, a, a+2, tolerance, mean)) { ++a; continue; }
 		size_t b = a+2;
 		while (b+1 < samples.size() && Hold(samples, a, b+1, tolerance, mean)) ++b;

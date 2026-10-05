@@ -64,6 +64,8 @@ class DialogMotionTrack final : public wxDialog {
 	bool applying = false;
 	bool tracking = false;
 	std::vector<motion_tracking::MotionSourceIdentity> source_identity;
+	std::set<int> applied_event_ids;
+	bool context_invalid = false;
 	int source_active_id = 0;
 	std::string invalid_reason;
 	std::string apply_summary;

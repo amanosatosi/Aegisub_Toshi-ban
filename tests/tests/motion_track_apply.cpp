@@ -203,6 +203,39 @@ TEST(MotionApply, FrameByFramePreservesEverySampleAndBoundaries) {
 	}
 }
 
+TEST(MotionApply, ForceFrameByFrameDoesNotMergeIdenticalEvents) {
+	MotionApplyOptions o; o.encoding = MotionEncoding::FrameByFrame;
+	auto output = Apply(Line(8),Track(std::vector<double>(8,100)),nullptr,o);
+	EXPECT_EQ(8u,output.events.size());
+}
+
+TEST(MotionApply, ClipReferenceIsTheSameMainVideoReference) {
+	MotionApplyOptions o; o.mangetsu_clippos = true;
+	auto main = Track(Linear(5)), clip = Track(Linear(5,100,10));
+	auto output = Apply(Line(5,"{\\pos(200,300)\\clip(0,0,30,40)}Sign"),main,&clip,o,2);
+	ASSERT_EQ(1u,output.events.size());
+	EXPECT_DOUBLE_EQ(190,Numeric(output.events[0],"\\move"));
+	EXPECT_DOUBLE_EQ(-20,Numeric(output.events[0],"\\clippos"));
+	EXPECT_NE(std::string::npos,output.events[0].Text.get().find("\\clippos(20,0)"));
+}
+
+TEST(MotionApply, AdvancedMainClipAndKeepClipChoices) {
+	auto track = Track(Linear(5));
+	auto line = Line(5,"{\\clip(0,0,30,40)}Sign");
+	MotionApplyOptions o; o.clip_source = ClipMotionSource::MainTrack;
+	auto output = Apply(line,track,nullptr,o);
+	ASSERT_EQ(1u,output.events.size());
+	EXPECT_EQ(2u,Tags(output.events[0],"\\clip",true).size());
+	o.clip_source = ClipMotionSource::None;
+	output = Apply(line,track,&track,o);
+	EXPECT_EQ(1u,Tags(output.events[0],"\\clip",true).size());
+}
+
+TEST(MotionApply, SourcePositionTransformIsRejectedWithoutContradictoryTags) {
+	auto line = Line(5,"{\\pos(200,300)\\t(0,200,\\pos(300,300))}Sign");
+	EXPECT_THROW(Apply(line,Track(Linear(5))),std::invalid_argument);
+}
+
 TEST(MotionApply, IndependentAxisSwitches) {
 	auto track = Track(Linear(6));
 	for (auto& frame : track.frames) frame.y += frame.frame*7;
@@ -490,6 +523,29 @@ TEST(MotionRevert, ExactOuterMillisecondsAndExtradataSurviveMetadataRoundtrip) {
 	auto restored = RevertMotionFamilies(file,installed.selected,installed.active->Id);
 	EXPECT_EQ(7,int(restored.active->Start)); EXPECT_EQ(193,int(restored.active->End));
 	EXPECT_EQ("line\nwith commas, and \\slashes",file.GetExtradata(restored.active->ExtradataIds.get())[0].value);
+}
+
+TEST(MotionRevert, RawNativeFieldsSurviveAssSerializationSanitization) {
+	AssFile file;
+	auto source = new AssDialogue(Line(5));
+	source->Actor = "Actor, with comma"; source->Effect = "Effect, with comma";
+	source->Text = "Sign\nwith raw newline";
+	file.Events.push_back(*source);
+	AssDialogueBase original(*source);
+	auto installed = InstallMotionApplications(file,{{source->Id,Apply(*source,Track(Linear(5)))}},source->Id);
+	auto restored = RevertMotionFamilies(file,installed.selected,installed.active->Id);
+	EXPECT_EQ(original.Actor,restored.active->Actor);
+	EXPECT_EQ(original.Effect,restored.active->Effect);
+	EXPECT_EQ(original.Text,restored.active->Text);
+}
+
+TEST(MotionRevert, ActiveGeneratedEventContainsTheReferenceTime) {
+	AssFile file;
+	auto source = new AssDialogue(Line(5)); file.Events.push_back(*source);
+	MotionApplyOptions o; o.encoding = MotionEncoding::FrameByFrame;
+	auto installed = InstallMotionApplications(file,{{source->Id,Apply(*source,Track(Linear(5)),nullptr,o)}},source->Id,80);
+	ASSERT_NE(nullptr,installed.active);
+	EXPECT_EQ(60,int(installed.active->Start)); EXPECT_EQ(100,int(installed.active->End));
 }
 
 TEST(MotionExtradata, MissingIdNeverResolvesToAnotherPluginsData) {

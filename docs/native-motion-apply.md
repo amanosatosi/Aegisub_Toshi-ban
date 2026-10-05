@@ -47,7 +47,8 @@ Default absolute error bounds: 0.35 script pixels for position/clip points,
 outline/shadow/blur. Completely stationary signals collapse to a hold. Holds
 need at least three bounded-range samples; small steps of a slow drift do not
 qualify just because individual steps are tiny. Hold endpoints become mandatory
-knots. Iterative Douglas-Peucker simplification checks each independent signal
+knots, after first preferring a single accurate global linear fit. Iterative
+Douglas-Peucker simplification checks each independent signal
 in actual media time. A stationary axis is suppressed even while another moves.
 Automatic uses exact sampled events when more than three regions and more than
 one region per three samples would be necessary. Force optimized retains the
@@ -103,7 +104,8 @@ members. Native undo/redo separately retains its existing event/selection histor
 ## Current limits compared with Aegisub-Motion
 
 There is no imported AE/SRS dataset application, absolute-position mode or
-arbitrary shape deformation. Native tracking produces translation, isotropic
+arbitrary shape deformation. Source Mangetsu curved motion and position/origin
+transforms require normalization before Apply. Native tracking produces translation, isotropic
 scale and image rotation; Apply supports X/Y scale signals if provided by the
 model. Source animated clips cannot yet be composed with an independent clip
 track; existing animated clip offsets must be removed first. Karaoke and colored

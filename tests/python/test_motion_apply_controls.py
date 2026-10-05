@@ -53,6 +53,13 @@ class NativeMotionContracts(unittest.TestCase):
         self.assertNotIn('"\\\\distort', apply)
         self.assertNotIn('"\\\\perspective', apply)
 
+    def test_revert_does_not_rebind_a_different_familys_track(self):
+        revert = method(self.window, "RevertMotion")
+        self.assertIn("!applied_event_ids.count(line->Id)", revert)
+        self.assertIn("if (own_family) CaptureSources();", revert)
+        self.assertIn("else NewSession();", revert)
+        self.assertIn("!context_invalid", revert)
+
 
 if __name__ == "__main__":
     unittest.main()

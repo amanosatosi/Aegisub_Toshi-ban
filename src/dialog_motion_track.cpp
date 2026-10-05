@@ -912,6 +912,7 @@ DialogMotionTrack::DialogMotionTrack(agi::Context *c)
 	result.source_width = context->project->VideoProvider()->GetWidth();
 	result.source_height = context->project->VideoProvider()->GetHeight();
 	other_channel.result = result;
+	advanced_options.mangetsu_clippos = OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu";
 	CaptureSources();
 	frame_cache = agi::make_unique<MotionTrackFrameCache>([=](int frame) {
 		return context->videoController->GetFrame(frame, true);
@@ -935,14 +936,17 @@ DialogMotionTrack::DialogMotionTrack(agi::Context *c)
 		context->videoController->AddSeekListener(&DialogMotionTrack::OnSeek, this),
 		context->project->AddVideoProviderListener([=](AsyncVideoProvider *) { Close(); }),
 		context->project->AddTimecodesListener([=](agi::vfr::Framerate const&) {
+			context_invalid = true;
 			invalid_reason = "Video frame timing changed. Start a new tracking session.";
 			UpdateApplyStatus();
 		}),
 		context->selectionController->AddActiveLineListener([=](AssDialogue*) { CheckSession(); }),
 		context->selectionController->AddSelectionListener([=] { CheckSession(); }),
 		context->ass->AddCommitListener([=](int type, AssDialogue const*) {
-			if (!applying && (type == AssFile::COMMIT_NEW || (type & AssFile::COMMIT_SCRIPTINFO)))
+			if (!applying && (type == AssFile::COMMIT_NEW || (type & AssFile::COMMIT_SCRIPTINFO))) {
+				context_invalid = true;
 				invalid_reason = "Subtitle document or coordinate system changed. Start a new tracking session.";
+			}
 			CheckSession();
 		})
 	});
@@ -1912,11 +1916,14 @@ void DialogMotionTrack::CaptureSources() {
 	auto active = context->selectionController->GetActiveLine();
 	source_active_id = active ? active->Id : 0;
 	invalid_reason.clear();
+	context_invalid = false;
+	applied_event_ids.clear();
 	apply_summary.clear();
 }
 
 void DialogMotionTrack::CheckSession() {
 	if (applying) return;
+	if (context_invalid) { UpdateApplyStatus(); return; }
 	std::vector<AssDialogue const*> selected;
 	for (auto line : context->selectionController->GetSortedSelection()) selected.push_back(line);
 	auto active = context->selectionController->GetActiveLine();
@@ -2042,6 +2049,7 @@ void DialogMotionTrack::NewSession() {
 	StopFrameCache();
 	CalculateSelectedFrameRange();
 	ClearData();
+	result.fps = context->project->Timecodes().FPS();
 	other_channel = TrackChannel{};
 	other_channel.result = result;
 	editing_clip = false;
@@ -2081,7 +2089,7 @@ bool AdvancedMotionApply(wxWindow* parent, motion_tracking::MotionApplyOptions& 
 	check(_("Scale border"),options.border);
 	check(_("Scale shadow"),options.shadow);
 	check(_("Scale blur"),options.blur);
-	check(_("Preserve source scalar animations"),options.preserve_transforms);
+	check(_("Preserve source motion animations"),options.preserve_transforms);
 	check(_("Apply rectangular clips"),options.rectangular_clips);
 	check(_("Apply vector clips"),options.vector_clips);
 	auto clippos = check(_("Mangetsu \\clippos for translation"),options.mangetsu_clippos);
@@ -2161,6 +2169,8 @@ void DialogMotionTrack::ApplyMotion(bool advanced) {
 		}
 		applying = true;
 		auto installed = motion_tracking::InstallMotionApplications(*context->ass,plans,active_id,context->videoController->TimeAtFrame(reference));
+		applied_event_ids.clear();
+		for (auto line : installed.selected) applied_event_ids.insert(line->Id);
 		context->selectionController->SetSelectionAndActive(Selection(installed.selected.begin(),installed.selected.end()),installed.active);
 		context->ass->Commit(_("apply native motion tracking"),AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_DIAG_FULL | AssFile::COMMIT_EXTRADATA);
 		// Subtitle-sync may seek when selection changes. Keep the authoritative
@@ -2182,6 +2192,9 @@ void DialogMotionTrack::RevertMotion() {
 	auto selected = context->selectionController->GetSortedSelection();
 	auto active = context->selectionController->GetActiveLine();
 	int video_frame = context->videoController->GetFrameN();
+	bool own_family = !context_invalid && !applied_event_ids.empty();
+	for (auto line : selected)
+		if (motion_tracking::CanRevertMotion(*context->ass,*line) && !applied_event_ids.count(line->Id)) own_family = false;
 	try {
 		applying = true;
 		auto restored = motion_tracking::RevertMotionFamilies(*context->ass,selected,active ? active->Id : 0);
@@ -2189,7 +2202,10 @@ void DialogMotionTrack::RevertMotion() {
 		context->ass->Commit(_("revert native motion tracking"),AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_DIAG_FULL | AssFile::COMMIT_EXTRADATA);
 		context->videoController->JumpToFrame(video_frame);
 		applying = false;
-		CaptureSources(); // keep both tracks; the restored source can be positioned again
+		// Only this window's own generated families can retain these tracks.
+		// Reverting a different family's metadata must not rebind unrelated motion.
+		if (own_family) CaptureSources();
+		else NewSession();
 		UpdateApplyStatus();
 	}
 	catch (std::exception const& error) {

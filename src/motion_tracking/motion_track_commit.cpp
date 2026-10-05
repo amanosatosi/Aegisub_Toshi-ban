@@ -40,13 +40,22 @@ std::string Encode(AssFile const& file, AssDialogue const& source, int count) {
 	object["original"] = json::String(source.GetEntryData());
 	object["start"] = json::Integer(int(source.Start));
 	object["end"] = json::Integer(int(source.End));
+	json::Object fields;
+	fields["text"] = json::String(source.Text.get());
+	fields["style"] = json::String(source.Style.get());
+	fields["actor"] = json::String(source.Actor.get());
+	fields["effect"] = json::String(source.Effect.get());
+	fields["layer"] = json::Integer(source.Layer);
+	fields["comment"] = json::Boolean(source.Comment);
+	for (size_t i = 0; i < 3; ++i) fields["margin"+std::to_string(i)] = json::Integer(source.Margin[i]);
+	object["fields"] = std::move(fields);
 	json::Object extra;
 	for (auto const& entry : file.GetExtradata(source.ExtradataIds.get()))
 		if (entry.key != MotionFamilyKey) extra[entry.key] = json::String(entry.value);
 	// Values, rather than old IDs, survive extradata garbage collection and save/reload.
-	object["extra"] = extra;
+	object["extra"] = std::move(extra);
 	std::ostringstream stream;
-	json::Writer::Write(object,stream);
+	agi::JsonWriter::Write(object,stream);
 	return stream.str();
 }
 
@@ -60,6 +69,16 @@ Family Decode(std::string const& text) {
 		AssDialogue original(static_cast<json::String const&>(object.at("original")));
 		original.Start = static_cast<json::Integer const&>(object.at("start"));
 		original.End = static_cast<json::Integer const&>(object.at("end"));
+		if (object.count("fields")) {
+			auto const& fields = static_cast<json::Object const&>(object.at("fields"));
+			original.Text = static_cast<json::String const&>(fields.at("text"));
+			original.Style = static_cast<json::String const&>(fields.at("style"));
+			original.Actor = static_cast<json::String const&>(fields.at("actor"));
+			original.Effect = static_cast<json::String const&>(fields.at("effect"));
+			original.Layer = static_cast<json::Integer const&>(fields.at("layer"));
+			original.Comment = static_cast<json::Boolean const&>(fields.at("comment"));
+			for (size_t i = 0; i < 3; ++i) original.Margin[i] = static_cast<json::Integer const&>(fields.at("margin"+std::to_string(i)));
+		}
 		original.ExtradataIds = std::vector<uint32_t>{};
 		Family family{static_cast<json::String const&>(object.at("family")),original,{},
 			static_cast<int>(static_cast<json::Integer const&>(object.at("count")))};
