@@ -367,6 +367,12 @@ static void load_protos() {
 	proto[i].AddParam(VariableDataType::INT, AssParameterClass::RELATIVE_TIME_START);
 	proto[i++].AddParam(VariableDataType::INT, AssParameterClass::RELATIVE_TIME_START);
 
+	// Mangetsu clip translation is in script coordinates for both rectangular
+	// and vector clips, including when nested in a transform.
+	proto[i].name = "\\clippos";
+	proto[i].AddParam(VariableDataType::FLOAT, AssParameterClass::ABSOLUTE_SIZE_X);
+	proto[i++].AddParam(VariableDataType::FLOAT, AssParameterClass::ABSOLUTE_SIZE_Y);
+
 	// If these are rearranged, keep rect clip and vector clip adjacent in this order
 	// \clip(<x1>,<y1>,<x2>,<y2>)
 	proto[i].name = "\\clip";

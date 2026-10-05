@@ -220,7 +220,7 @@ namespace {
 		CMD_ICON(button_motion_track)
 		STR_MENU("Motion Track")
 		STR_DISP("Motion Track")
-		STR_HELP("Track an object and export After Effects keyframe data")
+		STR_HELP("Track motion or a clip and apply it natively to selected subtitles")
 		CMD_TYPE(COMMAND_VALIDATE)
 
 		bool Validate(const agi::Context *c) override {

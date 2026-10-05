@@ -1,13 +1,18 @@
 #include "dialog_motion_track.h"
 
 #include "ass_dialogue.h"
+#include "ass_file.h"
+#include "ass_style.h"
 #include "async_video_provider.h"
 #include "compat.h"
 #include "format.h"
 #include "include/aegisub/context.h"
+#include "include/aegisub/subtitles_provider.h"
 #include "libresrc/libresrc.h"
 #include "motion_tracking/motion_track_engine.h"
 #include "motion_tracking/motion_track_export_ae.h"
+#include "motion_tracking/motion_track_commit.h"
+#include "options.h"
 #include "persist_location.h"
 #include "project.h"
 #include "selection_controller.h"
@@ -906,6 +911,8 @@ DialogMotionTrack::DialogMotionTrack(agi::Context *c)
 	result.fps = context->project->Timecodes().FPS();
 	result.source_width = context->project->VideoProvider()->GetWidth();
 	result.source_height = context->project->VideoProvider()->GetHeight();
+	other_channel.result = result;
+	CaptureSources();
 	frame_cache = agi::make_unique<MotionTrackFrameCache>([=](int frame) {
 		return context->videoController->GetFrame(frame, true);
 	});
@@ -926,7 +933,18 @@ DialogMotionTrack::DialogMotionTrack(agi::Context *c)
 	}
 	connections = agi::signal::make_vector({
 		context->videoController->AddSeekListener(&DialogMotionTrack::OnSeek, this),
-		context->project->AddVideoProviderListener([=](AsyncVideoProvider *) { Close(); })
+		context->project->AddVideoProviderListener([=](AsyncVideoProvider *) { Close(); }),
+		context->project->AddTimecodesListener([=](agi::vfr::Framerate const&) {
+			invalid_reason = "Video frame timing changed. Start a new tracking session.";
+			UpdateApplyStatus();
+		}),
+		context->selectionController->AddActiveLineListener([=](AssDialogue*) { CheckSession(); }),
+		context->selectionController->AddSelectionListener([=] { CheckSession(); }),
+		context->ass->AddCommitListener([=](int type, AssDialogue const*) {
+			if (!applying && (type == AssFile::COMMIT_NEW || (type & AssFile::COMMIT_SCRIPTINFO)))
+				invalid_reason = "Subtitle document or coordinate system changed. Start a new tracking session.";
+			CheckSession();
+		})
 	});
 
 	JumpToFrame(current_frame);
@@ -975,6 +993,21 @@ void DialogMotionTrack::CreateControls() {
 	top_row->Add(segment_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 12);
 	top_row->Add(cache_status_label, 0, wxALIGN_CENTER_VERTICAL);
 	main_sizer->Add(top_row, 0, wxEXPAND | wxALL, 6);
+
+	auto workflow = new wxBoxSizer(wxHORIZONTAL);
+	main_track_button = new wxButton(this, -1, _("Track Motion"));
+	clip_track_button = new wxButton(this, -1, _("Track for \\clip"));
+	target_label = new wxStaticText(this, -1, _("Tracking: subtitle"));
+	reference_label = new wxStaticText(this, -1, "");
+	workflow->Add(main_track_button, 0, wxRIGHT, 4);
+	workflow->Add(clip_track_button, 0, wxRIGHT, 12);
+	workflow->Add(target_label, 1, wxALIGN_CENTER_VERTICAL);
+	workflow->Add(reference_label, 0, wxALIGN_CENTER_VERTICAL);
+	main_sizer->Add(workflow, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
+	main_track_button->SetToolTip(_("Place a square on the subtitle's object, then track the selected range. Direction buttons also work on this track."));
+	clip_track_button->SetToolTip(_("Switch to the separate clip tracker. Place a square on the mask's object, then press again to track the range."));
+	main_track_button->Bind(wxEVT_BUTTON, [=](wxCommandEvent&) { TrackMotion(false); });
+	clip_track_button->Bind(wxEVT_BUTTON, [=](wxCommandEvent&) { TrackMotion(true); });
 
 	frame_bar = new MotionTrackFrameBar(this, this);
 	main_sizer->Add(frame_bar, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
@@ -1067,14 +1100,39 @@ void DialogMotionTrack::CreateControls() {
 	main_sizer->Add(graph, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
 
 	main_sizer->Add(new wxStaticLine(this), 0, wxEXPAND | wxLEFT | wxRIGHT, 6);
+	apply_status = new wxStaticText(this, -1, "");
+	main_sizer->Add(apply_status, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 6);
+	auto apply_row = new wxBoxSizer(wxHORIZONTAL);
+	apply_button = new wxButton(this, -1, _("Apply"));
+	apply_button->SetDefault();
+	advanced_button = new wxButton(this, -1, _("Advanced Apply..."));
+	revert_button = new wxButton(this, -1, _("Revert"));
+	auto minimize = new wxButton(this, -1, _("Minimize"));
+	apply_row->Add(apply_button, 0, wxRIGHT, 4);
+	apply_row->Add(advanced_button, 0, wxRIGHT, 4);
+	apply_row->Add(revert_button, 0, wxRIGHT, 4);
+	apply_row->AddStretchSpacer();
+	apply_row->Add(minimize, 0);
+	main_sizer->Add(apply_row, 0, wxEXPAND | wxALL, 6);
+	apply_button->Bind(wxEVT_BUTTON, [=](wxCommandEvent&) { ApplyMotion(false); });
+	advanced_button->Bind(wxEVT_BUTTON, [=](wxCommandEvent&) { ApplyMotion(true); });
+	revert_button->Bind(wxEVT_BUTTON, [=](wxCommandEvent&) { RevertMotion(); });
+	minimize->SetToolTip(_("Hide this window while positioning/styling in the main video. Reopen Motion Track to restore the same session."));
+	minimize->Bind(wxEVT_BUTTON, [=](wxCommandEvent&) { StopPlayback(); Hide(); });
+	Bind(wxEVT_ICONIZE, [=](wxIconizeEvent& event) {
+		if (event.IsIconized()) { StopPlayback(); Iconize(false); Hide(); }
+		else event.Skip();
+	});
 	auto bottom = new wxBoxSizer(wxHORIZONTAL);
 	auto copy = new wxButton(this, -1, _("Copy Motion Data"));
 	auto save = new wxButton(this, -1, _("Save Data"));
 	auto clear = new wxButton(this, -1, _("Clear"));
+	auto new_session = new wxButton(this, -1, _("New Session"));
 	auto close = new wxButton(this, wxID_CANCEL, _("Close"));
 	bottom->Add(copy, 0, wxRIGHT, 4);
 	bottom->Add(save, 0, wxRIGHT, 4);
 	bottom->Add(clear, 0, wxRIGHT, 4);
+	bottom->Add(new_session, 0, wxRIGHT, 4);
 	bottom->AddStretchSpacer(1);
 	bottom->Add(close, 0);
 	main_sizer->Add(bottom, 0, wxEXPAND | wxALL, 6);
@@ -1082,6 +1140,7 @@ void DialogMotionTrack::CreateControls() {
 	copy->Bind(wxEVT_BUTTON, [=](wxCommandEvent &) { CopyData(); });
 	save->Bind(wxEVT_BUTTON, [=](wxCommandEvent &) { SaveData(); });
 	clear->Bind(wxEVT_BUTTON, [=](wxCommandEvent &) { ClearData(); });
+	new_session->Bind(wxEVT_BUTTON, [=](wxCommandEvent &) { NewSession(); });
 
 	SetSizer(main_sizer);
 	UpdateLabels();
@@ -1189,6 +1248,7 @@ void DialogMotionTrack::UpdateLabels() {
 		}
 	}
 	UpdateCacheStatus();
+	UpdateApplyStatus();
 }
 
 void DialogMotionTrack::UpdateCacheStatus() {
@@ -1255,7 +1315,8 @@ void DialogMotionTrack::LoadCurrentFrame() {
 
 void DialogMotionTrack::OnSeek(int frame) {
 	current_frame = mid(settings.start_frame, frame, settings.end_frame);
-	LoadCurrentFrame();
+	if (IsShown()) LoadCurrentFrame();
+	else UpdateApplyStatus();
 }
 
 void DialogMotionTrack::OnCacheTimer(wxTimerEvent &) {
@@ -1429,6 +1490,7 @@ std::vector<int> DialogMotionTrack::GetHandoffMarks() const {
 }
 
 void DialogMotionTrack::SetCurrentMarker(motion_tracking::MotionTrackMarker marker) {
+	apply_summary.clear();
 	marker.search_size = std::max(marker.search_size, marker.size);
 	markers[current_frame] = marker;
 	if (active_segment >= 0 && active_segment < static_cast<int>(segments.size())) {
@@ -1604,6 +1666,7 @@ void DialogMotionTrack::RebuildMarkersFromSegments() {
 }
 
 void DialogMotionTrack::RecalculateMotion() {
+	apply_summary.clear();
 	motion_tracking::RecalculateSegmentAccumulatedOffsets(segments);
 	result = motion_tracking::BuildStitchedMotionResult(result, segments);
 	RebuildMarkersFromSegments();
@@ -1762,16 +1825,22 @@ void DialogMotionTrack::TrackRange(int target_frame) {
 	if (segment_index < 0)
 		return;
 
-	wxBeginBusyCursor();
+	tracking = true;
+	UpdateApplyStatus();
+	wxBusyCursor busy;
 	int step = target_frame > current_frame ? 1 : -1;
 	while (current_frame != target_frame) {
 		int next = current_frame + step;
 		TrackOne(next);
 		if (!markers.count(next))
 			break;
-		wxYieldIfNeeded();
+		// Paint the preview without dispatching arbitrary input which could
+		// close the modeless dialog or swap channels midway through a run.
+		preview->Update();
+		frame_bar->Update();
 	}
-	wxEndBusyCursor();
+	tracking = false;
+	UpdateApplyStatus();
 }
 
 motion_tracking::MotionTrackExportSettings DialogMotionTrack::GetExportSettings() const {
@@ -1825,6 +1894,7 @@ void DialogMotionTrack::SaveData() {
 }
 
 void DialogMotionTrack::ClearData() {
+	apply_summary.clear();
 	markers.clear();
 	segments.clear();
 	handoff_marks.clear();
@@ -1833,4 +1903,297 @@ void DialogMotionTrack::ClearData() {
 	active_segment = -1;
 	initial_marker_size = settings.square_size;
 	UpdatePanels();
+}
+
+void DialogMotionTrack::CaptureSources() {
+	source_identity.clear();
+	for (auto line : context->selectionController->GetSortedSelection())
+		source_identity.push_back(motion_tracking::IdentifyMotionSource(*line));
+	auto active = context->selectionController->GetActiveLine();
+	source_active_id = active ? active->Id : 0;
+	invalid_reason.clear();
+	apply_summary.clear();
+}
+
+void DialogMotionTrack::CheckSession() {
+	if (applying) return;
+	std::vector<AssDialogue const*> selected;
+	for (auto line : context->selectionController->GetSortedSelection()) selected.push_back(line);
+	auto active = context->selectionController->GetActiveLine();
+	auto reason = motion_tracking::ValidateMotionSources(source_identity,selected,source_active_id,
+		active ? active->Id : 0,!ClipTrack().frames.empty());
+	if (!reason.empty()) invalid_reason = reason;
+	UpdateApplyStatus();
+}
+
+motion_tracking::MotionTrackResult const& DialogMotionTrack::MainTrack() const {
+	return editing_clip ? other_channel.result : result;
+}
+
+motion_tracking::MotionTrackResult const& DialogMotionTrack::ClipTrack() const {
+	return editing_clip ? result : other_channel.result;
+}
+
+void DialogMotionTrack::UpdateApplyStatus() {
+	if (!apply_status) return;
+	int reference = context->videoController->GetFrameN();
+	reference_label->SetLabel(fmt_wx("Main video reference: %d",reference));
+	target_label->SetLabel(editing_clip ? _("Tracking: \\clip") : _("Tracking: subtitle"));
+	std::string reason = invalid_reason;
+	if (reason.empty() && MainTrack().frames.empty()) reason = "Track the subtitle object first.";
+	auto contains = [&](auto const& data, int frame) {
+		auto it = std::lower_bound(data.frames.begin(),data.frames.end(),frame,[](auto const& sample,int f) { return sample.frame < f; });
+		return it != data.frames.end() && it->frame == frame && it->state != motion_tracking::MotionTrackState::Lost;
+	};
+	if (reason.empty() && !contains(MainTrack(),reference)) reason = "Seek the main video to a tracked reference frame.";
+	if (reason.empty() && !ClipTrack().frames.empty() && !contains(ClipTrack(),reference))
+		reason = "The clip track does not cover the main video reference frame.";
+	if (reason.empty()) {
+		for (auto const& source : source_identity) {
+			int first = context->videoController->FrameAtTime(source.start,agi::vfr::START);
+			int last = context->videoController->FrameAtTime(source.end,agi::vfr::END);
+			for (int f = first; f <= last; ++f) {
+				if (!contains(MainTrack(),f) || (!source.clip.empty() && !ClipTrack().frames.empty() && !contains(ClipTrack(),f))) {
+					reason = "Track the full selected subtitle range before Apply."; break;
+				}
+			}
+			if (!reason.empty()) break;
+		}
+	}
+	apply_button->Enable(reason.empty() && !tracking);
+	// Advanced Apply can deliberately ignore an incomplete clip track.
+	advanced_button->Enable(invalid_reason.empty() && !MainTrack().frames.empty() && !tracking);
+	bool revert = false, clip = false;
+	for (auto line : context->selectionController->GetSortedSelection()) {
+		revert |= motion_tracking::CanRevertMotion(*context->ass,*line);
+		clip |= motion_tracking::HasMotionClip(*line);
+	}
+	revert_button->Enable(revert && !tracking);
+	main_track_button->Enable(!tracking);
+	clip_track_button->Enable(clip && !tracking);
+	std::string status = "Main track: " + std::string(MainTrack().frames.empty() ? "not available" : "available") +
+		"; clip track: " + (ClipTrack().frames.empty() ? "not available" : "available");
+	if (!apply_summary.empty()) status += "\n" + apply_summary;
+	if (!reason.empty()) status += "\n" + reason;
+	else if (!apply_summary.empty()) { }
+	else status += "\nPosition/style at the main video frame, then Apply.";
+	apply_status->SetLabel(to_wx(status));
+}
+
+void DialogMotionTrack::SwitchTrack(bool clip) {
+	if (clip == editing_clip || tracking) return;
+	StopPlayback();
+	using std::swap;
+	swap(result,other_channel.result);
+	swap(segments,other_channel.segments);
+	swap(markers,other_channel.markers);
+	swap(handoff_marks,other_channel.handoff_marks);
+	swap(base_frame,other_channel.base_frame);
+	swap(active_segment,other_channel.active_segment);
+	swap(initial_marker_size,other_channel.initial_marker_size);
+	swap(settings.mode,other_channel.mode);
+	mode_choice->SetSelection(static_cast<int>(settings.mode));
+	editing_clip = clip;
+	UpdatePanels();
+}
+
+void DialogMotionTrack::TrackMotion(bool clip) {
+	if (tracking) return;
+	CheckSession();
+	// Replacing/removing a clip invalidates only its pass. A new clip pass can
+	// bind the current shape while retaining the already tracked subtitle motion.
+	if (clip) {
+		std::vector<AssDialogue const*> selected;
+		for (auto line : context->selectionController->GetSortedSelection()) selected.push_back(line);
+		auto active = context->selectionController->GetActiveLine();
+		auto core = motion_tracking::ValidateMotionSources(source_identity,selected,source_active_id,active ? active->Id : 0,false);
+		if (core.empty() && (invalid_reason.empty() || invalid_reason == "The tracked clip changed. Track the clip again.")) {
+			if (!invalid_reason.empty()) { SwitchTrack(true); ClearData(); }
+			for (auto& identity : source_identity) for (auto line : selected)
+				if (line->Id == identity.id) identity.clip = motion_tracking::MotionClipSignature(*line);
+			invalid_reason.clear();
+		}
+	}
+	if (!invalid_reason.empty()) {
+		wxMessageBox(to_wx(invalid_reason),_("Motion Track"),wxOK | wxICON_INFORMATION,this);
+		return;
+	}
+	if (clip) {
+		bool applicable = false;
+		for (auto line : context->selectionController->GetSortedSelection()) applicable |= motion_tracking::HasMotionClip(*line);
+		if (!applicable) return;
+	}
+	SwitchTrack(clip);
+	if (!HasCurrentMarker()) {
+		apply_status->SetLabel(clip ? _("Place a tracker square on the clip's object, then press Track for \\clip again.") :
+			_("Place a tracker square on the subtitle's object, then press Track Motion again."));
+		return;
+	}
+	int anchor = current_frame;
+	TrackRange(settings.end_frame);
+	JumpToFrame(anchor);
+	TrackRange(settings.start_frame);
+	JumpToFrame(anchor);
+}
+
+void DialogMotionTrack::NewSession() {
+	if (tracking) return;
+	StopPlayback();
+	StopFrameCache();
+	CalculateSelectedFrameRange();
+	ClearData();
+	other_channel = TrackChannel{};
+	other_channel.result = result;
+	editing_clip = false;
+	CaptureSources();
+	StartFrameCache();
+	preview_frame = -1;
+	LoadCurrentFrame();
+}
+
+namespace {
+bool AdvancedMotionApply(wxWindow* parent, motion_tracking::MotionApplyOptions& options, bool mangetsu) {
+	using namespace motion_tracking;
+	wxDialog dialog(parent,-1,_("Advanced Motion Apply"));
+	auto layout = new wxBoxSizer(wxVERTICAL);
+	auto encoding = new wxChoice(&dialog,-1);
+	encoding->Append(_("Automatic"));
+	encoding->Append(_("Force optimized"));
+	encoding->Append(_("Force frame-by-frame"));
+	encoding->SetSelection(static_cast<int>(options.encoding));
+	layout->Add(new wxStaticText(&dialog,-1,_("Motion encoding")),0,wxALL,6);
+	layout->Add(encoding,0,wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM,6);
+	layout->Add(new wxStaticText(&dialog,-1,_("Uses the current main video frame. Force optimized permits piecewise regions.")),0,wxALL,6);
+	auto grid = new wxFlexGridSizer(2,4,12);
+	std::vector<std::pair<wxCheckBox*,bool*>> checks;
+	auto check = [&](wxString label, bool& value) {
+		auto control = new wxCheckBox(&dialog,-1,label);
+		control->SetValue(value);
+		grid->Add(control,0,wxALL,2);
+		checks.emplace_back(control,&value);
+		return control;
+	};
+	check(_("Position X"),options.position_x);
+	check(_("Position Y"),options.position_y);
+	check(_("Scale"),options.scale);
+	check(_("Rotation"),options.rotation);
+	check(_("Move existing origin with object"),options.follow_origin);
+	check(_("Scale border"),options.border);
+	check(_("Scale shadow"),options.shadow);
+	check(_("Scale blur"),options.blur);
+	check(_("Preserve source scalar animations"),options.preserve_transforms);
+	check(_("Apply rectangular clips"),options.rectangular_clips);
+	check(_("Apply vector clips"),options.vector_clips);
+	auto clippos = check(_("Mangetsu \\clippos for translation"),options.mangetsu_clippos);
+	clippos->Enable(mangetsu);
+	if (!mangetsu) { clippos->SetValue(false); options.mangetsu_clippos = false; }
+	layout->Add(grid,0,wxALL,6);
+	auto clip = new wxChoice(&dialog,-1);
+	clip->Append(_("Separate Track for \\clip"));
+	clip->Append(_("Follow main motion track"));
+	clip->Append(_("Keep clip unchanged"));
+	clip->SetSelection(static_cast<int>(options.clip_source));
+	layout->Add(new wxStaticText(&dialog,-1,_("Clip behavior")),0,wxLEFT | wxRIGHT,6);
+	layout->Add(clip,0,wxEXPAND | wxALL,6);
+	auto tolerances = new wxFlexGridSizer(2,4,8);
+	std::vector<std::pair<wxSpinCtrlDouble*,double*>> fields;
+	auto field = [&](wxString label, double& value, double min, double max) {
+		tolerances->Add(new wxStaticText(&dialog,-1,label),0,wxALIGN_CENTER_VERTICAL);
+		auto control = new wxSpinCtrlDouble(&dialog,-1,"",wxDefaultPosition,wxDefaultSize,wxSP_ARROW_KEYS,min,max,value,0.01);
+		control->SetDigits(2);
+		tolerances->Add(control);
+		fields.emplace_back(control,&value);
+	};
+	field(_("Position/clip tolerance (script px)"),options.tolerance.position,0.01,2);
+	field(_("Scale tolerance (percentage points)"),options.tolerance.scale,0.01,1);
+	field(_("Rotation tolerance (degrees)"),options.tolerance.rotation,0.01,0.5);
+	field(_("Border/shadow/blur tolerance (px)"),options.tolerance.outline,0.01,0.5);
+	layout->Add(tolerances,0,wxALL,6);
+	layout->Add(dialog.CreateStdDialogButtonSizer(wxOK | wxCANCEL),0,wxEXPAND | wxALL,6);
+	dialog.SetSizerAndFit(layout);
+	dialog.CenterOnParent();
+	if (dialog.ShowModal() != wxID_OK) return false;
+	options.encoding = static_cast<MotionEncoding>(encoding->GetSelection());
+	options.clip_source = static_cast<ClipMotionSource>(clip->GetSelection());
+	for (auto const& item : checks) *item.second = item.first->GetValue();
+	for (auto const& item : fields) *item.second = item.first->GetValue();
+	return true;
+}
+}
+
+void DialogMotionTrack::ApplyMotion(bool advanced) {
+	if (tracking) return;
+	StopPlayback();
+	CheckSession();
+	if (!invalid_reason.empty()) {
+		wxMessageBox(to_wx(invalid_reason),_("Motion Apply"),wxOK | wxICON_INFORMATION,this);
+		return;
+	}
+	auto providers = SubtitlesProviderFactory::GetClasses();
+	bool mangetsu = OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu" &&
+		std::find(providers.begin(),providers.end(),"Mangetsu") != providers.end();
+	motion_tracking::MotionApplyOptions options;
+	options.mangetsu_clippos = mangetsu;
+	if (advanced) {
+		options = advanced_options;
+		options.mangetsu_clippos = mangetsu && options.mangetsu_clippos;
+		if (!AdvancedMotionApply(this,options,mangetsu)) return;
+		advanced_options = options;
+		CheckSession(); // modal dialog may have dispatched selection/document changes
+		if (!invalid_reason.empty()) return;
+	}
+	// Read directly at Apply time; tracker preview/current_frame is never a reference.
+	int reference = context->videoController->GetFrameN();
+	int width, height;
+	context->ass->GetResolution(width,height);
+	auto selection = context->selectionController->GetSortedSelection();
+	auto active = context->selectionController->GetActiveLine();
+	int active_id = active ? active->Id : 0;
+	std::vector<motion_tracking::MotionPlannedSource> plans;
+	try {
+		for (auto line : selection) {
+			auto application = motion_tracking::BuildMotionApplication(*line,
+				[&](std::string const& name) { return context->ass->GetStyle(name); },
+				MainTrack(),ClipTrack().frames.empty() ? nullptr : &ClipTrack(),reference,
+				context->project->Timecodes(),width,height,options);
+			apply_summary = application.summary;
+			plans.push_back({line->Id,std::move(application)});
+		}
+		applying = true;
+		auto installed = motion_tracking::InstallMotionApplications(*context->ass,plans,active_id,context->videoController->TimeAtFrame(reference));
+		context->selectionController->SetSelectionAndActive(Selection(installed.selected.begin(),installed.selected.end()),installed.active);
+		context->ass->Commit(_("apply native motion tracking"),AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_DIAG_FULL | AssFile::COMMIT_EXTRADATA);
+		// Subtitle-sync may seek when selection changes. Keep the authoritative
+		// main playhead at the frame the user chose for this operation.
+		context->videoController->JumpToFrame(reference);
+		applying = false;
+		invalid_reason = "Motion applied. Revert or start a new session before applying again.";
+		UpdateApplyStatus();
+	}
+	catch (std::exception const& error) {
+		applying = false;
+		wxMessageBox(to_wx(error.what()),_("Motion Apply"),wxOK | wxICON_INFORMATION,this);
+		UpdateApplyStatus();
+	}
+}
+
+void DialogMotionTrack::RevertMotion() {
+	if (tracking) return;
+	auto selected = context->selectionController->GetSortedSelection();
+	auto active = context->selectionController->GetActiveLine();
+	int video_frame = context->videoController->GetFrameN();
+	try {
+		applying = true;
+		auto restored = motion_tracking::RevertMotionFamilies(*context->ass,selected,active ? active->Id : 0);
+		context->selectionController->SetSelectionAndActive(Selection(restored.selected.begin(),restored.selected.end()),restored.active);
+		context->ass->Commit(_("revert native motion tracking"),AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_DIAG_FULL | AssFile::COMMIT_EXTRADATA);
+		context->videoController->JumpToFrame(video_frame);
+		applying = false;
+		CaptureSources(); // keep both tracks; the restored source can be positioned again
+		UpdateApplyStatus();
+	}
+	catch (std::exception const& error) {
+		applying = false;
+		wxMessageBox(to_wx(error.what()),_("Motion Revert"),wxOK | wxICON_INFORMATION,this);
+	}
 }

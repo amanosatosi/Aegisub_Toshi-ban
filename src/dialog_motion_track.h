@@ -2,6 +2,7 @@
 
 #include "motion_tracking/motion_track_export_ae.h"
 #include "motion_tracking/motion_track_segments.h"
+#include "motion_tracking/motion_track_apply.h"
 
 #include <libaegisub/signal.h>
 
@@ -45,6 +46,36 @@ class DialogMotionTrack final : public wxDialog {
 	std::vector<motion_tracking::MotionTrackSegment> segments;
 	std::map<int, motion_tracking::MotionTrackMarker> markers;
 	std::set<int> handoff_marks;
+
+	// The existing preview/tracker edits one channel at a time. Switching
+	// channels swaps complete native run state, never exports/imports a dataset.
+	struct TrackChannel {
+		motion_tracking::MotionTrackResult result;
+		std::vector<motion_tracking::MotionTrackSegment> segments;
+		std::map<int, motion_tracking::MotionTrackMarker> markers;
+		std::set<int> handoff_marks;
+		int base_frame = -1;
+		int active_segment = -1;
+		double initial_marker_size = 80;
+		motion_tracking::MotionTrackMode mode = motion_tracking::MotionTrackMode::PositionSizeRotation;
+	};
+	TrackChannel other_channel;
+	bool editing_clip = false;
+	bool applying = false;
+	bool tracking = false;
+	std::vector<motion_tracking::MotionSourceIdentity> source_identity;
+	int source_active_id = 0;
+	std::string invalid_reason;
+	std::string apply_summary;
+	motion_tracking::MotionApplyOptions advanced_options;
+	wxStaticText *apply_status = nullptr;
+	wxStaticText *reference_label = nullptr;
+	wxStaticText *target_label = nullptr;
+	wxButton *apply_button = nullptr;
+	wxButton *advanced_button = nullptr;
+	wxButton *revert_button = nullptr;
+	wxButton *main_track_button = nullptr;
+	wxButton *clip_track_button = nullptr;
 
 	int current_frame = 0;
 	int preview_frame = -1;
@@ -91,6 +122,16 @@ class DialogMotionTrack final : public wxDialog {
 	std::unique_ptr<PersistLocation> persist;
 
 	void CalculateSelectedFrameRange();
+	void CaptureSources();
+	void CheckSession();
+	void UpdateApplyStatus();
+	void SwitchTrack(bool clip);
+	void TrackMotion(bool clip);
+	void ApplyMotion(bool advanced);
+	void RevertMotion();
+	void NewSession();
+	motion_tracking::MotionTrackResult const& MainTrack() const;
+	motion_tracking::MotionTrackResult const& ClipTrack() const;
 	void CreateControls();
 	void BindControls();
 	void StartFrameCache();
