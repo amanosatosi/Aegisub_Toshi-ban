@@ -2142,7 +2142,7 @@ void DialogMotionTrack::ApplyMotion(bool advanced) {
 		CheckSession(); // modal dialog may have dispatched selection/document changes
 		if (!invalid_reason.empty()) return;
 	}
-	// Read directly at Apply time; tracker preview/current_frame is never a reference.
+	// Read directly at Apply time; the tracker preview is never a reference.
 	int reference = context->videoController->GetFrameN();
 	int width, height;
 	context->ass->GetResolution(width,height);
