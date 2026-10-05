@@ -1127,6 +1127,12 @@ void DialogMotionTrack::CreateControls() {
 		if (event.IsIconized()) { StopPlayback(); Iconize(false); Hide(); }
 		else event.Skip();
 	});
+	Bind(wxEVT_SHOW, [=](wxShowEvent& event) {
+		// Hidden seeks update the preview frame number without loading an image.
+		// Refresh it when restoring the same window; never seek the main video.
+		if (event.IsShown()) LoadCurrentFrame();
+		event.Skip();
+	});
 	auto bottom = new wxBoxSizer(wxHORIZONTAL);
 	auto copy = new wxButton(this, -1, _("Copy Motion Data"));
 	auto save = new wxButton(this, -1, _("Save Data"));

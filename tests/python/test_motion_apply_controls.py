@@ -34,6 +34,8 @@ class NativeMotionContracts(unittest.TestCase):
         create = method(self.window, "CreateControls")
         self.assertIn("StopPlayback(); Hide();", create)
         self.assertIn("Iconize(false); Hide();", create)
+        self.assertIn("Bind(wxEVT_SHOW", create)
+        self.assertIn("if (event.IsShown()) LoadCurrentFrame();", create)
         self.assertNotIn("videoController->Jump", create)
         self.assertNotIn("ClearData()", create[create.index("minimize->Bind"):create.index("auto bottom")])
         manager = (ROOT / "src/dialog_manager.h").read_text(encoding="utf-8")
