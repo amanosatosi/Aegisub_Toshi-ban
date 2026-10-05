@@ -38,8 +38,8 @@ std::string Encode(AssFile const& file, AssDialogue const& source, int count) {
 	// EntryData carries style/actor/effect/margins/layer/comment/text. Store
 	// exact native millisecond times separately to avoid centisecond rounding.
 	object["original"] = json::String(source.GetEntryData());
-	object["start"] = json::Integer(int(source.Start));
-	object["end"] = json::Integer(int(source.End));
+	object["start"] = json::Integer(source.Start.GetMilliseconds());
+	object["end"] = json::Integer(source.End.GetMilliseconds());
 	json::Object fields;
 	fields["text"] = json::String(source.Text.get());
 	fields["style"] = json::String(source.Style.get());

@@ -410,7 +410,7 @@ TEST(MotionApply, VfrSharedBoundariesSurviveAssSerialization) {
 	AssStyle style;
 	auto output = BuildMotionApplication(line,[&](std::string const&) { return &style; },track,nullptr,2,tc,640,480,o);
 	ASSERT_EQ(4u,output.events.size()); // START(7) is frame 1; END(230) is frame 4
-	EXPECT_EQ(7,int(output.events.front().Start)); EXPECT_EQ(230,int(output.events.back().End));
+	EXPECT_EQ(7,output.events.front().Start.GetMilliseconds()); EXPECT_EQ(230,output.events.back().End.GetMilliseconds());
 	for (size_t i = 1; i < output.events.size(); ++i) {
 		EXPECT_EQ(output.events[i-1].End,output.events[i].Start);
 		EXPECT_EQ(int(output.events[i].Start)%10,0);
@@ -449,6 +449,9 @@ TEST(MotionSession, AllowsPositioningStylingButRejectsChangedIdentityTimingConte
 	line.Text = "Sign"; line.Start = 10;
 	EXPECT_FALSE(ValidateMotionSources(sources,selected,active,active,false).empty());
 	line.Start = 0;
+	line.End = 201; // native timing changed even though ASS rounds to the same end
+	EXPECT_FALSE(ValidateMotionSources(sources,selected,active,active,false).empty());
+	line.End = 200;
 	EXPECT_FALSE(ValidateMotionSources(sources,selected,active,active+1,false).empty());
 	EXPECT_FALSE(ValidateMotionSources(sources,{},active,active,false).empty());
 }
@@ -521,7 +524,7 @@ TEST(MotionRevert, ExactOuterMillisecondsAndExtradataSurviveMetadataRoundtrip) {
 	file.SetExtradataValue(*source,"plugin","line\nwith commas, and \\slashes");
 	auto installed = InstallMotionApplications(file,{{source->Id,Apply(*source,Track(Linear(5)))}},source->Id);
 	auto restored = RevertMotionFamilies(file,installed.selected,installed.active->Id);
-	EXPECT_EQ(7,int(restored.active->Start)); EXPECT_EQ(193,int(restored.active->End));
+	EXPECT_EQ(7,restored.active->Start.GetMilliseconds()); EXPECT_EQ(193,restored.active->End.GetMilliseconds());
 	EXPECT_EQ("line\nwith commas, and \\slashes",file.GetExtradata(restored.active->ExtradataIds.get())[0].value);
 }
 

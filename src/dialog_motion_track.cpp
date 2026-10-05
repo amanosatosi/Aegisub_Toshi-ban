@@ -1963,8 +1963,8 @@ void DialogMotionTrack::UpdateApplyStatus() {
 		reason = "The clip track does not cover the main video reference frame.";
 	if (reason.empty()) {
 		for (auto const& source : source_identity) {
-			int first = context->videoController->FrameAtTime(source.start,agi::vfr::START);
-			int last = context->videoController->FrameAtTime(source.end,agi::vfr::END);
+			int first = context->videoController->FrameAtTime(agi::Time(source.start),agi::vfr::START);
+			int last = context->videoController->FrameAtTime(agi::Time(source.end),agi::vfr::END);
 			for (int f = first; f <= last; ++f) {
 				if (!contains(MainTrack(),f) || (!source.clip.empty() && !ClipTrack().frames.empty() && !contains(ClipTrack(),f))) {
 					reason = "Track the full selected subtitle range before Apply."; break;

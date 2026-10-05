@@ -82,6 +82,8 @@ split boundaries use centisecond precision; original outer times are preserved.
 Interpolation uses EXACT frame timestamps, matching the main video renderer.
 Events retain source fields. Identical adjacent static states merge except when
 Force frame-by-frame was requested or event-relative animation prevents merging.
+Native `Time::GetMilliseconds()` preserves unrounded outer timestamps and Revert
+metadata without changing the established ASS centisecond rendering conversion.
 
 ## Validity and Revert
 

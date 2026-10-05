@@ -598,7 +598,10 @@ MotionApplication BuildMotionApplication(AssDialogue const& source,
 			}
 		}
 		AssDialogueBase event(source);
-		event.Start = start; event.End = end;
+		// Keep the outer native times losslessly. The local animation clock uses
+		// their normal centisecond conversion, just as the subtitle renderer does.
+		event.Start = index == 0 ? source.Start : agi::Time(start);
+		event.End = index+1 == analysis.regions.size() ? source.End : agi::Time(end);
 		event.Text = Serialize(state,region,t1,t2);
 		// Identical static sections can coalesce, but timed envelopes/transforms
 		// have a different event-relative clock and therefore remain separate.
@@ -629,7 +632,7 @@ std::string MotionClipSignature(AssDialogue const& line) {
 }
 
 MotionSourceIdentity IdentifyMotionSource(AssDialogue const& line) {
-	MotionSourceIdentity identity{line.Id,int(line.Start),int(line.End),{},MotionClipSignature(line)};
+	MotionSourceIdentity identity{line.Id,line.Start.GetMilliseconds(),line.End.GetMilliseconds(),{},MotionClipSignature(line)};
 	for (auto const& block : line.ParseTags()) {
 		if (block->GetType() != AssBlockType::OVERRIDE) identity.content += block->GetText();
 		else if (auto b = dynamic_cast<AssDialogueBlockOverride*>(block.get())) {
