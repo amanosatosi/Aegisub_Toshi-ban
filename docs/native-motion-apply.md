@@ -70,6 +70,8 @@ the main track instead or preserve the clip. Rectangular clips can use standard
 ASS transforms. Vector clip drawing coordinates retain their drawing scale and
 commands. Rotated rectangles become vector polygons. Animated vector geometry
 uses sampled events in standard ASS. `\iclip` stays inverse.
+Only regions with moving vector geometry/origins require this fallback;
+optimized holds and independent stationary signals remain suppressed/compact.
 
 When the selected, available renderer is Mangetsu, translation-only clip motion
 uses stable original `\clip`/`\iclip` geometry plus `\clippos` and `\t`.

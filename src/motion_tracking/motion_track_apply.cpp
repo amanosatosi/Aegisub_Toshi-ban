@@ -561,13 +561,29 @@ MotionApplication BuildMotionApplication(AssDialogue const& source,
 	// Standard ASS cannot animate org or vector paths. A static such signal
 	// does not prevent independent position/scale/rotation optimization.
 	if (!analysis.frame_by_frame && (has_origin || (clip && has_vector && !clippos))) {
-		bool unsupported_animation = false;
-		for (auto const& region : analysis.regions) for (auto const& slot : states[region.first].slots) {
-			if (slot.kind != SlotKind::Origin && slot.kind != SlotKind::Vector) continue;
-			for (size_t k = 0; k < slot.count; ++k)
-				if (std::abs(region.from[slot.index+k]-region.to[slot.index+k]) > 0.000001) unsupported_animation = true;
+		bool sampled_geometry = false;
+		std::vector<MotionRegion> encoded;
+		for (size_t index = 0; index < analysis.regions.size(); ++index) {
+			auto const& region = analysis.regions[index];
+			bool moving_geometry = false;
+			for (auto const& slot : states[region.first].slots) {
+				if (slot.kind != SlotKind::Origin && slot.kind != SlotKind::Vector) continue;
+				for (size_t k = 0; k < slot.count; ++k)
+					moving_geometry |= std::abs(region.from[slot.index+k]-region.to[slot.index+k]) > 0.000001;
+			}
+			if (!moving_geometry) { encoded.push_back(region); continue; }
+			sampled_geometry = true;
+			size_t stop = index+1 == analysis.regions.size() ? samples.size() : analysis.regions[index+1].first;
+			for (size_t i = region.first; i < stop; ++i) {
+				auto values = samples[i].values;
+				// Keep independent stationary signals suppressed even when another
+				// signal requires sampled geometry. Retain complete optimized holds.
+				for (size_t k = 0; k < values.size(); ++k)
+					if (region.from[k] == region.to[k]) values[k] = region.from[k];
+				encoded.push_back({i,i,values,values,true});
+			}
 		}
-		if (unsupported_animation) analysis = OptimizeMotion(samples,states.front().tolerance,MotionEncoding::FrameByFrame);
+		if (sampled_geometry) { analysis.regions = std::move(encoded); analysis.frame_by_frame = true; }
 	}
 	MotionApplication output;
 	output.used_clippos = clippos;

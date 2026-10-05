@@ -323,6 +323,17 @@ TEST(MotionApply, ScaledVectorClipsKeepDrawingUnitsAndClosingCommands) {
 	EXPECT_NE(std::string::npos,output.events[2].Text.get().find("\\iclip(2,m 40 0 l 100 0 100 80 c"));
 }
 
+TEST(MotionApply, StandardVectorFallbackKeepsNoisyStationaryRegionsCompact) {
+	auto main = Track(std::vector<double>(12,100));
+	auto clip = Track({100,105,110,115,120,120.01,119.99,120.02,120,116,112,108});
+	auto output = Apply(Line(12,"{\\clip(m 0 0 l 30 0 30 40)}Sign"),main,&clip);
+	EXPECT_LE(output.events.size(),9u);
+	EXPECT_TRUE(std::any_of(output.events.begin(),output.events.end(),[](auto const& event) {
+		return event.End-event.Start >= 160;
+	}));
+	for (auto const& event : output.events) EXPECT_TRUE(Tags(event,"\\clippos",true).empty());
+}
+
 TEST(MotionApply, MangetsuClipposKeepsVectorGeometryStable) {
 	MotionApplyOptions o; o.mangetsu_clippos = true;
 	auto main = Track(std::vector<double>(5,100)), clip = Track(Linear(5,100,10));
