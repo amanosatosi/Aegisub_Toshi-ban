@@ -12,7 +12,7 @@ class AssStyle;
 namespace agi { namespace vfr { class Framerate; } }
 
 namespace motion_tracking {
-enum class ClipMotionSource { SeparateTrack, MainTrack, None };
+enum class ClipMotionSource { SeparateTrack, MainTrack, KeepUnchanged };
 
 struct MotionApplyOptions {
 	MotionEncoding encoding = MotionEncoding::Automatic;

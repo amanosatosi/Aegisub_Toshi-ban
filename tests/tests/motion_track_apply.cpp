@@ -226,7 +226,7 @@ TEST(MotionApply, AdvancedMainClipAndKeepClipChoices) {
 	auto output = Apply(line,track,nullptr,o);
 	ASSERT_EQ(1u,output.events.size());
 	EXPECT_EQ(2u,Tags(output.events[0],"\\clip",true).size());
-	o.clip_source = ClipMotionSource::None;
+	o.clip_source = ClipMotionSource::KeepUnchanged;
 	output = Apply(line,track,&track,o);
 	EXPECT_EQ(1u,Tags(output.events[0],"\\clip",true).size());
 }
