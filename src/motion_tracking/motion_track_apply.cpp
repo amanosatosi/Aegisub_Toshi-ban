@@ -425,7 +425,9 @@ std::string MotionClipSignature(AssDialogue const& input) {
 MotionSourceIdentity IdentifyMotionSource(AssDialogue const& input) {
 	AssDialogue line(input);
 	line.Text = RemoveMotionLayers(input.Text.get());
-	MotionSourceIdentity identity{line.Id,line.Start.GetMilliseconds(),line.End.GetMilliseconds(),{},MotionClipSignature(line)};
+	// AssDialogue's copy constructor creates a new ID for temporary copies.
+	// Session identity must belong to the original selected event.
+	MotionSourceIdentity identity{input.Id,line.Start.GetMilliseconds(),line.End.GetMilliseconds(),{},MotionClipSignature(line)};
 	for (auto const& block : line.ParseTags()) {
 		if (block->GetType() != AssBlockType::OVERRIDE) identity.content += block->GetText();
 		else if (auto b = dynamic_cast<AssDialogueBlockOverride*>(block.get())) {

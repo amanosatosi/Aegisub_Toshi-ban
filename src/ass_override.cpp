@@ -576,7 +576,9 @@ void AssDialogueBlockOverride::ParseTags() {
 	size_t start = 0;
 	for (size_t i = 1; i < text.size(); ++i) {
 		if (depth > 0) {
-			if (text[i] == ')')
+			if (text[i] == '(')
+				++depth;
+			else if (text[i] == ')')
 				--depth;
 		}
 		else if (text[i] == '\\') {

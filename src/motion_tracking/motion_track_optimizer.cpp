@@ -50,7 +50,7 @@ MotionAnalysis OptimizeMotion(std::vector<MotionSample> const& samples,
 		}
 		// Difficult paths remain exact per-frame intervals in Automatic. This
 		// changes only transform density, never the number of subtitle events.
-		if (encoding == MotionEncoding::Automatic && knots.size() > 5 && knots.size()*3 > samples.size()) {
+		if (encoding == MotionEncoding::Automatic && knots.size() > 5 && knots.size()*10 > samples.size()*9) {
 			result.frame_by_frame = true;
 			for (size_t i = 0; i < samples.size(); ++i) knots.insert(i);
 		}

@@ -106,6 +106,23 @@ void One(MotionApplication const& output, AssDialogue const& source) {
 }
 }
 
+TEST(MotionApply, ParsedCombinedPayloadKeepsComponentsInsideTransform) {
+	AssDialogue line;
+	line.Text="{\\t(0,200,\\pos(~+30,~-20)\\scale~+10\\frz~-5\\clippos(~+4,~-3)\\clips~+20)}Sign";
+	auto blocks=line.ParseTags();
+	auto b=dynamic_cast<AssDialogueBlockOverride*>(blocks.front().get());
+	ASSERT_NE(nullptr,b);
+	ASSERT_EQ(1u,b->Tags.size());
+	ASSERT_EQ("\\t",b->Tags[0].Name);
+	auto payload=b->Tags[0].Params[3].Get<AssDialogueBlockOverride*>();
+	ASSERT_EQ(5u,payload->Tags.size());
+	EXPECT_EQ("\\pos",payload->Tags[0].Name);
+	EXPECT_EQ("\\scale",payload->Tags[1].Name);
+	EXPECT_EQ("\\frz",payload->Tags[2].Name);
+	EXPECT_EQ("\\clippos",payload->Tags[3].Name);
+	EXPECT_EQ("\\clips",payload->Tags[4].Name);
+}
+
 TEST(MotionApply, LinearXYStaysOneCompactEvent) {
 	auto track=Track(Linear(40));
 	for (size_t i=0;i<track.frames.size();++i) track.frames[i].y+=i*2;
