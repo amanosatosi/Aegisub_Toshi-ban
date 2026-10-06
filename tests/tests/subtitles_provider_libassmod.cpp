@@ -291,7 +291,8 @@ protected:
 			ASSERT_EQ(backend.set_image(reference.renderer,"fixture.png",1,32,24,32*4,tile.data()),0);
 		}
 		for (long long time : {100LL,750LL,1500LL,2500LL,3850LL}) for (bool flipped : {false,true}) {
-			SCOPED_TRACE(time); SCOPED_TRACE(flipped);
+			SCOPED_TRACE(time);
+			SCOPED_TRACE(flipped);
 			auto frame=Background(flipped,24), expected=frame;
 			Calls calls{backend.api};
 			auto result=DrawFrame(calls.Counted(),subject.renderer,subject.track,time,frame);
