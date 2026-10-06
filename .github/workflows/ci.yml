@@ -19,6 +19,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Validate CI workflow expressions and cache helper contracts
+        run: |
+          set -euo pipefail
+          python tests/python/test_ci_cache.py
+          cd "$RUNNER_TEMP"
+          curl -fsSLO https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          curl -fsSLO https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_checksums.txt
+          grep ' actionlint_1.7.12_linux_amd64.tar.gz$' actionlint_1.7.12_checksums.txt | sha256sum --strict -c -
+          tar -xzf actionlint_1.7.12_linux_amd64.tar.gz actionlint
+          ./actionlint -shellcheck="" -pyflakes="" "$GITHUB_WORKSPACE/.github/workflows/ci.yml"
       - name: Check renderer migration, update source and DependencyControl packaging contracts
         run: python tests/python/test_release_preparation.py
       - name: Check subtitle-relative readout fade menu wiring
@@ -87,7 +97,11 @@ jobs:
       PYTHONIOENCODING: "utf-8"
       SCCACHE_GHA_ENABLED: ${{ matrix.config.msvc && 'true' || 'false' }}
       SCCACHE_GHA_VERSION: toshiban-msvc-v1
+      # One uploader; both configurations read the same compiler-input namespace.
+      SCCACHE_GHA_RW_MODE: ${{ matrix.config.sccache_mode || 'READ_ONLY' }}
       SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_LOG: info
+      SCCACHE_ERROR_LOG: ${{ runner.temp }}/sccache-server.log
 
     strategy:
       fail-fast: false
@@ -97,6 +111,8 @@ jobs:
             os: windows-latest
             runner: windows-2022
             msvc: true
+            sccache_mode: READ_WRITE
+            vcpkg_mode: readwrite
             buildtype: release
             args: >-
               --native-file=.github/meson/msvc-sccache.ini
@@ -124,6 +140,8 @@ jobs:
             os: windows-latest
             runner: windows-2022
             msvc: true
+            sccache_mode: READ_ONLY
+            vcpkg_mode: read
             buildtype: release
             args: >-
               --native-file=.github/meson/msvc-sccache.ini
@@ -201,6 +219,38 @@ jobs:
       - name: Setup MSVC
         if: matrix.config.os == 'windows-latest' && matrix.config.msvc == true
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Identify hosted vcpkg and binary cache inputs
+        if: matrix.config.os == 'windows-latest'
+        id: vcpkg-inputs
+        shell: pwsh
+        run: ./tools/ci/windows-vcpkg.ps1 -Mode prepare -Access ${{ matrix.config.vcpkg_mode }}
+
+      # Persist only vcpkg's ABI-addressed archives, never C:\vcpkg or installed/.
+      - name: Restore OpenCV vcpkg binary archives
+        if: matrix.config.os == 'windows-latest'
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.vcpkg-inputs.outputs.archives }}
+          key: ${{ steps.vcpkg-inputs.outputs.key }}
+          restore-keys: ${{ steps.vcpkg-inputs.outputs.prefix }}
+
+      - name: Install OpenCV (vcpkg binary cache)
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        run: ./tools/ci/windows-vcpkg.ps1 -Mode install -Access ${{ matrix.config.vcpkg_mode }}
+
+      # Publish early so later jobs/runs can restore even if application CI fails.
+      # wx-master remains independent and never duplicates this archive upload.
+      - name: Save OpenCV vcpkg binary archives
+        if: matrix.config.vcpkg_mode == 'readwrite' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.vcpkg-inputs.outputs.archives }}
+          key: ${{ steps.vcpkg-inputs.outputs.key }}
 
       - name: Setup sccache (Windows MSVC)
         if: matrix.config.os == 'windows-latest' && matrix.config.msvc == true
@@ -208,27 +258,12 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.11
         with:
           version: v0.18.0
+          disable_annotations: 'true'
 
       - name: Install dependencies (Windows)
         if: matrix.config.os == 'windows-latest'
         run: |
           choco install ninja innosetup
-
-          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
-          if (-not $vcpkgRoot) {
-            $vcpkgRoot = "C:\vcpkg"
-          }
-          vcpkg install "opencv4[core,calib3d]:x64-windows"
-          $opencvPrefix = Join-Path $vcpkgRoot "installed\x64-windows"
-          "OpenCV_DIR=$opencvPrefix\share\opencv4" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "OPENCV_BIN_DIR=$opencvPrefix\bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          if ($env:CMAKE_PREFIX_PATH) {
-            "CMAKE_PREFIX_PATH=$opencvPrefix;$env:CMAKE_PREFIX_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          } else {
-            "CMAKE_PREFIX_PATH=$opencvPrefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          }
-          $opencvBin = Join-Path $opencvPrefix "bin"
-          $opencvBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
           $moonscripturl = "https://github.com/leafo/moonscript/releases/download/win32-v0.5.0/moonscript-187bac54ee5a7450013e9c38e005a0e671b76f45.zip"
           mkdir moonscript
@@ -264,6 +299,11 @@ jobs:
 
       # Share sources across Windows wx variants; no build/configuration outputs.
       # Distro-only Ubuntu jobs do not use these expensive fallbacks.
+      - name: Resolve Meson source cache inputs
+        if: matrix.config.os == 'windows-latest' || matrix.config.appimage
+        id: meson-source-inputs
+        run: python tools/ci/meson_source_cache.py prepare
+
       - name: Cache stable Meson dependency sources
         if: matrix.config.os == 'windows-latest' || matrix.config.appimage
         id: meson-deps
@@ -275,29 +315,14 @@ jobs:
             subprojects/ffms2
             subprojects/soundtouch
             subprojects/dav1d
-          key: toshiban-meson-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('subprojects/ffmpeg.wrap', 'subprojects/ffms2.wrap', 'subprojects/soundtouch.wrap', 'subprojects/dav1d.wrap', 'subprojects/packagefiles/ffms2/**', 'subprojects/packagefiles/soundtouch/**') }}
+          key: toshiban-meson-deps-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.meson-source-inputs.outputs.fingerprint }}
           restore-keys: |
+            toshiban-meson-deps-v2-${{ runner.os }}-${{ runner.arch }}-
             toshiban-meson-deps-v1-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Refresh restored dependency revisions and overlays
         if: (matrix.config.os == 'windows-latest' || matrix.config.appimage) && steps.meson-deps.outputs.cache-hit != 'true'
-        shell: python {0}
-        run: |
-          from pathlib import Path
-          import subprocess
-          root = Path.cwd().resolve()
-          sources = root / 'subprojects'
-          restored = []
-          for name in ('ffmpeg', 'ffms2', 'soundtouch', 'dav1d'):
-              path = sources / name
-              if path.is_dir():
-                  if path.resolve().parent != sources:
-                      raise RuntimeError(f'Unexpected dependency source path: {path}')
-                  restored.append(name)
-          if restored:
-              # Only partial restores need reconciliation with today's wraps
-              # and overlays. Exact source-cache hits remain untouched.
-              subprocess.run(['meson', 'subprojects', 'update', '--reset', *restored], check=True)
+        run: python tools/ci/meson_source_cache.py refresh
 
       - name: Start sccache and reset per-job statistics
         if: matrix.config.os == 'windows-latest' && matrix.config.msvc == true
@@ -312,42 +337,11 @@ jobs:
 
       - name: Verify Meson compiler caching including stable fallbacks
         if: matrix.config.os == 'windows-latest' && matrix.config.msvc == true
-        shell: python {0}
-        run: |
-          import json
-          import subprocess
-          from pathlib import Path
+        run: python tools/ci/verify_msvc_cache.py
 
-          def wrapped(command):
-              return command and Path(command[0]).stem.lower() == 'sccache'
-
-          compilers = json.loads(subprocess.check_output(
-              ['meson', 'introspect', 'build', '--compilers'], text=True))
-          for language in ('c', 'cpp'):
-              command = compilers['host'][language]['exelist']
-              print(f'{language}: {command}', flush=True)
-              assert wrapped(command), f'Meson {language} bypasses sccache: {command}'
-
-          commands_path = Path('build/compile_commands.json')
-          commands = json.loads(commands_path.read_text(encoding='utf-8'))
-          for dependency in ('ffmpeg', 'ffms2', 'soundtouch'):
-              marker = f'/subprojects/{dependency}/'
-              entries = [
-                  entry for entry in commands
-                  if marker in str(entry.get('file', '')).replace('\\', '/').lower()
-              ]
-              assert entries, f'Expected compile commands for fallback {dependency}'
-              bypasses = [
-                  entry for entry in entries
-                  if 'sccache' not in str(entry.get('command', '')).lower()
-                  and not any('sccache' in str(arg).lower()
-                              for arg in entry.get('arguments', []))
-              ]
-              assert not bypasses, (
-                  f'{dependency} has {len(bypasses)} compile commands bypassing sccache; '
-                  f'first: {bypasses[0] if bypasses else None}'
-              )
-              print(f'{dependency}: {len(entries)} compile commands use sccache', flush=True)
+      - name: Verify resolved Meson dependency source commits
+        if: matrix.config.os == 'windows-latest' || matrix.config.appimage
+        run: python tools/ci/meson_source_cache.py validate
 
       - name: Build current ASSDraw master from source
         if: matrix.config.os == 'windows-latest'
@@ -514,16 +508,4 @@ jobs:
 
       - name: Report sccache statistics (Windows)
         if: always() && steps.sccache.outcome == 'success'
-        shell: pwsh
-        run: |
-          sccache --show-stats
-          sccache --show-stats --stats-format=json | Out-File -LiteralPath "$env:RUNNER_TEMP\sccache-stats.json" -Encoding utf8
-          if ($LASTEXITCODE -ne 0) { throw 'Could not collect sccache statistics.' }
-
-      - name: Upload sccache statistics (Windows)
-        if: always() && steps.sccache.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.config.name }} - sccache statistics
-          path: ${{ runner.temp }}/sccache-stats.json
-          if-no-files-found: error
+        run: python tools/ci/sccache_stats.py
