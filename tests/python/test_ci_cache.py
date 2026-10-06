@@ -141,6 +141,13 @@ class CacheDiagnostics(unittest.TestCase):
         self.assertFalse(verify.wrapped('cl /c source.c'))
         self.assertFalse(verify.wrapped('sccache clang /c source.cpp'))
 
+    def test_command_fingerprints_preserve_flag_case_but_normalize_workspace(self):
+        command = 'sccache cl /DNAME="Value" D:/a/repo/source.cpp'
+        normalized = verify.normalize_command(command, 'd:\\a\\repo')
+        self.assertEqual(normalized, 'sccache cl /DNAME="Value" $WORKSPACE/source.cpp')
+        self.assertNotEqual(normalized, verify.normalize_command(command.replace('Value', 'value'),
+                                                                'd:\\a\\repo'))
+
 
 if __name__ == '__main__':
     unittest.main()

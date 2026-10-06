@@ -221,7 +221,7 @@ jobs:
         with:
           arch: x64
 
-      - name: Identify hosted vcpkg and binary cache inputs
+      - name: Prepare pinned vcpkg and binary cache inputs
         if: matrix.config.os == 'windows-latest'
         id: vcpkg-inputs
         shell: pwsh

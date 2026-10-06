@@ -20,9 +20,22 @@ if ($Mode -eq 'prepare') {
     if (-not $VcpkgRoot) { $VcpkgRoot = 'C:\vcpkg' }
     $VcpkgRoot = (Resolve-Path -LiteralPath $VcpkgRoot).Path
     $VcpkgExe = Join-Path $VcpkgRoot 'vcpkg.exe'
+    # Hosted images can roll out different registries/tools concurrently.
+    # Pin both using the existing checkout, without caching that checkout.
+    $PinnedRevision = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../.github/vcpkg/revision.txt')).Trim()
+    if ($PinnedRevision -notmatch '^[0-9a-f]{40}$') { throw 'Invalid pinned vcpkg revision.' }
+    & git -C $VcpkgRoot cat-file -e "$PinnedRevision^{commit}" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        & git -C $VcpkgRoot fetch --no-tags --depth=1 origin $PinnedRevision
+        if ($LASTEXITCODE -ne 0) { throw 'Could not fetch pinned vcpkg revision.' }
+    }
+    & git -C $VcpkgRoot checkout --detach $PinnedRevision
+    if ($LASTEXITCODE -ne 0) { throw 'Could not select pinned vcpkg revision.' }
+    & (Join-Path $VcpkgRoot 'bootstrap-vcpkg.bat') -disableMetrics
+    if ($LASTEXITCODE -ne 0) { throw 'Could not bootstrap the matching vcpkg tool.' }
     $Baseline = (& git -C $VcpkgRoot rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or $Baseline -notmatch '^[0-9a-f]{40}$') {
-        throw 'Could not identify the hosted vcpkg registry baseline.'
+    if ($LASTEXITCODE -ne 0 -or $Baseline -cne $PinnedRevision) {
+        throw 'Could not verify the pinned vcpkg registry baseline.'
     }
     if ($env:VCPKG_OVERLAY_PORTS -or $env:VCPKG_OVERLAY_TRIPLETS) {
         throw 'Add overlay inputs to the binary cache fingerprint before enabling overlays.'

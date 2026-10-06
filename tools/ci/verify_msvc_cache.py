@@ -12,6 +12,12 @@ def wrapped(command):
     return 'sccache' in command.lower() and re.search(r'(?:^|[\\/\s"])cl(?:\.exe)?(?=$|[\s"])', command, re.I)
 
 
+def normalize_command(command, workspace):
+    # Windows workspace paths are case-insensitive; compiler flags are not.
+    return re.sub(re.escape(workspace.replace('\\', '/')), '$WORKSPACE',
+                  command.replace('\\', '/'), flags=re.I)
+
+
 def main():
     compilers = json.loads(subprocess.check_output(
         ['meson', 'introspect', 'build', '--compilers'], text=True))
@@ -29,7 +35,7 @@ def main():
         raise RuntimeError(f'{len(bypasses)} C/C++ commands bypass sccache cl: {bypasses[0]}')
     print(f'All {len(c_cpp)} main-project/fallback C/C++ commands use sccache cl.', flush=True)
 
-    root = os.environ['GITHUB_WORKSPACE'].replace('\\', '/').lower()
+    root = os.environ['GITHUB_WORKSPACE']
     for dependency in ('ffmpeg', 'ffms2', 'soundtouch', 'zlib', 'harfbuzz', 'freetype2',
                        'fribidi', 'libpng', 'libassmod', 'libassmod-mangetsu'):
         wrap = configparser.ConfigParser(interpolation=None)
@@ -39,7 +45,7 @@ def main():
         selected = [e for e in c_cpp if marker in e['file'].replace('\\', '/').lower()]
         if not selected:
             raise RuntimeError(f'Expected C/C++ compiler commands for fallback {dependency}')
-        normalized = sorted(commands(e).replace('\\', '/').lower().replace(root, '$WORKSPACE') for e in selected)
+        normalized = sorted(normalize_command(commands(e), root) for e in selected)
         digest = hashlib.sha256('\n'.join(normalized).encode()).hexdigest()[:16]
         print(f'{dependency}: {len(selected)} commands; command fingerprint {digest}', flush=True)
     print('Fingerprints diagnose shared flags; sccache hashes the complete compiler inputs for compatibility.')

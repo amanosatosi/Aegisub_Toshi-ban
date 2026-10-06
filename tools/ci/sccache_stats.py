@@ -51,7 +51,9 @@ def main():
     rows = summary(info, expected, modes[-1])
     if rows['GHA upload errors']:
         diagnostics = [line for line in log.splitlines()
-                       if 'ghac' in line.lower() and ('WARN' in line or 'ERROR' in line)]
+                       if 'ghac' in line.lower() and ('WARN' in line or 'ERROR' in line)
+                       and ('write failed' in line or 'close failed' in line)
+                       and '.sccache_check' not in line]
         for line in diagnostics[:3]:
             print('Backend diagnostic:', re.sub(r'https?://\S+', '<URL>', line))
     # The JSON is printed in the log as well, so no perpetual artifact upload.
