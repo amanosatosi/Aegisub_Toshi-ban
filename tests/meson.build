@@ -27,6 +27,7 @@ all_test_sources += [
 
     # Compile minimal Aegisub sources needed for AssKaraoke tests
     '../src/ass_attachment.cpp',
+    '../src/subtitles_provider_libassmod_render.cpp',
     '../src/application_updates.cpp',
     '../src/ass_dialogue.cpp',
     '../src/ass_file_script_info.cpp',
@@ -57,6 +58,7 @@ all_test_sources += [
     '../src/vector2d.cpp',
 
     'tests/access.cpp',
+    'tests/subtitles_provider_libassmod.cpp',
     'tests/application_updates.cpp',
     'tests/dependencycontrol_runtime.cpp',
     'tests/audio.cpp',
@@ -127,7 +129,14 @@ runner = executable(
     cpp_args : extra_args,
     link_with : all_test_dep_libs,
 )    
-test('gtest main', runner, env: ['AEGISUB_AUTOMATION_INCLUDE_DIR=' + (meson.project_source_root() / 'automation/include')])
+provider_test_env = [
+    'AEGISUB_AUTOMATION_INCLUDE_DIR=' + (meson.project_source_root() / 'automation/include'),
+    'AEGISUB_LIBASSMOD_TEST_LIBRARY=' + (meson.project_build_root() / libassmod_output),
+]
+if get_option('with_mangetsu')
+    provider_test_env += 'AEGISUB_MANGETSU_TEST_LIBRARY=' + (meson.project_build_root() / mangetsu_output)
+endif
+test('gtest main', runner, env: provider_test_env)
 
 
 # setup test env

@@ -20,6 +20,7 @@
 ///
 
 #include "subtitles_provider_libassmod.h"
+#include "subtitles_provider_libassmod_render.h"
 
 #include "ass_attachment.h"
 #include "ass_file.h"
@@ -37,7 +38,6 @@
 
 #include <atomic>
 #include <algorithm>
-#include <boost/gil.hpp>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -67,10 +67,6 @@
 #include <windows.h>
 #endif
 
-extern "C" {
-#include <ass/ass.h>
-}
-
 #ifndef LIBASSMOD_FEATURE_TAG_IMAGE
 #define LIBASSMOD_FEATURE_TAG_IMAGE 1
 typedef enum {
@@ -78,23 +74,6 @@ typedef enum {
 	ASS_TAG_IMAGE_FORMAT_JPEG = 2,
 	ASS_TAG_IMAGE_FORMAT_WEBP = 3,
 } ASS_TagImageFormat;
-#endif
-
-#ifndef LIBASSMOD_FEATURE_RGBA
-typedef struct ass_image_rgba {
-	int w, h;
-	int stride;
-	uint8_t *rgba;
-	int dst_x, dst_y;
-	int type;
-	struct ass_image_rgba *next;
-} ASS_ImageRGBA;
-
-typedef struct ass_render_result {
-	ASS_Image *imgs;
-	ASS_ImageRGBA *imgs_rgba;
-	int use_rgba;
-} ASS_RenderResult;
 #endif
 
 namespace {
@@ -123,15 +102,12 @@ using AssReadMemoryFunc = ASS_Track *(*)(ASS_Library *, char *, size_t, const ch
 using AssFreeTrackFunc = void (*)(ASS_Track *);
 using AssSetFrameSizeFunc = void (*)(ASS_Renderer *, int, int);
 using AssSetStorageSizeFunc = void (*)(ASS_Renderer *, int, int);
-using AssRenderFrameAutoFunc = ASS_RenderResult (*)(ASS_Renderer *, ASS_Track *, long long, int *);
-using AssFreeImagesRGBAFunc = void (*)(ASS_ImageRGBA *);
-using AssCompositeImagesBGRAFunc = int (*)(ASS_ImageRGBA *, uint8_t *, int, int, int);
 #ifdef LIBASSMOD_FEATURE_TAG_IMAGE
 using AssClearTagImagesFunc = void (*)(ASS_Renderer *);
 using AssSetTagImageRGBAFunc = int (*)(ASS_Renderer *, const char *, ASS_TagImageFormat, int, int, int, const unsigned char *);
 #endif
 
-struct LibassModApi {
+struct LibassModApi : custom_subtitles::RenderApi {
 	LibassModHandle handle = nullptr;
 	AssLibraryInitFunc ass_library_init = nullptr;
 	AssLibraryDoneFunc ass_library_done = nullptr;
@@ -144,9 +120,6 @@ struct LibassModApi {
 	AssFreeTrackFunc ass_free_track = nullptr;
 	AssSetFrameSizeFunc ass_set_frame_size = nullptr;
 	AssSetStorageSizeFunc ass_set_storage_size = nullptr;
-	AssRenderFrameAutoFunc ass_render_frame_auto = nullptr;
-	AssFreeImagesRGBAFunc ass_free_images_rgba = nullptr;
-	AssCompositeImagesBGRAFunc ass_composite_images_bgra = nullptr;
 #ifdef LIBASSMOD_FEATURE_TAG_IMAGE
 	AssClearTagImagesFunc ass_clear_tag_images = nullptr;
 	AssSetTagImageRGBAFunc ass_set_tag_image_rgba = nullptr;
@@ -333,9 +306,7 @@ bool LoadLibassModApi(AssCompatBackend &backend, std::string &error) {
 		!LoadSymbol(backend, "ass_read_memory", api.ass_read_memory, error) ||
 		!LoadSymbol(backend, "ass_free_track", api.ass_free_track, error) ||
 		!LoadSymbol(backend, "ass_set_frame_size", api.ass_set_frame_size, error) ||
-		!LoadSymbol(backend, "ass_set_storage_size", api.ass_set_storage_size, error) ||
-		!LoadSymbol(backend, "ass_render_frame_auto", api.ass_render_frame_auto, error) ||
-		!LoadSymbol(backend, "ass_free_images_rgba", api.ass_free_images_rgba, error)) {
+		!LoadSymbol(backend, "ass_set_storage_size", api.ass_set_storage_size, error)) {
 		CloseLibassModHandle(backend);
 		return false;
 	}
@@ -344,6 +315,15 @@ bool LoadLibassModApi(AssCompatBackend &backend, std::string &error) {
 	LoadOptionalSymbol(backend, "ass_set_tag_image_rgba", api.ass_set_tag_image_rgba);
 #endif
 	LoadOptionalSymbol(backend, "ass_composite_images_bgra", api.ass_composite_images_bgra);
+	LoadOptionalSymbol(backend, "ass_render_frame_rgba", api.ass_render_frame_rgba);
+	LoadOptionalSymbol(backend, "ass_free_images_rgba", api.ass_free_images_rgba);
+	LoadOptionalSymbol(backend, "ass_render_frame_auto", api.ass_render_frame_auto);
+	LoadOptionalSymbol(backend, "ass_render_frame", api.ass_render_frame);
+	if (!api.CanRender()) {
+		error = std::string(backend.config.display_name) + " has no usable frame API (RGBA needs ass_free_images_rgba).";
+		CloseLibassModHandle(backend);
+		return false;
+	}
 
 	UpdateLoadedLibraryPath(backend);
 	backend.library = api.ass_library_init();
@@ -356,6 +336,8 @@ bool LoadLibassModApi(AssCompatBackend &backend, std::string &error) {
 	api.ass_set_message_cb(backend.library, msg_callback, &backend);
 	LOG_I(backend.config.log_name) << "Subtitle renderer " << backend.config.display_name
 		<< ": available (loaded " << backend.loaded_library_name << ")";
+	LOG_I(backend.config.log_name) << "Compositing: " << (api.HasDirectRgba() ?
+		(api.ass_composite_images_bgra ? "direct RGBA / native BGRA" : "direct RGBA / host fallback") : "compatibility frame API");
 	if (backend.config.provider_name == std::string("libassmod"))
 		LOG_I(backend.config.log_name) << "libassmod loaded from " << backend.loaded_library_name;
 	else if (backend.config.provider_name == std::string("Mangetsu"))
@@ -992,11 +974,6 @@ LibassModSubtitlesProvider::~LibassModSubtitlesProvider() {
 	if (ass_track) backend.api.ass_free_track(ass_track);
 }
 
-#define _r(c) ((c)>>24)
-#define _g(c) (((c)>>16)&0xFF)
-#define _b(c) (((c)>>8)&0xFF)
-#define _a(c) ((c)&0xFF)
-
 void LibassModSubtitlesProvider::DrawSubtitles(VideoFrame &frame, double time) {
 	ASS_Renderer *ass_renderer = renderer();
 	if (!ass_renderer || !ass_track)
@@ -1007,78 +984,10 @@ void LibassModSubtitlesProvider::DrawSubtitles(VideoFrame &frame, double time) {
 
 	auto &api = backend.api;
 	api.ass_set_frame_size(ass_renderer, frame.width, frame.height);
-	// Note: this relies on Aegisub always rendering at video storage res
+	// Aegisub renders at video storage resolution.
 	api.ass_set_storage_size(ass_renderer, frame.width, frame.height);
-
-	int detect_change = 0;
-	const int time_ms = static_cast<int>(std::floor(time * 1000.0 + 1e-6));
-	ASS_RenderResult render_result = api.ass_render_frame_auto(ass_renderer, ass_track, time_ms, &detect_change);
-
-	// libassmod returns either premultiplied RGBA images or the legacy alpha-masked monochrome list.
-	// Blend whichever list is preferred by the renderer into the frame.
-
-	using namespace boost::gil;
-	auto dst = interleaved_view(frame.width, frame.height, (bgra8_pixel_t*)frame.data.data(), frame.width * 4);
-	if (frame.flipped)
-		dst = flipped_up_down_view(dst);
-
-	if (render_result.use_rgba && render_result.imgs_rgba) {
-		bool composed = false;
-		if (api.ass_composite_images_bgra) {
-			int stride = frame.width * 4;
-			uint8_t *top_row = frame.data.data();
-			if (frame.flipped) {
-				top_row += static_cast<size_t>(frame.height - 1) * stride;
-				stride = -stride;
-			}
-			composed = api.ass_composite_images_bgra(
-				render_result.imgs_rgba, top_row, frame.width, frame.height, stride) == 0;
-		}
-		if (!composed) {
-			for (ASS_ImageRGBA *img = render_result.imgs_rgba; img; img = img->next) {
-				auto srcview = interleaved_view(img->w, img->h, (rgba8_pixel_t*)img->rgba, img->stride);
-				auto dstview = subimage_view(dst, img->dst_x, img->dst_y, img->w, img->h);
-
-				transform_pixels(dstview, srcview, dstview, [](const bgra8_pixel_t frame_px, const rgba8_pixel_t src_px) -> bgra8_pixel_t {
-					unsigned int alpha = src_px[3];
-					unsigned int inv_alpha = 255 - alpha;
-
-					bgra8_pixel_t ret;
-					ret[0] = static_cast<unsigned char>(src_px[2] + (frame_px[0] * inv_alpha) / 255);
-					ret[1] = static_cast<unsigned char>(src_px[1] + (frame_px[1] * inv_alpha) / 255);
-					ret[2] = static_cast<unsigned char>(src_px[0] + (frame_px[2] * inv_alpha) / 255);
-					ret[3] = 0;
-					return ret;
-				});
-			}
-		}
-	}
-	else {
-		for (ASS_Image *img = render_result.imgs; img; img = img->next) {
-			unsigned int opacity = 255 - ((unsigned int)_a(img->color));
-			unsigned int r = (unsigned int)_r(img->color);
-			unsigned int g = (unsigned int)_g(img->color);
-			unsigned int b = (unsigned int)_b(img->color);
-
-			auto srcview = interleaved_view(img->w, img->h, (gray8_pixel_t*)img->bitmap, img->stride);
-			auto dstview = subimage_view(dst, img->dst_x, img->dst_y, img->w, img->h);
-
-			transform_pixels(dstview, srcview, dstview, [=](const bgra8_pixel_t frame_px, const gray8_pixel_t src_px) -> bgra8_pixel_t {
-				unsigned int k = ((unsigned)src_px) * opacity / 255;
-				unsigned int ck = 255 - k;
-
-				bgra8_pixel_t ret;
-				ret[0] = (k * b + ck * frame_px[0]) / 255;
-				ret[1] = (k * g + ck * frame_px[1]) / 255;
-				ret[2] = (k * r + ck * frame_px[2]) / 255;
-				ret[3] = 0;
-				return ret;
-			});
-		}
-	}
-
-	if (render_result.imgs_rgba)
-		api.ass_free_images_rgba(render_result.imgs_rgba);
+	const long long time_ms = static_cast<long long>(std::floor(time * 1000.0 + 1e-6));
+	custom_subtitles::DrawFrame(api, ass_renderer, ass_track, time_ms, frame);
 }
 }
 
