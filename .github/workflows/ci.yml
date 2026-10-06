@@ -19,6 +19,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Validate workflow YAML syntax
+        run: |
+          python -m pip install PyYAML==6.0.2
+          python -c "from pathlib import Path; import yaml; [yaml.safe_load(p.read_text(encoding='utf-8')) for p in Path('.github/workflows').glob('*.yml')]"
       - name: Check renderer migration, update source and DependencyControl packaging contracts
         run: python tests/python/test_release_preparation.py
       - name: Check subtitle-relative readout fade menu wiring
@@ -247,6 +251,43 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install ninja-build build-essential libx11-dev libwxgtk3.0-gtk3-dev libfreetype6-dev pkg-config libfontconfig1-dev libass-dev libasound2-dev libffms2-dev intltool libboost-all-dev libhunspell-dev libuchardet-dev libpulse-dev libopenal-dev libxxhash-dev nasm desktop-file-utils libsoundtouch-dev libcurl4-openssl-dev
+
+      # Share sources across Windows wx variants; no build/configuration outputs.
+      # Distro-only Ubuntu jobs do not use these expensive fallbacks.
+      - name: Cache stable Meson dependency sources
+        if: matrix.config.os == 'windows-latest' || matrix.config.appimage
+        id: meson-deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            subprojects/packagecache
+            subprojects/ffmpeg
+            subprojects/ffms2
+            subprojects/soundtouch
+            subprojects/dav1d
+          key: toshiban-meson-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('subprojects/ffmpeg.wrap', 'subprojects/ffms2.wrap', 'subprojects/soundtouch.wrap', 'subprojects/dav1d.wrap', 'subprojects/packagefiles/ffms2/**', 'subprojects/packagefiles/soundtouch/**') }}
+          restore-keys: |
+            toshiban-meson-deps-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Refresh restored dependency revisions and overlays
+        if: matrix.config.os == 'windows-latest' || matrix.config.appimage
+        shell: python {0}
+        run: |
+          from pathlib import Path
+          import subprocess
+          root = Path.cwd().resolve()
+          sources = root / 'subprojects'
+          restored = []
+          for name in ('ffmpeg', 'ffms2', 'soundtouch', 'dav1d'):
+              path = sources / name
+              if path.is_dir():
+                  if path.resolve().parent != sources:
+                      raise RuntimeError(f'Unexpected dependency source path: {path}')
+                  restored.append(name)
+          if restored:
+              # Refresh floating refs too; old-key restores must use today's
+              # wraps/overlays. Meson reuses packagecache for file wraps.
+              subprocess.run(['meson', 'subprojects', 'update', '--reset', *restored], check=True)
 
       - name: Configure
         run: |
