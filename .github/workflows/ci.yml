@@ -101,7 +101,6 @@ jobs:
       SCCACHE_GHA_RW_MODE: ${{ matrix.config.sccache_mode || 'READ_ONLY' }}
       SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_LOG: info
-      SCCACHE_ERROR_LOG: ${{ runner.temp }}/sccache-server.log
 
     strategy:
       fail-fast: false

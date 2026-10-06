@@ -47,6 +47,7 @@ if ($Mode -eq 'prepare') {
     @(
         "VCPKG_ROOT=$VcpkgRoot"
         "VCPKG_BINARY_SOURCES=clear;files,$Archives,$Access"
+        "SCCACHE_ERROR_LOG=$(Join-Path $env:RUNNER_TEMP 'sccache-server.log')"
     ) | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
     Write-Host "vcpkg baseline: $Baseline; triplet: $Triplet; binary cache access: $Access"
     Write-Host "MSVC: $env:VCToolsVersion; Windows SDK: $env:WindowsSDKVersion"
