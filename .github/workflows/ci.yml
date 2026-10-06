@@ -315,20 +315,37 @@ jobs:
           import json
           import subprocess
           from pathlib import Path
+
           def wrapped(command):
               return command and Path(command[0]).stem.lower() == 'sccache'
-          compilers = json.loads(subprocess.check_output(['meson', 'introspect', 'build', '--compilers'], text=True))
+
+          compilers = json.loads(subprocess.check_output(
+              ['meson', 'introspect', 'build', '--compilers'], text=True))
           for language in ('c', 'cpp'):
               command = compilers['host'][language]['exelist']
               print(f'{language}: {command}', flush=True)
               assert wrapped(command), f'Meson {language} bypasses sccache: {command}'
-          targets = json.loads(subprocess.check_output(['meson', 'introspect', 'build', '--targets'], text=True))
+
+          commands_path = Path('build/compile_commands.json')
+          commands = json.loads(commands_path.read_text(encoding='utf-8'))
           for dependency in ('ffmpeg', 'ffms2', 'soundtouch'):
-              groups = [group for target in targets if target.get('subproject') == dependency
-                        for group in target['target_sources'] if group['language'] in ('c', 'cpp')]
-              assert groups, f'Expected fallback compilation targets for {dependency}'
-              assert all(wrapped(group['compiler']) for group in groups), f'{dependency} bypasses sccache'
-              print(f'{dependency}: {len(groups)} C/C++ target groups use sccache', flush=True)
+              marker = f'/subprojects/{dependency}/'
+              entries = [
+                  entry for entry in commands
+                  if marker in str(entry.get('file', '')).replace('\\', '/').lower()
+              ]
+              assert entries, f'Expected compile commands for fallback {dependency}'
+              bypasses = [
+                  entry for entry in entries
+                  if 'sccache' not in str(entry.get('command', '')).lower()
+                  and not any('sccache' in str(arg).lower()
+                              for arg in entry.get('arguments', []))
+              ]
+              assert not bypasses, (
+                  f'{dependency} has {len(bypasses)} compile commands bypassing sccache; '
+                  f'first: {bypasses[0] if bypasses else None}'
+              )
+              print(f'{dependency}: {len(entries)} compile commands use sccache', flush=True)
 
       - name: Build current ASSDraw master from source
         if: matrix.config.os == 'windows-latest'
