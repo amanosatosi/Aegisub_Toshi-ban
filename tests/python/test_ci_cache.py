@@ -52,7 +52,7 @@ class SourceCache(unittest.TestCase):
     def prepare(self, head='b' * 40):
         for path, content in self.originals.items():
             path.write_text(content)
-        with patch.object(cache, 'run', return_value=head), contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(cache, 'run', return_value=head + '\tHEAD'), contextlib.redirect_stdout(io.StringIO()):
             return cache.prepare(self.root, self.metadata)
 
     def test_floating_ref_movement_invalidates_key_and_pins_ci_checkout(self):
