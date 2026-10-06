@@ -27,6 +27,10 @@ all_test_sources += [
 
     # Compile minimal Aegisub sources needed for AssKaraoke tests
     '../src/ass_attachment.cpp',
+    '../src/ass_parser.cpp',
+    '../src/string_codec.cpp',
+    '../src/mkv_subtitle_packet.cpp',
+    '../src/subtitles_provider_serialization.cpp',
     '../src/subtitles_provider_libassmod_render.cpp',
     '../src/application_updates.cpp',
     '../src/ass_dialogue.cpp',
@@ -59,6 +63,7 @@ all_test_sources += [
 
     'tests/access.cpp',
     'tests/subtitles_provider_libassmod.cpp',
+    'tests/mkv_subtitle_packet.cpp',
     'tests/application_updates.cpp',
     'tests/dependencycontrol_runtime.cpp',
     'tests/audio.cpp',

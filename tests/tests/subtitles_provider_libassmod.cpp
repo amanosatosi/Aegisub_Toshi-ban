@@ -2,6 +2,7 @@
 // Distributed under the ISC license; see subtitles_provider_libassmod.cpp.
 #include "subtitles_provider_libassmod_render.h"
 #include "video_frame.h"
+#include "mkv_subtitle_fixture.h"
 
 #include <gtest/gtest.h>
 #include <libaegisub/exception.h>
@@ -326,6 +327,19 @@ protected:
 		}
 	}
 };
+}
+
+TEST_P(CustomSubtitleBackend, MatroskaImportReachesBackendWithoutNuls) {
+	for (size_t padding : {0u, 1u, 4u}) {
+		auto script = mkv_test::ImportedScript(padding);
+		ASSERT_EQ(script.find('\0'), std::string::npos);
+		EXPECT_EQ(script, mkv_test::ImportedScript(0));
+		Session session(backend, script);
+		ASSERT_EQ(session.track->n_events, 2);
+		EXPECT_STREQ(session.track->events[0].Text, "Matroska dialogue");
+		int change = 0;
+		EXPECT_NE(backend.api.ass_render_frame(session.renderer, session.track, 2000, &change), nullptr);
+	}
 }
 
 TEST_P(CustomSubtitleBackend, OrdinaryAssAppearance) {

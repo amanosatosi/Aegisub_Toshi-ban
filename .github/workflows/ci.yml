@@ -52,6 +52,8 @@ jobs:
           meson compile -C build gtest-main libassmod_copy mangetsu_copy
       - name: Check pixel correctness, ownership and 600-event stress paths
         run: meson test -C build --no-rebuild --verbose "gtest main" --test-args=--gtest_filter=CustomSubtitle*:BundledRenderers/*
+      - name: Check Matroska text packet import and libass serialization
+        run: meson test -C build --no-rebuild --verbose "gtest main" --test-args=--gtest_filter=Matroska*
 
   motion-apply:
     name: Native motion Apply regressions
