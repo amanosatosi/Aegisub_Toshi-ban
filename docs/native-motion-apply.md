@@ -1,132 +1,140 @@
-# Native motion Apply
+# Native Mangetsu motion Apply
 
-Motion Track now applies motion directly in C++; Automation is not invoked.
-The existing OpenCV engine, markers, forward/backward runs, handoff stitching,
-selected range, frame cache, preview and graph remain the tracking system.
+Track → inspect → Apply keeps each selected dialogue as **one original event**,
+with the same ID, native millisecond start/end, fields, folds and extradata.
+The OpenCV engine, markers, forward/backward runs, handoff stitching, preview,
+graphs, cleanup and AE export remain acquisition tools.
 
-Select dialogue events, open Motion Track, place a tracker square and press
-**Track Motion** (or use the existing directional tracking buttons). For an
-independent mask, press **Track for \clip**, place its tracker square, and press
-the same action again. Direction buttons operate on the displayed channel.
-Each channel retains its own markers, runs, handoff marks, mode and result.
-**Clear** clears the displayed channel; **New Session** binds the current
-selection/range and clears both channels.
+## Reference and composition
 
-**Minimize** hides the modeless dialog. Reopening the existing Motion Track
-command restores the same `DialogManager` instance. Neither hiding nor showing
-seeks video. Position/style the line normally in the main UI, then press
-**Apply**. The reference is read from `VideoController::GetFrameN()` at that
-instant, never from the tracker's preview frame. Subtitle-sync seeks caused by
-the generated selection are corrected back to that main playhead after commit.
+Apply reads the current **main video** frame after any Advanced Apply dialog.
+That frame must have a usable tracker sample. The tracker preview never owns
+the reference. Tracker coordinates convert from source-video pixels to script
+pixels, then become displacement from this reference. They never replace
+authored placement.
 
-## Native layers
+Generated position uses relative animated `\pos`, including automatic placement
+resolved by Mangetsu from alignment, style/event margins and layout. Relative Y
+is author-facing: up is `~+N`, down is `~-N`. Screen-space tracker Y is therefore
+negated at serialization, for both `\pos` and `\clippos`.
 
-* `motion_track_optimizer`: independent rendered-unit signals, common minimal
-  breakpoints, hold detection, media-time interpolation and deterministic
-  bounded-error simplification.
-* `motion_track_apply`: pure event planning using `AssDialogue::ParseTags`,
-  `AssOverrideTag`, native style/reset defaults and project VFR timecodes.
-  Source-video pixels convert into PlayRes coordinates, with image-space
-  rotations conjugated through the coordinate scaling. ASS rotation has the
-  opposite sign to the tracker's clockwise image-space rotation.
-* `DialogMotionTrack`: owns both tracking channels, source identity and validity,
-  options and passive status; reads main reference and passes plans to commit.
-* `motion_track_commit`: installs prepared event families and reverts all members
-  of families selected through any generated event. The window changes selection
-  before one native `AssFile::Commit` for Apply or Revert.
+Uniform tracker zoom multiplies authored object scale:
+`authored_scale(t) * tracker_scale(t) / tracker_scale(reference)`.
+Generated `\scale~+N` / `\scale~-N` values express the difference in percentage
+points. Glyph axis scale, borders, shadow, blur and spacing remain authored;
+Mangetsu object scale handles their local geometry.
 
-`ass_file_extradata.cpp` factors existing production extradata operations out of
-`ass_file.cpp` so actual family installation/revert can be exercised by the
-existing non-GUI gtest runner. Missing IDs no longer accidentally resolve to a
-different plugin's metadata, and removal maps by ID rather than list index.
+Rotation uses explicit relative `\frz~+N` / `\frz~-N`. Native tracker rotation
+is clockwise in image space, so its unwrapped reference-relative delta is
+negated for ASS. Static or animated authored rotation remains in its original
+tag order; generated scalar deltas add to it.
 
-## Optimization and tags
+Native parsed tags evaluate object/clip scale, including absolute and relative
+operands, all four transform forms, acceleration, overlapping scalar transforms
+and resets. Animated zoom composition is evaluated at every integer renderer
+timestamp across the event before fitting. Tracking interpolates between actual
+media frame timestamps and holds boundary samples outside them. This captures
+authored animation between video samples rather than assuming a product of
+animations is necessarily linear.
 
-Default absolute error bounds: 0.35 script pixels for position/clip points,
-0.20 percentage points for scale, 0.08 degrees for rotation, and 0.05 pixels for
-outline/shadow/blur. Completely stationary signals collapse to a hold. Holds
-need at least three bounded-range samples; small steps of a slow drift do not
-qualify just because individual steps are tiny. Hold endpoints become mandatory
-knots, after first preferring a single accurate global linear fit. Iterative
-Douglas-Peucker simplification checks each independent signal
-in actual media time. A stationary axis is suppressed even while another moves.
-Automatic uses exact sampled events when more than three regions and more than
-one region per three samples would be necessary. Force optimized retains the
-piecewise result with a 1.5x bounded tolerance. Force frame-by-frame bypasses
-optimization, including merging identical events.
+For inline overrides, a marked inverse scalar layer removes the preceding
+tracking contribution before the original overrides run; a new marked layer
+composes with the resulting span state. This supports later resets and per-span
+scales/rotations. Global position intents are inserted only once. Authored text
+and tags are copied byte for byte.
 
-Translation needs only `\pos`/`\move`; defaults for scale/rotation are not
-materialized for a translation-only track. Relevant numeric styling can be
-animated with `\t`. Existing scalar transforms are sampled and composed with
-tracking; unrelated effects retain their acceleration and are retimed after
-splitting. Advanced Apply can freeze relevant source scalar animations at the
-reference instead. Inline resets receive the defaults of their native style.
-Position/move duplicates are normalized. Unrelated tags/text are retained.
-Existing origins follow the object by default; fixed origin is an advanced choice.
-Moving origins require sampled geometry because standard ASS cannot animate org.
+## Simplification and Advanced Apply
 
-For clips, the separate track is the normal choice. Advanced Apply can follow
-the main track instead or preserve the clip. Rectangular clips can use standard
-ASS transforms. Vector clip drawing coordinates retain their drawing scale and
-commands. Rotated rectangles become vector polygons. Animated vector geometry
-uses sampled events in standard ASS. `\iclip` stays inverse.
-Only regions with moving vector geometry/origins require this fallback;
-optimized holds and independent stationary signals remain suppressed/compact.
+The optimizer uses iterative Douglas-Peucker in actual media time with exact
+shared endpoints. Default bounds are 0.35 script pixels, 0.20 percentage points,
+and 0.08 rotation degrees. X/Y fit together with an axis budget whose Euclidean
+error stays within the position tolerance: separate overlapping position-axis
+transforms would otherwise compete in Mangetsu.
 
-When the selected, available renderer is Mangetsu, translation-only clip motion
-uses stable original `\clip`/`\iclip` geometry plus `\clippos` and `\t`.
-`\clippos` is an offset, not a rotation/deformation primitive. Any actual
-scale/rotation in the clip track falls back to geometry. Advanced Apply can turn
-the extension off for standard ASS output. No `\distort`/`\perspective` is added.
+Scale, rotation, clip position and clip scale fit independently. Payloads with
+identical intervals combine. Static signals contribute no transforms; exact
+holds inside a moving path need no transform. Linear and move/stop combinations
+collapse into long intervals. Nonlinear paths retain the intervals their bounds
+require. Fits pass exactly through the reference state even on noisy tracks.
+Six decimal places prevent relative interval rounding drift.
 
-Subtitle-visible frame bounds use the native START/END conversions. Common
-split boundaries use centisecond precision; original outer times are preserved.
-Interpolation uses EXACT frame timestamps, matching the main video renderer.
-Events retain source fields. Identical adjacent static states merge except when
-Force frame-by-frame was requested or event-relative animation prevents merging.
-Native `Time::GetMilliseconds()` preserves unrounded outer timestamps and Revert
-metadata without changing the established ASS centisecond rendering conversion.
+Advanced Apply exposes:
 
-## Validity and Revert
+* **Automatic**: bounded fitting; difficult paths use exact sampled transform
+  intervals when fitting would retain nearly every sample.
+* **Force optimized**: always keep the bounded piecewise fit, without silently
+  enlarging the chosen tolerances.
+* **Force frame-by-frame transforms**: use consecutive video-sample transitions,
+  omit no-op payloads, and still keep one dialogue event.
+* X, Y, object Scale and Rotation; position/scale/rotation tolerances.
+* Rectangular/vector clip applicability and a separate **Track for \clip** pass,
+  the main motion track, or an unchanged clip.
 
-Identity checks cover active event, selected IDs, exact timing, visible/drawing
-content and karaoke assumptions. Ordinary position/style edits are allowed.
-Clip geometry/removal invalidates its own pass; tracking the clip again binds
-the new shape while retaining main motion. Document/coordinate/timecode changes
-require New Session. All required frames and the main reference must be tracked;
-gaps/lost samples are never silently interpolated as trustworthy tracking.
-Every rerun rebuilds result data; no stale cached application plan is used.
+Normal Apply uses automatic defaults. Mangetsu must be selected because these
+are Mangetsu extensions. There is no standard-ASS splitting fallback.
 
-Native `toshi-motion/v1` ASS extradata stores a random family token, original
-event data, exact milliseconds, member count and original extradata values.
-Revert restores the original event and removes the full generated family,
-preserving unrelated events and metadata. Values survive native extradata
-garbage collection and save/reload; no identifier is placed in visible text.
-Incomplete/duplicated families reject Revert rather than deleting ambiguous
-members. Native undo/redo separately retains its existing event/selection history.
+## Track for \clip
 
-## Current limits compared with Aegisub-Motion
+A separate Track for `\clip` pass obtains the same native samples; Apply uses
+relative `\clippos` for translation and `\clips` for uniform size. Rectangular/
+vector `\clip` and `\iclip` remain intact, including vector drawing scales.
+Existing clip offsets and clip-scale animations compose. Size is centered on
+authored geometry bounds according to Mangetsu. No vector paths are rebuilt.
 
-There is no imported AE/SRS dataset application, absolute-position mode or
-arbitrary shape deformation. Source Mangetsu curved motion and position/origin
-transforms require normalization before Apply. Native tracking produces translation, isotropic
-scale and image rotation; Apply supports X/Y scale signals if provided by the
-model. Source animated clips cannot yet be composed with an independent clip
-track; existing animated clip offsets must be removed first. Karaoke and colored
-Mangetsu fades requiring event splitting are rejected with a short reason;
-ordinary fades are retimed as explicit envelopes. Moving origins and animated
-vector geometry cannot stay compact under standard ASS. Very short frame periods
-which cannot form positive centisecond event ranges reject splitting. Perspective
-tools stay separate.
+A standalone clip pass can Apply without an object pass. When both are present,
+the selected X/Y/Scale/Rotation controls apply to both.
 
-`tests/tests/motion_track_apply.cpp` covers synthetic optimizer behavior, both
-clip paths, source animation/reset/fade preservation, VFR boundaries, stale
-identity checks, production extradata and whole-family Revert. Build/tests run
-through the existing GitHub Actions Meson CI; no local compilation is required.
+## Ownership, Reapply and Revert
 
-Reference inspection: [Aegisub-Motion at 897cd7f](https://github.com/TypesettingTools/Aegisub-Motion/tree/897cd7f6a63844849a9c566d0df337b3ba057091),
-especially `MotionHandler.moon`, `DataHandler.moon`, `Line.moon`, `Transform.moon`,
-and the main script's preprocessing/postprocessing and revert processors.
-Mangetsu clip offset behavior was checked in its native
-[parser](https://github.com/amanosatosi/libassmod/blob/mangetsu/libass/ass_parse.c)
-and [renderer](https://github.com/amanosatosi/libassmod/blob/mangetsu/libass/ass_render.c).
+Only complete override blocks beginning with the exact annotation
+`[toshiban native motion v2]` belong to this implementation. This is a valid
+Mangetsu annotation, and the payload is ordinary readable tags.
+
+Reapply strips only owned blocks before replanning. Revert removes them in
+place, preserving unrelated transforms and edits made after Apply. Markers
+survive save/reload without a sidecar or original-text snapshot. Undo/redo uses
+the existing native commit system.
+
+Legacy `toshi-motion/v1` extradata families can still be reverted with the old
+member-count integrity checks. Revert an old split family once before applying
+the new layer. New Apply never creates v1 families.
+
+## Explicit limits
+
+* Authored animated position (`\move`, curved motion, transformed `\pos`) competes
+  with changing tracked position under Mangetsu intent semantics. Disable X/Y
+  or use static authored placement; other components still work. Stationary
+  position tracking leaves these animations unchanged.
+* `\clippos`/`\clips` have no rotation or anisotropic size representation.
+  Nonuniform enabled zoom or changing enabled clip rotation is rejected with
+  instructions to disable that component or preserve the clip.
+* Animated clip geometry and `\movevc` cannot safely compose with clip state.
+  Multiple legacy clip shapes are rejected because enabling clip transforms
+  changes their first-vector/composition behavior to replacement semantics.
+  Existing clip-transform scripts already use replacement semantics.
+* Malformed/non-finite motion values, unsupported numeric spelling, malformed
+  transform timing/acceleration and deeply nested effects receive an explanation.
+* Explicit `\org` stays authored; Mangetsu does not animate origins. Rotation and
+  zoom retain the renderer-defined pivot semantics.
+
+## Validation and references
+
+`tests/tests/motion_track_apply.cpp` evaluates emitted tags against an independent
+numeric renderer-contract oracle and covers bounded nonlinear fits, reference
+anchoring, original identity/timing, multi-selection, ownership, span resets,
+scalar animation and all clip forms. Python CI contracts check the main-video
+boundary, one-event commit invariant, provider requirement and UI mode wording.
+Existing GitHub Actions compile and run tests; no local build is used.
+
+Reference separation:
+
+* [Aegisub-Motion DataHandler](https://github.com/TypesettingTools/Aegisub-Motion/blob/master/src/DataHandler.moon)
+  describes acquisition/import resolution and rotation conventions.
+* The supplied `toshiban_motion_track_helper (1).lua` is the behavioral baseline
+  for one generated layer and relative reference-state application.
+* Current Mangetsu [motion/object scale](https://github.com/amanosatosi/libassmod/blob/mangetsu/docs/motion-scale.md),
+  [relative numbers](https://github.com/amanosatosi/libassmod/blob/mangetsu/docs/relative-numbers.md),
+  [clip transforms](https://github.com/amanosatosi/libassmod/blob/mangetsu/docs/clip-transforms.md)
+  and [parser](https://github.com/amanosatosi/libassmod/blob/mangetsu/libass/ass_parse.c)
+  are the serialization authority (renderer commit
+  84808c76ca6758aa9347564941d4e185da57ea0d).

@@ -14,18 +14,18 @@ struct MotionTolerances {
 	double position = 0.35;
 	double scale = 0.20;
 	double rotation = 0.08;
-	double outline = 0.05;
 };
 
 struct MotionSample {
 	int frame = 0;
 	double time = 0;
 	std::vector<double> values;
+	bool reference = false; // fit must pass through the authored reference exactly
 };
 
 struct MotionRegion {
 	size_t first = 0;
-	size_t last = 0; // shared interpolation knot; the following region owns it
+	size_t last = 0; // shared interpolation knot within the same dialogue event
 	std::vector<double> from;
 	std::vector<double> to;
 	bool stationary = false;

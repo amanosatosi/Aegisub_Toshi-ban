@@ -3,13 +3,10 @@
 #include "../ass_file.h"
 #include <libaegisub/cajun/elements.h>
 #include <libaegisub/cajun/reader.h>
-#include <libaegisub/cajun/writer.h>
 
 #include <algorithm>
-#include <chrono>
 #include <map>
 #include <memory>
-#include <random>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -22,42 +19,6 @@ struct Family {
 	std::vector<std::pair<std::string,std::string>> extra;
 	int count = 0;
 };
-
-std::string NewToken() {
-	static std::mt19937_64 random(std::random_device{}());
-	std::ostringstream s;
-	s << std::hex << random() << '-' << random();
-	return s.str();
-}
-
-std::string Encode(AssFile const& file, AssDialogue const& source, int count) {
-	json::Object object;
-	object["version"] = json::Integer(1);
-	object["family"] = json::String(NewToken());
-	object["count"] = json::Integer(count);
-	// EntryData carries style/actor/effect/margins/layer/comment/text. Store
-	// exact native millisecond times separately to avoid centisecond rounding.
-	object["original"] = json::String(source.GetEntryData());
-	object["start"] = json::Integer(source.Start.GetMilliseconds());
-	object["end"] = json::Integer(source.End.GetMilliseconds());
-	json::Object fields;
-	fields["text"] = json::String(source.Text.get());
-	fields["style"] = json::String(source.Style.get());
-	fields["actor"] = json::String(source.Actor.get());
-	fields["effect"] = json::String(source.Effect.get());
-	fields["layer"] = json::Integer(source.Layer);
-	fields["comment"] = json::Boolean(source.Comment);
-	for (size_t i = 0; i < 3; ++i) fields["margin"+std::to_string(i)] = json::Integer(source.Margin[i]);
-	object["fields"] = std::move(fields);
-	json::Object extra;
-	for (auto const& entry : file.GetExtradata(source.ExtradataIds.get()))
-		if (entry.key != MotionFamilyKey) extra[entry.key] = json::String(entry.value);
-	// Values, rather than old IDs, survive extradata garbage collection and save/reload.
-	object["extra"] = std::move(extra);
-	std::ostringstream stream;
-	agi::JsonWriter::Write(object,stream);
-	return stream.str();
-}
 
 Family Decode(std::string const& text) {
 	try {
@@ -103,55 +64,33 @@ AssDialogue* Find(AssFile& file, int id) {
 }
 
 bool CanRevertMotion(AssFile const& file, AssDialogue const& line) {
-	return !Metadata(file,line).empty();
+	return HasMotionLayers(line.Text.get()) || !Metadata(file,line).empty();
 }
 
 MotionCommitSelection InstallMotionApplications(AssFile& file,
-	std::vector<MotionPlannedSource> const& plans, int active_source, int reference_time) {
-	struct Prepared {
-		AssDialogue* source;
-		std::string metadata;
-		std::vector<std::unique_ptr<AssDialogue>> events;
-	};
+	std::vector<MotionPlannedSource> const& plans, int active_source, int) {
+	struct Prepared { AssDialogue* source; std::string text; };
 	std::vector<Prepared> prepared;
 	std::set<int> ids;
+	// Validate and allocate all text before changing any selected line.
 	for (auto const& plan : plans) {
 		auto source = Find(file,plan.source_id);
-		if (!source || !ids.insert(plan.source_id).second || plan.application.events.empty())
-			throw std::invalid_argument("The source subtitle changed before Apply.");
-		if (CanRevertMotion(file,*source)) throw std::invalid_argument("Revert this motion family before applying another track.");
-		Prepared item{source,Encode(file,*source,static_cast<int>(plan.application.events.size())),{}};
-		for (auto const& event : plan.application.events) {
-			auto generated = std::make_unique<AssDialogue>();
-			int id = generated->Id;
-			static_cast<AssDialogueBase&>(*generated) = event;
-			generated->Id = id;
-			generated->Fold = {}; // a source fold must not be duplicated on each split
-			// Preserve a fold delimiter only on its proper outer event.
-			bool keep_fold = source->Fold.hasFold() && (source->Fold.isEnd() ?
-				item.events.size()+1 == plan.application.events.size() : item.events.empty());
-			if (!keep_fold) file.DeleteExtradataValue(*generated,"_aegi_folddata");
-			item.events.push_back(std::move(generated));
-		}
-		prepared.push_back(std::move(item));
+		if (!source || !ids.insert(plan.source_id).second || plan.application.events.size() != 1)
+			throw std::invalid_argument("Apply requires exactly one event per original subtitle.");
+		auto const& event = plan.application.events.front();
+		if (event.Start.GetMilliseconds() != source->Start.GetMilliseconds() ||
+			event.End.GetMilliseconds() != source->End.GetMilliseconds())
+			throw std::invalid_argument("Apply cannot change subtitle timing.");
+		if (!Metadata(file,*source).empty())
+			throw std::invalid_argument("Revert the legacy split motion family once before applying Mangetsu tracking.");
+		prepared.push_back({source,event.Text.get()});
 	}
 	MotionCommitSelection selection;
-	size_t count = 0;
-	for (auto const& item : prepared) count += item.events.size();
-	selection.selected.reserve(count);
-	for (auto& item : prepared) for (auto& event : item.events)
-		file.SetExtradataValue(*event,MotionFamilyKey,item.metadata);
-	for (auto& item : prepared) {
-		auto position = file.Events.iterator_to(*item.source);
-		for (auto& event : item.events) {
-			auto raw = event.release();
-			file.Events.insert(position,*raw);
-			selection.selected.push_back(raw);
-			if (item.source->Id == active_source && (!selection.active ||
-				(raw->Start <= reference_time && raw->End > reference_time))) selection.active = raw;
-		}
-		file.Events.erase(position);
-		delete item.source;
+	selection.selected.reserve(prepared.size());
+	for (auto const& item : prepared) {
+		item.source->Text = item.text;
+		selection.selected.push_back(item.source);
+		if (item.source->Id == active_source) selection.active = item.source;
 	}
 	if (!selection.active && !selection.selected.empty()) selection.active = selection.selected.front();
 	return selection;
@@ -160,15 +99,19 @@ MotionCommitSelection InstallMotionApplications(AssFile& file,
 MotionCommitSelection RevertMotionFamilies(AssFile& file,
 	std::vector<AssDialogue*> const& selected, int active_id) {
 	std::map<std::string,Family> families;
+	std::vector<std::pair<AssDialogue*,std::string>> layers;
 	std::string active_family;
 	for (auto line : selected) {
 		auto metadata = Metadata(file,*line);
-		if (metadata.empty()) continue;
+		if (metadata.empty()) {
+			if (HasMotionLayers(line->Text.get())) layers.emplace_back(line,RemoveMotionLayers(line->Text.get()));
+			continue;
+		}
 		auto family = Decode(metadata);
 		if (line->Id == active_id) active_family = family.token;
 		families.emplace(family.token,std::move(family));
 	}
-	if (families.empty()) throw std::invalid_argument("Select a generated motion event to Revert.");
+
 	std::map<std::string,std::vector<AssDialogue*>> members;
 	for (auto& line : file.Events) {
 		auto metadata = Metadata(file,line);
@@ -198,6 +141,15 @@ MotionCommitSelection RevertMotionFamilies(AssFile& file,
 		selection.selected.push_back(restored);
 		if (item.first == active_family) selection.active = restored;
 	}
+	// New tracking layers are removed in place. User edits made after Apply,
+	// unrelated transforms, folds, IDs, exact timing and extradata survive.
+	for (auto const& layer : layers) {
+		auto line = layer.first;
+		line->Text = layer.second;
+		selection.selected.push_back(line);
+		if (line->Id == active_id) selection.active = line;
+	}
+	if (selection.selected.empty()) throw std::invalid_argument("Select a subtitle with generated tracking to Revert.");
 	if (!selection.active) selection.active = selection.selected.front();
 	return selection;
 }

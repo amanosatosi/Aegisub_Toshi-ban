@@ -18,7 +18,8 @@ struct MotionCommitSelection {
 };
 
 // All plans/metadata are validated before mutation. The caller updates selection
-// before making exactly one AssFile::Commit, so native undo/redo owns the family.
+// before making exactly one AssFile::Commit. New applications edit text in place;
+// legacy v1 split-family metadata is supported only for migration via Revert.
 MotionCommitSelection InstallMotionApplications(AssFile& file,
 	std::vector<MotionPlannedSource> const& plans, int active_source, int reference_time = -1);
 MotionCommitSelection RevertMotionFamilies(AssFile& file,

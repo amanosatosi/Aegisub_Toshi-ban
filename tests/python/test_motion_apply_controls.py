@@ -55,6 +55,18 @@ class NativeMotionContracts(unittest.TestCase):
         self.assertNotIn('"\\\\distort', apply)
         self.assertNotIn('"\\\\perspective', apply)
 
+    def test_apply_modes_only_serialize_one_original_event(self):
+        apply = (ROOT / "src/motion_tracking/motion_track_apply.cpp").read_text()
+        commit = (ROOT / "src/motion_tracking/motion_track_commit.cpp").read_text()
+        install = commit[commit.index("MotionCommitSelection InstallMotionApplications"):commit.index("MotionCommitSelection RevertMotionFamilies")]
+        self.assertEqual(apply.count("output.events.push_back("), 1)
+        self.assertIn("plan.application.events.size() != 1", install)
+        self.assertNotIn("file.Events.insert", install)
+        self.assertNotIn("file.Events.erase", install)
+        self.assertIn("RemoveMotionLayers(input.Text.get())", apply)
+        self.assertIn("Force frame-by-frame transforms", self.window)
+        self.assertIn("Select the Mangetsu subtitle renderer", self.window)
+
     def test_revert_does_not_rebind_a_different_familys_track(self):
         revert = method(self.window, "RevertMotion")
         self.assertIn("!applied_event_ids.count(line->Id)", revert)

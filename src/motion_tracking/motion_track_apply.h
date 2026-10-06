@@ -21,15 +21,10 @@ struct MotionApplyOptions {
 	bool position_y = true;
 	bool scale = true;
 	bool rotation = true;
-	bool follow_origin = true;
-	bool border = true;
-	bool shadow = true;
-	bool blur = true;
-	bool preserve_transforms = true;
+	bool object_motion = true; // false for a standalone Track for \\clip pass
 	ClipMotionSource clip_source = ClipMotionSource::SeparateTrack;
 	bool rectangular_clips = true;
 	bool vector_clips = true;
-	bool mangetsu_clippos = false;
 };
 
 using MotionStyleResolver = std::function<AssStyle const*(std::string const&)>;
@@ -49,6 +44,10 @@ MotionApplication BuildMotionApplication(AssDialogue const& source,
 
 bool HasMotionClip(AssDialogue const& line);
 std::string MotionClipSignature(AssDialogue const& line);
+// Exact owned blocks only. Original text, including user transforms, is byte-preserved.
+constexpr char MotionLayerMarker[] = "[toshiban native motion v2]";
+std::string RemoveMotionLayers(std::string const& text);
+bool HasMotionLayers(std::string const& text);
 
 // Captures content assumptions, while allowing ordinary positioning/styling.
 struct MotionSourceIdentity {

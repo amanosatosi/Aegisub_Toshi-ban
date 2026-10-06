@@ -912,7 +912,6 @@ DialogMotionTrack::DialogMotionTrack(agi::Context *c)
 	result.source_width = context->project->VideoProvider()->GetWidth();
 	result.source_height = context->project->VideoProvider()->GetHeight();
 	other_channel.result = result;
-	advanced_options.mangetsu_clippos = OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu";
 	CaptureSources();
 	frame_cache = agi::make_unique<MotionTrackFrameCache>([=](int frame) {
 		return context->videoController->GetFrame(frame, true);
@@ -1953,12 +1952,12 @@ void DialogMotionTrack::UpdateApplyStatus() {
 	reference_label->SetLabel(fmt_wx("Main video reference: %d",reference));
 	target_label->SetLabel(editing_clip ? _("Tracking: \\clip") : _("Tracking: subtitle"));
 	std::string reason = invalid_reason;
-	if (reason.empty() && MainTrack().frames.empty()) reason = "Track the subtitle object first.";
+	if (reason.empty() && MainTrack().frames.empty() && ClipTrack().frames.empty()) reason = "Track the subtitle object or use Track for \\clip first.";
 	auto contains = [&](auto const& data, int frame) {
 		auto it = std::lower_bound(data.frames.begin(),data.frames.end(),frame,[](auto const& sample,int f) { return sample.frame < f; });
 		return it != data.frames.end() && it->frame == frame && it->state != motion_tracking::MotionTrackState::Lost;
 	};
-	if (reason.empty() && !contains(MainTrack(),reference)) reason = "Seek the main video to a tracked reference frame.";
+	if (reason.empty() && !MainTrack().frames.empty() && !contains(MainTrack(),reference)) reason = "Seek the main video to a tracked reference frame.";
 	if (reason.empty() && !ClipTrack().frames.empty() && !contains(ClipTrack(),reference))
 		reason = "The clip track does not cover the main video reference frame.";
 	if (reason.empty()) {
@@ -1966,7 +1965,7 @@ void DialogMotionTrack::UpdateApplyStatus() {
 			int first = context->videoController->FrameAtTime(agi::Time(source.start),agi::vfr::START);
 			int last = context->videoController->FrameAtTime(agi::Time(source.end),agi::vfr::END);
 			for (int f = first; f <= last; ++f) {
-				if (!contains(MainTrack(),f) || (!source.clip.empty() && !ClipTrack().frames.empty() && !contains(ClipTrack(),f))) {
+				if ((!MainTrack().frames.empty() && !contains(MainTrack(),f)) || (!source.clip.empty() && !ClipTrack().frames.empty() && !contains(ClipTrack(),f))) {
 					reason = "Track the full selected subtitle range before Apply."; break;
 				}
 			}
@@ -1975,7 +1974,7 @@ void DialogMotionTrack::UpdateApplyStatus() {
 	}
 	apply_button->Enable(reason.empty() && !tracking);
 	// Advanced Apply can deliberately ignore an incomplete clip track.
-	advanced_button->Enable(invalid_reason.empty() && !MainTrack().frames.empty() && !tracking);
+	advanced_button->Enable(invalid_reason.empty() && (!MainTrack().frames.empty() || !ClipTrack().frames.empty()) && !tracking);
 	bool revert = false, clip = false;
 	for (auto line : context->selectionController->GetSortedSelection()) {
 		revert |= motion_tracking::CanRevertMotion(*context->ass,*line);
@@ -2066,18 +2065,18 @@ void DialogMotionTrack::NewSession() {
 }
 
 namespace {
-bool AdvancedMotionApply(wxWindow* parent, motion_tracking::MotionApplyOptions& options, bool mangetsu) {
+bool AdvancedMotionApply(wxWindow* parent, motion_tracking::MotionApplyOptions& options) {
 	using namespace motion_tracking;
 	wxDialog dialog(parent,-1,_("Advanced Motion Apply"));
 	auto layout = new wxBoxSizer(wxVERTICAL);
 	auto encoding = new wxChoice(&dialog,-1);
 	encoding->Append(_("Automatic"));
 	encoding->Append(_("Force optimized"));
-	encoding->Append(_("Force frame-by-frame"));
+	encoding->Append(_("Force frame-by-frame transforms"));
 	encoding->SetSelection(static_cast<int>(options.encoding));
 	layout->Add(new wxStaticText(&dialog,-1,_("Motion encoding")),0,wxALL,6);
 	layout->Add(encoding,0,wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM,6);
-	layout->Add(new wxStaticText(&dialog,-1,_("Uses the current main video frame. Force optimized permits piecewise regions.")),0,wxALL,6);
+	layout->Add(new wxStaticText(&dialog,-1,_("Uses the current main video frame. Every mode keeps one event per subtitle.")),0,wxALL,6);
 	auto grid = new wxFlexGridSizer(2,4,12);
 	std::vector<std::pair<wxCheckBox*,bool*>> checks;
 	auto check = [&](wxString label, bool& value) {
@@ -2091,16 +2090,8 @@ bool AdvancedMotionApply(wxWindow* parent, motion_tracking::MotionApplyOptions& 
 	check(_("Position Y"),options.position_y);
 	check(_("Scale"),options.scale);
 	check(_("Rotation"),options.rotation);
-	check(_("Move existing origin with object"),options.follow_origin);
-	check(_("Scale border"),options.border);
-	check(_("Scale shadow"),options.shadow);
-	check(_("Scale blur"),options.blur);
-	check(_("Preserve source motion animations"),options.preserve_transforms);
 	check(_("Apply rectangular clips"),options.rectangular_clips);
 	check(_("Apply vector clips"),options.vector_clips);
-	auto clippos = check(_("Mangetsu \\clippos for translation"),options.mangetsu_clippos);
-	clippos->Enable(mangetsu);
-	if (!mangetsu) { clippos->SetValue(false); options.mangetsu_clippos = false; }
 	layout->Add(grid,0,wxALL,6);
 	auto clip = new wxChoice(&dialog,-1);
 	clip->Append(_("Separate Track for \\clip"));
@@ -2121,7 +2112,6 @@ bool AdvancedMotionApply(wxWindow* parent, motion_tracking::MotionApplyOptions& 
 	field(_("Position/clip tolerance (script px)"),options.tolerance.position,0.01,2);
 	field(_("Scale tolerance (percentage points)"),options.tolerance.scale,0.01,1);
 	field(_("Rotation tolerance (degrees)"),options.tolerance.rotation,0.01,0.5);
-	field(_("Border/shadow/blur tolerance (px)"),options.tolerance.outline,0.01,0.5);
 	layout->Add(tolerances,0,wxALL,6);
 	layout->Add(dialog.CreateStdDialogButtonSizer(wxOK | wxCANCEL),0,wxEXPAND | wxALL,6);
 	dialog.SetSizerAndFit(layout);
@@ -2146,17 +2136,20 @@ void DialogMotionTrack::ApplyMotion(bool advanced) {
 	auto providers = SubtitlesProviderFactory::GetClasses();
 	bool mangetsu = OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu" &&
 		std::find(providers.begin(),providers.end(),"Mangetsu") != providers.end();
+	if (!mangetsu) {
+		wxMessageBox(_("Select the Mangetsu subtitle renderer before applying native tracking."),_("Motion Apply"),wxOK | wxICON_INFORMATION,this);
+		return;
+	}
 	motion_tracking::MotionApplyOptions options;
-	options.mangetsu_clippos = mangetsu;
 	if (advanced) {
 		options = advanced_options;
-		options.mangetsu_clippos = mangetsu && options.mangetsu_clippos;
-		if (!AdvancedMotionApply(this,options,mangetsu)) return;
+		if (!AdvancedMotionApply(this,options)) return;
 		advanced_options = options;
 		CheckSession(); // modal dialog may have dispatched selection/document changes
 		if (!invalid_reason.empty()) return;
 	}
 	// Read directly at Apply time; the tracker preview is never a reference.
+	options.object_motion = !MainTrack().frames.empty();
 	int reference = context->videoController->GetFrameN();
 	int width, height;
 	context->ass->GetResolution(width,height);
@@ -2183,7 +2176,10 @@ void DialogMotionTrack::ApplyMotion(bool advanced) {
 		// main playhead at the frame the user chose for this operation.
 		context->videoController->JumpToFrame(reference);
 		applying = false;
-		invalid_reason = "Motion applied. Revert or start a new session before applying again.";
+		auto summary = apply_summary;
+		CaptureSources();
+		apply_summary = std::move(summary);
+		for (auto line : installed.selected) applied_event_ids.insert(line->Id);
 		UpdateApplyStatus();
 	}
 	catch (std::exception const& error) {

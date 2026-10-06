@@ -289,6 +289,7 @@ static void load_protos() {
 	proto[i].name = "\\furipos";
 	proto[i].AddParam(VariableDataType::FLOAT, AssParameterClass::ABSOLUTE_SIZE_X);
 	proto[i++].AddParam(VariableDataType::FLOAT, AssParameterClass::ABSOLUTE_SIZE_Y);
+	proto[i++].Set("\\clips", VariableDataType::FLOAT);
 	proto[i++].Set("\\furistyle", VariableDataType::INT);
 	proto[i++].Set("\\furisx", VariableDataType::FLOAT);
 	proto[i++].Set("\\furisy", VariableDataType::FLOAT);
