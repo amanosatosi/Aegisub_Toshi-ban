@@ -22,7 +22,6 @@ inline auto ImportPacket(std::string const& packet, bool srt = false) {
 class CaptureProvider final : public SubtitlesProvider {
 	void LoadSubtitles(const char *data, size_t len) override { script.assign(data, len); }
 public:
-	using SubtitlesProvider::LoadSubtitles;
 	std::string script;
 	void DrawSubtitles(VideoFrame&, double) override { }
 };
@@ -46,7 +45,7 @@ inline std::string ImportedScript(size_t padding) {
 		parser.AddLine(imported->second);
 	}
 	CaptureProvider provider;
-	provider.LoadSubtitles(&file);
+	static_cast<SubtitlesProvider&>(provider).LoadSubtitles(&file);
 	return provider.script;
 }
 }
