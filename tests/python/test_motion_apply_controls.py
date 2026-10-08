@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def method(source, name):
-    start = source.index("void DialogMotionTrack::" + name + "(")
+    start = source.index("DialogMotionTrack::" + name + "(")
     body = source.index("{", start)
     depth = 1
     end = body + 1
