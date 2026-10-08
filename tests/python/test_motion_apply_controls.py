@@ -67,6 +67,15 @@ class NativeMotionContracts(unittest.TestCase):
         self.assertIn("Force frame-by-frame transforms", self.window)
         self.assertIn("Select the Mangetsu subtitle renderer", self.window)
 
+    def test_tracking_samples_are_usable_by_apply(self):
+        track_step = method(self.window, "TrackOne")
+        self.assertIn("ConfirmTrackingSource", track_step)
+        self.assertNotIn("source_marker, 1.0, motion_tracking::MotionTrackState::Untracked", track_step)
+        track_start = method(self.window, "StartTrackRunHere")
+        self.assertIn("MotionTrackState::Tracked", track_start)
+        status = method(self.window, "UpdateApplyStatus")
+        self.assertIn("IsUsableMotionTrackState", status)
+
     def test_revert_does_not_rebind_a_different_familys_track(self):
         revert = method(self.window, "RevertMotion")
         self.assertIn("!applied_event_ids.count(line->Id)", revert)

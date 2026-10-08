@@ -1702,7 +1702,7 @@ int DialogMotionTrack::StartTrackRunHere(int target_frame) {
 		current_frame,
 		marker,
 		1.0,
-		motion_tracking::MotionTrackState::Untracked
+		motion_tracking::MotionTrackState::Tracked
 	});
 
 	int existing = -1;
@@ -1784,7 +1784,11 @@ void DialogMotionTrack::TrackOne(int target_frame) {
 	int source_frame = current_frame;
 	auto search_marker = GetCurrentMarker();
 	auto source_marker = search_marker;
-	StoreSegmentFrame(segment_index, source_frame, source_marker, 1.0, motion_tracking::MotionTrackState::Untracked);
+	// This source frame is a valid observation. Downgrading it to Untracked
+	// made Apply reject all but the last frame of an otherwise successful run.
+	// Preserve an existing weak/predicted observation when tracking continues.
+	auto confirmed = motion_tracking::ConfirmTrackingSource(segment,source_frame,source_marker);
+	StoreSegmentFrame(segment_index,source_frame,source_marker,confirmed.confidence,confirmed.state);
 
 	try {
 		motion_tracking::MotionTrackEngine engine;
@@ -1955,7 +1959,7 @@ void DialogMotionTrack::UpdateApplyStatus() {
 	if (reason.empty() && MainTrack().frames.empty() && ClipTrack().frames.empty()) reason = "Track the subtitle object or use Track for \\clip first.";
 	auto contains = [&](auto const& data, int frame) {
 		auto it = std::lower_bound(data.frames.begin(),data.frames.end(),frame,[](auto const& sample,int f) { return sample.frame < f; });
-		return it != data.frames.end() && it->frame == frame && it->state != motion_tracking::MotionTrackState::Lost;
+		return it != data.frames.end() && it->frame == frame && motion_tracking::IsUsableMotionTrackState(it->state);
 	};
 	if (reason.empty() && !MainTrack().frames.empty() && !contains(MainTrack(),reference)) reason = "Seek the main video to a tracked reference frame.";
 	if (reason.empty() && !ClipTrack().frames.empty() && !contains(ClipTrack(),reference))

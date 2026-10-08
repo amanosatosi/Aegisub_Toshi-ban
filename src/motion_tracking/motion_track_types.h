@@ -39,6 +39,14 @@ enum class MotionTrackState {
 	Lost
 };
 
+// Only a confirmed sample can become a renderer/apply motion reference.
+// A user-placed anchor becomes confirmed when a track run starts.
+inline bool IsUsableMotionTrackState(MotionTrackState state) {
+	return state == MotionTrackState::Tracked ||
+		state == MotionTrackState::WeakTracked ||
+		state == MotionTrackState::Predicted;
+}
+
 struct MotionTrackFrame {
 	int frame = 0;
 	double x = 0.0;
