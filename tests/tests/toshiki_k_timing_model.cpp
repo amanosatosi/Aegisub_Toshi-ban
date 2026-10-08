@@ -2,6 +2,7 @@
 
 #include "ass_dialogue.h"
 #include "ass_karaoke.h"
+#include "toshiki_timing_draft.h"
 
 TEST(AssKaraoke, ToshikiTiming_InsertAndDragPreservesTotalDuration) {
 	AssDialogue dia;
@@ -95,4 +96,34 @@ TEST(AssKaraoke, ToshikiTiming_ReopenCommittedLineWithoutDrift) {
 	EXPECT_EQ(200, reopened.begin()->duration);
 	EXPECT_EQ(150, (reopened.begin() + 1)->duration);
 	EXPECT_EQ(150, (reopened.begin() + 2)->duration);
+}
+
+TEST(ToshikiTiming, EarlierAssignedClickDoesNotAppendZeroDurationCut) {
+	EXPECT_FALSE(toshiki_timing::CanAppendBoundary(120, 300, 500));
+	EXPECT_FALSE(toshiki_timing::CanAppendBoundary(501, 300, 500));
+	EXPECT_TRUE(toshiki_timing::CanAppendBoundary(300, 300, 500)); // Explicit zero slot
+	EXPECT_TRUE(toshiki_timing::CanAppendBoundary(360, 300, 500));
+}
+
+TEST(ToshikiTiming, ReCutLeftSideRetimesAndRightSideReviews) {
+	// Split the 100-200ms slot without touching its original 200ms end.
+	std::vector<int> boundaries{200, 200, 350};
+	std::vector<size_t> recuts{0};
+	EXPECT_EQ(0, toshiki_timing::FindReCutBoundary(boundaries, recuts, 100, 150));
+	EXPECT_EQ(-1, toshiki_timing::FindReCutBoundary(boundaries, recuts, 100, 250));
+	boundaries[0] = 150; // The left-click places the fresh cut.
+	EXPECT_EQ(0, toshiki_timing::FindReCutBoundary(boundaries, recuts, 100, 120));
+	EXPECT_EQ(-1, toshiki_timing::FindReCutBoundary(boundaries, recuts, 100, 175));
+	recuts.clear(); // Commit turns the cuts into ordinary timed segments.
+	EXPECT_EQ(-1, toshiki_timing::FindReCutBoundary(boundaries, recuts, 100, 120));
+}
+
+TEST(ToshikiTiming, ReCutIndicesSurviveAdditionalSplitsAndJoins) {
+	std::vector<size_t> recuts{1};
+	toshiki_timing::InsertReCut(recuts, 0);
+	EXPECT_EQ((std::vector<size_t>{2, 0}), recuts);
+	toshiki_timing::RemoveBoundaryReCut(recuts, 0);
+	EXPECT_EQ((std::vector<size_t>{1}), recuts);
+	toshiki_timing::RemoveBoundaryReCut(recuts, 1);
+	EXPECT_TRUE(recuts.empty());
 }

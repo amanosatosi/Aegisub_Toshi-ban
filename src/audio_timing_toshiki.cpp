@@ -67,6 +67,7 @@ class AudioTimingControllerToshiki final : public AudioTimingController {
 	size_t cur_syl = 0;
 	size_t assigned_boundary_count = 0;
 	std::vector<int> display_boundaries; ///< Explicitly assigned only; never provisional
+	std::vector<size_t> recut_boundaries; ///< New cuts in previously timed syllables, until commit
 	int pending_split_syl = -1;
 	int pending_remove_syl = -1;
 	bool reloading_karaoke = false;
@@ -98,6 +99,7 @@ class AudioTimingControllerToshiki final : public AudioTimingController {
 	int AssignBoundary(int ms);
 	int FindNearbyBoundary(int ms, int sensitivity, bool assigned_only) const;
 	int MoveBoundary(ToshikiKTimingMarker *marker, int new_position);
+	bool PlayAssignedRange(int ms) const;
 	bool IsSingleUntimedSlot() const;
 	size_t AssignedSlotCount() const;
 
@@ -279,6 +281,7 @@ void AudioTimingControllerToshiki::Commit() {
 	kara->SetTimingBoundaries(start_marker.GetPosition(), end_marker.GetPosition(), display_boundaries, false);
 	DoCommit();
 	display_boundaries.clear();
+	recut_boundaries.clear();
 	for (auto it = kara->begin(); it != kara->end(); ++it) {
 		if (it != kara->begin())
 			display_boundaries.push_back(it->start_time);
@@ -299,6 +302,7 @@ void AudioTimingControllerToshiki::Revert() {
 	pending_remove_syl = -1;
 	active_drag_marker = nullptr;
 	selected_tag_syl = -1;
+	recut_boundaries.clear();
 	had_committed_timing = false;
 
 	if (!active_line) {
@@ -364,8 +368,10 @@ void AudioTimingControllerToshiki::OnKaraokeSyllablesChanged() {
 		size_t remove_syl = static_cast<size_t>(pending_remove_syl);
 		if (remove_syl > 0) {
 			size_t boundary = remove_syl - 1;
-			if (boundary < display_boundaries.size())
+			if (boundary < display_boundaries.size()) {
 				display_boundaries.erase(display_boundaries.begin() + boundary);
+				toshiki_timing::RemoveBoundaryReCut(recut_boundaries, boundary);
+			}
 			if (boundary < assigned_boundary_count)
 				--assigned_boundary_count;
 			if (remove_syl <= cur_syl && cur_syl > 0)
@@ -383,6 +389,7 @@ void AudioTimingControllerToshiki::OnKaraokeSyllablesChanged() {
 			// slot at zero length. Coincident handles are resolved by drag direction.
 			int inserted = split_syl < display_boundaries.size() ? display_boundaries[split_syl] : end_marker.GetPosition();
 			display_boundaries.insert(display_boundaries.begin() + split_syl, inserted);
+			toshiki_timing::InsertReCut(recut_boundaries, split_syl);
 			++assigned_boundary_count;
 		}
 		pending_split_syl = -1;
@@ -470,6 +477,8 @@ int AudioTimingControllerToshiki::AssignBoundary(int ms) {
 
 	size_t index = assigned_boundary_count;
 	int minimum = index ? display_boundaries[index - 1] : start_marker.GetPosition();
+	if (!toshiki_timing::CanAppendBoundary(ms, minimum, end_marker.GetPosition()))
+		return -1;
 	int position = toshiki_timing::Clamp(ms, minimum, end_marker.GetPosition());
 	display_boundaries.push_back(position);
 	++assigned_boundary_count;
@@ -500,6 +509,19 @@ bool AudioTimingControllerToshiki::IsNearbyMarker(int ms, int sensitivity, bool)
 	return FindNearbyBoundary(ms, sensitivity, true) >= 0;
 }
 
+bool AudioTimingControllerToshiki::PlayAssignedRange(int ms) const {
+	// Read the controller's preview boundaries, not AssKaraoke's uncommitted
+	// durations. Playing an old syllable must never change the timing cursor.
+	for (size_t i = 0, count = std::min(AssignedSlotCount(), labels.size()); i < count; ++i) {
+		TimeRange const& range = labels[i].range;
+		if (ms >= range.begin() && ms < range.end()) {
+			c->audioController->PlayRange(range);
+			return true;
+		}
+	}
+	return false;
+}
+
 template<typename Marker>
 static std::vector<AudioMarker*> one_marker(Marker &marker) {
 	return { &marker };
@@ -508,8 +530,24 @@ static std::vector<AudioMarker*> one_marker(Marker &marker) {
 std::vector<AudioMarker*> AudioTimingControllerToshiki::OnLeftClick(int ms, bool, bool, int sensitivity, int) {
 	active_drag_marker = nullptr;
 	int marker_index = FindNearbyBoundary(ms, sensitivity, true);
-	if (marker_index < 0)
+	if (marker_index < 0) {
+		// Newly split, formerly timed text is special: its left piece places
+		// the new cut, while its right piece (and untouched slots) can be heard.
+		int recut = toshiki_timing::FindReCutBoundary(display_boundaries,
+			recut_boundaries, start_marker.GetPosition(), ms);
+		if (recut >= 0) {
+			int changed = MoveBoundary(&markers[recut], ms);
+			if (changed >= 0) {
+				cur_syl = std::min(static_cast<size_t>(changed),
+					labels.empty() ? size_t(0) : labels.size() - 1);
+				AnnounceChanges(changed);
+			}
+			return {};
+		}
+		if (PlayAssignedRange(ms))
+			return {};
 		marker_index = AssignBoundary(ms);
+	}
 
 	if (marker_index >= 0) {
 		int first_marker = marker_index;
@@ -538,7 +576,13 @@ std::vector<AudioMarker*> AudioTimingControllerToshiki::OnLeftClick(int ms, bool
 	return {};
 }
 
-std::vector<AudioMarker*> AudioTimingControllerToshiki::OnRightClick(int ms, bool, int sensitivity, int) {
+std::vector<AudioMarker*> AudioTimingControllerToshiki::OnRightClick(int ms, bool ctrl_down, int sensitivity, int) {
+	// Ordinary right-click reviews a timed part, including a new right-hand
+	// split piece. Ctrl+right-click retains the per-syllable tag menu.
+	if (!ctrl_down) {
+		PlayAssignedRange(ms);
+		return {};
+	}
 	int marker_index = FindNearbyBoundary(ms, sensitivity, true);
 	if (marker_index >= 0)
 		selected_tag_syl = marker_index;

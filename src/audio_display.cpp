@@ -1351,7 +1351,7 @@ void AudioDisplay::OnMouseEvent(wxMouseEvent& event)
 		// Clicking should never result in the audio display scrolling
 		ScrollPixelToLeft(old_scroll_pos);
 
-		if (event.RightDown() && context->karaoke && context->karaoke->IsKTimingEnabled()) {
+		if (event.RightDown() && event.CmdDown() && context->karaoke && context->karaoke->IsKTimingEnabled()) {
 			context->karaoke->ShowKTimingTagMenu();
 			return;
 		}

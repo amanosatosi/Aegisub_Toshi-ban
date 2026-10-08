@@ -14,6 +14,38 @@ inline int Clamp(int ms, int minimum, int maximum) {
 	return std::max(minimum, std::min(Round(ms), maximum));
 }
 
+// Do not append a pending timing boundary by clamping a click in an earlier,
+// already-timed syllable to the most recent boundary.
+inline bool CanAppendBoundary(int ms, int minimum, int end) {
+	return ms >= minimum && ms <= end;
+}
+
+// A new text cut inside an already-timed syllable creates a temporary boundary
+// at the old end. Left-clicks in the new *left* part retime that cut; clicks
+// in the right part (or in untouched syllables) are for listening instead.
+inline int FindReCutBoundary(std::vector<int> const& boundaries,
+	std::vector<size_t> const& recuts, int line_start, int ms) {
+	for (auto index : recuts) {
+		if (index >= boundaries.size()) continue;
+		int begin = index ? boundaries[index - 1] : line_start;
+		if (ms >= begin && ms < boundaries[index])
+			return static_cast<int>(index);
+	}
+	return -1;
+}
+
+inline void InsertReCut(std::vector<size_t>& recuts, size_t index) {
+	for (auto& existing : recuts)
+		if (existing >= index) ++existing;
+	recuts.push_back(index);
+}
+
+inline void RemoveBoundaryReCut(std::vector<size_t>& recuts, size_t index) {
+	recuts.erase(std::remove(recuts.begin(), recuts.end(), index), recuts.end());
+	for (auto& existing : recuts)
+		if (existing > index) --existing;
+}
+
 class Draft {
 	int line_start = 0, line_end = 0;
 	std::vector<std::vector<agi::timing39::TimingBlock>> history;
