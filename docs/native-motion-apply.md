@@ -147,6 +147,9 @@ scalar animation and all clip forms. Python CI contracts check the main-video
 boundary, one-event commit invariant, provider requirement, channel state swaps,
 exclusive toggle synchronization, action dispatch and UI mode wording. Native
 tests also check clip-channel availability and tracking-sample usability.
+`tests/python/test_motion_track_channels.py` compiles the production switching
+methods with native track types and headless UI doubles to exercise both tracks,
+sample states/confidence, markers, segments, handoffs, modes and toggle guards.
 Existing GitHub Actions compile and run tests; no local build is used.
 
 Reference separation:

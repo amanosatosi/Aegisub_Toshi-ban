@@ -39,6 +39,8 @@ jobs:
         run: python tests/python/test_perspective_controls.py
       - name: Check native motion Apply reference and session wiring
         run: python tests/python/test_motion_apply_controls.py
+      - name: Exercise native channel switching with headless UI doubles
+        run: python tests/python/test_motion_track_channels.py
       - name: Check 39 Mode icon isolation and embedded theme resources
         run: python tests/python/test_39_mode_controls.py
 
