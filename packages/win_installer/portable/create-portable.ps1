@@ -98,6 +98,14 @@ if (!(Test-Path $DepCtrlDir)) {
 }
 Copy-New-Items "$InstallerDepsDir\DependencyControl\modules\l0\*"  "$PortableOutputDir\automation\include\l0\"  -Recurse
 Copy-New-Items "$InstallerDepsDir\DependencyControl\macros\*"  "$PortableOutputDir\automation\autoload\"  -Recurse
+Write-Output 'Copying - legacy Automation compatibility modules'
+foreach ($name in @('requireffi', 'BM', 'PT', 'DM')) {
+    $source = Join-Path $InstallerDepsDir "LegacyAutomation\include\$name"
+    if (!(Test-Path -LiteralPath $source -PathType Container)) {
+        throw "Legacy Automation helper not staged: $name"
+    }
+    Copy-New-Items "$source\*" "$PortableOutputDir\automation\include\$name" -Recurse
+}
 Copy-New-Item $InstallerDepsDir\Yutils\src\Yutils.lua  $PortableOutputDir\automation\include
 Copy-New-Items "$InstallerDepsDir\luajson\lua\*"  "$PortableOutputDir\automation\include\"  -Recurse
 

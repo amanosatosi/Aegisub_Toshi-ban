@@ -117,6 +117,62 @@ if ((Split-Path -Parent $DepCtrlCheckout) -ne $ResolvedDepsDir) { throw "Unexpec
 git -C $DepCtrlCheckout clean -fd -- modules macros
 if ($LASTEXITCODE -ne 0) { throw "DependencyControl source cleanup failed." }
 
+# Legacy external Automation helpers used by third-party scripts. New DepCtrl
+# implements its own replacements, but it does not provide the old module names
+# such as requireffi.requireffi and BM.BadMutex. Keep the legacy distribution
+# separate from the v0.9.0 source checkout, and never clean users' libraries.
+$LegacyVersion = "v0.6.4-alpha"
+$LegacyArchiveName = "DependencyControl-v0.6.4-Win64.7z"
+$LegacyArchiveUrl = "https://github.com/TypesettingTools/DependencyControl/releases/download/$LegacyVersion/$LegacyArchiveName"
+$LegacyRoot = Join-Path $DepsDir "LegacyAutomation"
+$LegacyInclude = Join-Path $LegacyRoot "include"
+$LegacyExpected = @(
+    "requireffi\requireffi.lua",
+    "BM\BadMutex.lua", "BM\BadMutex\BadMutex.dll",
+    "PT\PreciseTimer.lua", "PT\PreciseTimer\PreciseTimer.dll",
+    "DM\DownloadManager.lua", "DM\DownloadManager\DownloadManager.dll"
+)
+$needLegacy = @($LegacyExpected | Where-Object { !(Test-Path -LiteralPath (Join-Path $LegacyInclude $_) -PathType Leaf) }).Count -gt 0
+if ($needLegacy) {
+    New-Item -ItemType Directory -Path $LegacyInclude -Force | Out-Null
+    $LegacyArchive = Join-Path $LegacyRoot $LegacyArchiveName
+    $LegacyExtract = Join-Path $LegacyRoot "extracted"
+    Invoke-WebRequestWithRetry -Uri $LegacyArchiveUrl -OutFile $LegacyArchive
+    # Size is from the official immutable release asset's GitHub metadata.
+    if ((Get-Item -LiteralPath $LegacyArchive).Length -ne 254032) {
+        throw "The pinned legacy Automation archive has an unexpected size."
+    }
+    if (Test-Path -LiteralPath $LegacyExtract) {
+        Remove-Item -LiteralPath $LegacyExtract -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $LegacyExtract -Force | Out-Null
+    & 7z x $LegacyArchive "-o$LegacyExtract" -y | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not extract pinned legacy Automation modules." }
+    foreach ($spec in @(
+        @{ namespace = "requireffi"; entry = "requireffi.lua" },
+        @{ namespace = "BM"; entry = "BadMutex.lua" },
+        @{ namespace = "PT"; entry = "PreciseTimer.lua" },
+        @{ namespace = "DM"; entry = "DownloadManager.lua" }
+    )) {
+        $found = @(Get-ChildItem -LiteralPath $LegacyExtract -Recurse -File |
+            Where-Object { $_.Name -ceq $spec.entry -and $_.Directory.Name -ceq $spec.namespace })
+        if ($found.Count -ne 1) {
+            throw "Expected one $($spec.namespace) legacy module from the official archive; got $($found.Count)."
+        }
+        # Select only helper folders. Do not stage the old DependencyControl code.
+        $target = Join-Path $LegacyInclude $spec.namespace
+        if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+        Copy-Item -LiteralPath $found[0].Directory.FullName -Destination $target -Recurse
+    }
+    Remove-Item -LiteralPath $LegacyExtract -Recurse -Force
+    Remove-Item -LiteralPath $LegacyArchive -Force
+}
+foreach ($entry in $LegacyExpected) {
+    if (!(Test-Path -LiteralPath (Join-Path $LegacyInclude $entry) -PathType Leaf)) {
+        throw "Missing pinned legacy Automation helper: $entry"
+    }
+}
+
 # YUtils
 if (!(Test-Path YUtils)) {
 	git clone https://github.com/TypesettingTools/YUtils.git

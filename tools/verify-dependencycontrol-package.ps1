@@ -7,6 +7,14 @@ $BuildRoot = (Resolve-Path -LiteralPath $BuildRoot).ProviderPath
 $SourceRoot = (Resolve-Path -LiteralPath $SourceRoot).ProviderPath
 $DepCtrlRoot = Join-Path $BuildRoot 'installer-deps\DependencyControl'
 $PortableRoot = Join-Path $BuildRoot 'aegisub-portable'
+$LegacyInclude = Join-Path $BuildRoot 'installer-deps\LegacyAutomation\include'
+$LegacyNamespaces = @('requireffi', 'BM', 'PT', 'DM')
+$LegacyEntries = @(
+    'requireffi\requireffi.lua',
+    'BM\BadMutex.lua', 'BM\BadMutex\BadMutex.dll',
+    'PT\PreciseTimer.lua', 'PT\PreciseTimer\PreciseTimer.dll',
+    'DM\DownloadManager.lua', 'DM\DownloadManager\DownloadManager.dll'
+)
 if ((git -C $DepCtrlRoot describe --tags --exact-match) -cne 'v0.9.0') {
     throw 'DependencyControl source is not pinned to v0.9.0.'
 }
@@ -29,23 +37,29 @@ function Assert-TreeMatches {
 }
 
 Assert-TreeMatches "$DepCtrlRoot\modules\l0" "$PortableRoot\automation\include\l0"
+foreach ($name in $LegacyNamespaces) {
+    Assert-TreeMatches (Join-Path $LegacyInclude $name) (Join-Path "$PortableRoot\automation\include" $name)
+}
 Assert-TreeMatches "$DepCtrlRoot\macros\l0.DependencyControl.Toolbox" "$PortableRoot\automation\autoload\l0.DependencyControl.Toolbox"
 if ((Get-FileHash "$DepCtrlRoot\macros\l0.DependencyControl.Toolbox.moon").Hash -ne
     (Get-FileHash "$PortableRoot\automation\autoload\l0.DependencyControl.Toolbox.moon").Hash) {
     throw 'Portable Toolbox entry differs from upstream.'
 }
 $retired = @(
-    'automation\include\l0\l0', 'automation\autoload\garret.depctrl_config.lua',
-    'automation\include\requireffi\requireffi.lua', 'automation\include\BM\BadMutex.lua',
-    'automation\include\PT\PreciseTimer.lua', 'automation\include\DM\DownloadManager.lua'
+    'automation\include\l0\l0', 'automation\autoload\garret.depctrl_config.lua'
 )
 foreach ($path in $retired) {
     if (Test-Path -LiteralPath (Join-Path $PortableRoot $path)) { throw "Retired portable payload: $path" }
 }
 $zipList = 7z l "$BuildRoot\aegisub-portable-64.zip"
 if ($LASTEXITCODE -ne 0 -or !($zipList -match 'DependencyControl\.moon') -or
-    $zipList -match 'garret\.depctrl_config\.lua|BadMutex\.dll|PreciseTimer\.dll|DownloadManager\.dll') {
+    $zipList -match 'garret\.depctrl_config\.lua') {
     throw 'Portable archive has a missing DependencyControl entry or retired payload.'
+}
+foreach ($entry in $LegacyEntries) {
+    if ($zipList -notmatch [regex]::Escape(($entry -replace '\\', '\'))) {
+        throw "Legacy Automation helper is absent from portable zip: $entry"
+    }
 }
 
 # Compile a small installer from the actual Automation fragment. Redirect only
@@ -106,16 +120,16 @@ function Seed-File {
 }
 
 function Assert-CleanInstallation {
+    foreach ($name in $LegacyNamespaces) {
+        Assert-TreeMatches (Join-Path $LegacyInclude $name) (Join-Path "$App\automation\include" $name)
+    }
     Assert-TreeMatches "$DepCtrlRoot\modules\l0\DependencyControl" "$Profile\Aegisub\automation\include\l0\DependencyControl"
     Assert-TreeMatches "$DepCtrlRoot\macros\l0.DependencyControl.Toolbox" "$Profile\Aegisub\automation\autoload\l0.DependencyControl.Toolbox"
     foreach ($entry in @('include\l0\DependencyControl.moon', 'include\l0\dkjson.moon', 'autoload\l0.DependencyControl.Toolbox.moon')) {
         if (!(Test-Path "$Profile\Aegisub\automation\$entry")) { throw "Missing installed module: $entry" }
     }
     foreach ($entry in @('include\l0\DependencyControl.lua', 'autoload\l0.DependencyControl.Toolbox.lua',
-        'autoload\garret.depctrl_config.lua', 'include\requireffi\requireffi.lua',
-        'include\BM\BadMutex.lua', 'include\BM\BadMutex\BadMutex.dll',
-        'include\PT\PreciseTimer.lua', 'include\PT\PreciseTimer\PreciseTimer.dll',
-        'include\DM\DownloadManager.lua', 'include\DM\DownloadManager\DownloadManager.dll')) {
+        'autoload\garret.depctrl_config.lua')) {
         if (Test-Path "$Profile\Aegisub\automation\$entry") { throw "Retired installed code: $entry" }
     }
     if (Test-Path "$App\automation\autoload\garret.depctrl_config.lua") { throw 'Retired app macro retained.' }
@@ -145,6 +159,16 @@ $unrelated = @('automation\autoload\user-script.lua', 'automation\include\BM\Use
 foreach ($entry in $unrelated) { Seed-File "$Profile\Aegisub\$entry" 'user state' }
 Install-Fixture
 Assert-CleanInstallation
+# An upgrade must not delete OR overwrite third-party copies, even if the
+# bundled legacy helper was dropped from current DependencyControl releases.
+foreach ($entry in @('include\requireffi\requireffi.lua', 'include\BM\BadMutex.lua',
+    'include\BM\BadMutex\BadMutex.dll', 'include\PT\PreciseTimer.lua',
+    'include\PT\PreciseTimer\PreciseTimer.dll', 'include\DM\DownloadManager.lua',
+    'include\DM\DownloadManager\DownloadManager.dll')) {
+    if ((Get-Content "$Profile\Aegisub\automation\$entry" -Raw) -cne 'obsolete bundled code') {
+        throw "Upgrade removed or overwrote user-installed helper: $entry"
+    }
+}
 if ((Get-FileHash $oldConfig).Hash -ne $oldHash -or (Get-FileHash $newConfig).Hash -ne $oldHash) {
     throw 'Upgrade must preserve legacy state and copy it unchanged for upstream migration.'
 }

@@ -42,6 +42,11 @@ TEST(DependencyControlRuntime, PackagedModuleLoadsWithBundledFallbacks) {
 	const char program[] = R"(
         require('l0.AegisubShims')
         local dc = require('l0.DependencyControl')
+        -- A fresh, offline portable install must still load the legacy FFI
+        -- helper required by clipper2/ILL without running DepCtrl's updater.
+        local oldffi = require('requireffi.requireffi')
+        assert(type(oldffi) == 'table' and oldffi.version == '0.1.2')
+        assert(getmetatable(oldffi) and type(getmetatable(oldffi).__call) == 'function')
         assert(dc.version:getVersionString() == '0.9.0')
         local schema = require('l0.DependencyControl.config-schema')
         local legacy = {config = {updaterEnabled = false, updateInterval = 98765}, marker = 'user state'}
