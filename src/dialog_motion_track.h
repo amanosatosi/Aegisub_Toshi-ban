@@ -30,6 +30,7 @@ class wxSpinCtrl;
 class wxSpinCtrlDouble;
 class wxStaticText;
 class wxTimerEvent;
+class wxToggleButton;
 namespace agi { struct Context; }
 
 struct MotionTrackTrailMarker {
@@ -72,12 +73,12 @@ class DialogMotionTrack final : public wxDialog {
 	motion_tracking::MotionApplyOptions advanced_options;
 	wxStaticText *apply_status = nullptr;
 	wxStaticText *reference_label = nullptr;
-	wxStaticText *target_label = nullptr;
 	wxButton *apply_button = nullptr;
 	wxButton *advanced_button = nullptr;
 	wxButton *revert_button = nullptr;
 	wxButton *main_track_button = nullptr;
-	wxButton *clip_track_button = nullptr;
+	wxToggleButton *subtitle_channel_button = nullptr;
+	wxToggleButton *clip_channel_button = nullptr;
 
 	int current_frame = 0;
 	int preview_frame = -1;
@@ -127,8 +128,10 @@ class DialogMotionTrack final : public wxDialog {
 	void CaptureSources();
 	void CheckSession();
 	void UpdateApplyStatus();
+	bool HasTrackClip() const;
+	void UpdateChannelControls();
 	void SwitchTrack(bool clip);
-	void TrackMotion(bool clip);
+	void TrackMotion();
 	void ApplyMotion(bool advanced);
 	void RevertMotion();
 	void NewSession();

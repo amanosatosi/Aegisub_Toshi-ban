@@ -404,6 +404,27 @@ MotionApplication BuildMotionApplication(AssDialogue const& input, MotionStyleRe
 }
 
 bool HasMotionClip(AssDialogue const& line) { return !MotionClipSignature(line).empty(); }
+bool HasTrackableMotionClip(AssDialogue const& input) {
+	AssDialogue line(input);
+	line.Text = RemoveMotionLayers(input.Text.get());
+	for (auto const& block : line.ParseTags()) if (auto b = dynamic_cast<AssDialogueBlockOverride const*>(block.get())) {
+		for (auto const& tag : b->Tags) {
+			if (!ClipTag(tag) || !tag.IsValid()) continue;
+			try {
+				if (tag.Params.size() == 4) {
+					for (size_t i = 0; i < 4; ++i) Operand(tag,i,0,false);
+					return true;
+				}
+				if (tag.Params.size() == 2 && !tag.Params[1].omitted &&
+					tag.Params[1].Get<std::string>().find_first_not_of(" \t\r\n") != std::string::npos &&
+					(tag.Params[0].omitted || Operand(tag,0,0,false) > 0)) return true;
+			}
+			catch (std::invalid_argument const&) { }
+		}
+	}
+	return false;
+}
+
 std::string MotionClipSignature(AssDialogue const& input) {
 	AssDialogue line(input);
 	line.Text = RemoveMotionLayers(input.Text.get());

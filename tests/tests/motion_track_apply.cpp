@@ -11,6 +11,23 @@
 #include <stdexcept>
 
 using namespace motion_tracking;
+
+TEST(MotionTrackChannels, availability_requires_authored_clip_geometry) {
+	for (auto text : {"{\\clip(0,0,100,80)}Sign", "{\\iclip(0,0,100,80)}Sign",
+		"{\\clip(m 0 0 l 100 0 100 80)}Sign", "{\\iclip(2,m 0 0 l 100 0 100 80)}Sign"}) {
+		AssDialogue line;
+		line.Text = text;
+		EXPECT_TRUE(HasTrackableMotionClip(line)) << text;
+	}
+	for (auto text : {"Sign", "{\\clippos(10,20)\\clips120}Sign", "{\\movevc(0,0,10,20)}Sign",
+		"{\\clip()}Sign", "{\\clip(0,0,,80)}Sign", "{\\clip(nan,0,100,80)}Sign",
+		"{\\iclip(0,m 0 0 l 10 10)}Sign", "{\\t(\\clip(0,0,100,80))}Sign"}) {
+		AssDialogue line;
+		line.Text = text;
+		EXPECT_FALSE(HasTrackableMotionClip(line)) << text;
+	}
+}
+
 namespace {
 MotionTrackResult Track(std::vector<double> const& x) {
 	MotionTrackResult track;

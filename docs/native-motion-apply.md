@@ -5,6 +5,27 @@ with the same ID, native millisecond start/end, fields, folds and extradata.
 The OpenCV engine, markers, forward/backward runs, handoff stitching, preview,
 graphs, cleanup and AE export remain acquisition tools.
 
+## Tracking channels
+
+The workflow row keeps **Track Motion** on the left, the **Main video reference**
+indicator in the middle, and the **Subtitle | \clip** channel toggle on the right.
+Exactly one channel is selected. Selecting a channel only changes the editing
+context; **Track Motion** runs the selected channel forward and backward from
+the tracker anchor using the existing handoff behavior.
+
+Switching preserves both channels' samples (including confidence and state),
+marker squares, segments, handoff points, size/rotation and output motion modes.
+It never seeks either playhead, changes the main-video reference, or starts a
+new session. Direction buttons, marker edits, handoffs, graph/trail, Copy Motion
+Data, Save Data and Clear operate on the selected channel. Clear leaves the
+other channel intact. New Session resets both and selects Subtitle.
+
+The clip channel requires authored usable `\clip` or `\iclip` geometry in the
+selection; clip transform tags alone do not enable it. If that geometry is
+removed, the editor returns to Subtitle and retains the acquired clip track.
+Changing a tracked clip still requires retracking before Apply, as before.
+Choosing an editing channel does not exclude the other track from Apply.
+
 ## Reference and composition
 
 Apply reads the current **main video** frame after any Advanced Apply dialog.
@@ -67,15 +88,15 @@ Advanced Apply exposes:
 * **Force frame-by-frame transforms**: use consecutive video-sample transitions,
   omit no-op payloads, and still keep one dialogue event.
 * X, Y, object Scale and Rotation; position/scale/rotation tolerances.
-* Rectangular/vector clip applicability and a separate **Track for \clip** pass,
+* Rectangular/vector clip applicability and a separate **clip channel** pass,
   the main motion track, or an unchanged clip.
 
 Normal Apply uses automatic defaults. Mangetsu must be selected because these
 are Mangetsu extensions. There is no standard-ASS splitting fallback.
 
-## Track for \clip
+## Clip tracking
 
-A separate Track for `\clip` pass obtains the same native samples; Apply uses
+A separate `\clip` channel pass obtains the same native samples; Apply uses
 relative `\clippos` for translation and `\clips` for uniform size. Rectangular/
 vector `\clip` and `\iclip` remain intact, including vector drawing scales.
 Existing clip offsets and clip-scale animations compose. Size is centered on
@@ -123,7 +144,9 @@ the new layer. New Apply never creates v1 families.
 numeric renderer-contract oracle and covers bounded nonlinear fits, reference
 anchoring, original identity/timing, multi-selection, ownership, span resets,
 scalar animation and all clip forms. Python CI contracts check the main-video
-boundary, one-event commit invariant, provider requirement and UI mode wording.
+boundary, one-event commit invariant, provider requirement, channel state swaps,
+exclusive toggle synchronization, action dispatch and UI mode wording. Native
+tests also check clip-channel availability and tracking-sample usability.
 Existing GitHub Actions compile and run tests; no local build is used.
 
 Reference separation:

@@ -43,6 +43,8 @@ MotionApplication BuildMotionApplication(AssDialogue const& source,
 	MotionApplyOptions const& options = {});
 
 bool HasMotionClip(AssDialogue const& line);
+// Acquisition needs authored clip geometry, not just clip transform tags.
+bool HasTrackableMotionClip(AssDialogue const& line);
 std::string MotionClipSignature(AssDialogue const& line);
 // Exact owned blocks only. Original text, including user transforms, is byte-preserved.
 constexpr char MotionLayerMarker[] = "[toshiban native motion v2]";

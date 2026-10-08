@@ -51,6 +51,7 @@
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 #include <wx/timer.h>
+#include <wx/tglbtn.h>
 #include <wx/utils.h>
 
 namespace {
@@ -999,18 +1000,19 @@ void DialogMotionTrack::CreateControls() {
 
 	auto workflow = new wxBoxSizer(wxHORIZONTAL);
 	main_track_button = new wxButton(this, -1, _("Track Motion"));
-	clip_track_button = new wxButton(this, -1, _("Track for \\clip"));
-	target_label = new wxStaticText(this, -1, _("Tracking: subtitle"));
 	reference_label = new wxStaticText(this, -1, "");
-	workflow->Add(main_track_button, 0, wxRIGHT, 4);
-	workflow->Add(clip_track_button, 0, wxRIGHT, 12);
-	workflow->Add(target_label, 1, wxALIGN_CENTER_VERTICAL);
-	workflow->Add(reference_label, 0, wxALIGN_CENTER_VERTICAL);
+	subtitle_channel_button = new wxToggleButton(this, -1, _("Subtitle"));
+	clip_channel_button = new wxToggleButton(this, -1, _("\\clip"));
+	workflow->Add(main_track_button, 0, wxRIGHT, 12);
+	workflow->Add(reference_label, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 12);
+	workflow->Add(subtitle_channel_button, 0);
+	workflow->Add(clip_channel_button, 0);
 	main_sizer->Add(workflow, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
-	main_track_button->SetToolTip(_("Place a square on the subtitle's object, then track the selected range. Direction buttons also work on this track."));
-	clip_track_button->SetToolTip(_("Switch to the separate clip tracker. Place a square on the mask's object, then press again to track the range."));
-	main_track_button->Bind(wxEVT_BUTTON, [=](wxCommandEvent&) { TrackMotion(false); });
-	clip_track_button->Bind(wxEVT_BUTTON, [=](wxCommandEvent&) { TrackMotion(true); });
+	main_track_button->SetToolTip(_("Place a square on the selected channel's object, then track the selected range. Direction buttons also work on this channel."));
+	subtitle_channel_button->SetToolTip(_("Edit the subtitle tracking channel. Switching channels preserves both tracks and does not start tracking."));
+	main_track_button->Bind(wxEVT_BUTTON, [=](wxCommandEvent&) { TrackMotion(); });
+	subtitle_channel_button->Bind(wxEVT_TOGGLEBUTTON, [=](wxCommandEvent&) { SwitchTrack(false); });
+	clip_channel_button->Bind(wxEVT_TOGGLEBUTTON, [=](wxCommandEvent&) { SwitchTrack(true); });
 
 	frame_bar = new MotionTrackFrameBar(this, this);
 	main_sizer->Add(frame_bar, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
@@ -1952,11 +1954,16 @@ motion_tracking::MotionTrackResult const& DialogMotionTrack::ClipTrack() const {
 
 void DialogMotionTrack::UpdateApplyStatus() {
 	if (!apply_status) return;
+	// A removed clip makes its channel unavailable, but keeps the acquired data.
+	if (editing_clip && !HasTrackClip() && !tracking) {
+		SwitchTrack(false);
+		return;
+	}
+	UpdateChannelControls();
 	int reference = context->videoController->GetFrameN();
 	reference_label->SetLabel(fmt_wx("Main video reference: %d",reference));
-	target_label->SetLabel(editing_clip ? _("Tracking: \\clip") : _("Tracking: subtitle"));
 	std::string reason = invalid_reason;
-	if (reason.empty() && MainTrack().frames.empty() && ClipTrack().frames.empty()) reason = "Track the subtitle object or use Track for \\clip first.";
+	if (reason.empty() && MainTrack().frames.empty() && ClipTrack().frames.empty()) reason = "Select Subtitle or \\clip, place a tracker square, then press Track Motion.";
 	auto contains = [&](auto const& data, int frame) {
 		auto it = std::lower_bound(data.frames.begin(),data.frames.end(),frame,[](auto const& sample,int f) { return sample.frame < f; });
 		return it != data.frames.end() && it->frame == frame && motion_tracking::IsUsableMotionTrackState(it->state);
@@ -1979,14 +1986,12 @@ void DialogMotionTrack::UpdateApplyStatus() {
 	apply_button->Enable(reason.empty() && !tracking);
 	// Advanced Apply can deliberately ignore an incomplete clip track.
 	advanced_button->Enable(invalid_reason.empty() && (!MainTrack().frames.empty() || !ClipTrack().frames.empty()) && !tracking);
-	bool revert = false, clip = false;
+	bool revert = false;
 	for (auto line : context->selectionController->GetSortedSelection()) {
 		revert |= motion_tracking::CanRevertMotion(*context->ass,*line);
-		clip |= motion_tracking::HasMotionClip(*line);
 	}
 	revert_button->Enable(revert && !tracking);
 	main_track_button->Enable(!tracking);
-	clip_track_button->Enable(clip && !tracking);
 	std::string status = "Main track: " + std::string(MainTrack().frames.empty() ? "not available" : "available") +
 		"; clip track: " + (ClipTrack().frames.empty() ? "not available" : "available");
 	if (!apply_summary.empty()) status += "\n" + apply_summary;
@@ -1996,9 +2001,32 @@ void DialogMotionTrack::UpdateApplyStatus() {
 	apply_status->SetLabel(to_wx(status));
 }
 
+bool DialogMotionTrack::HasTrackClip() const {
+	for (auto line : context->selectionController->GetSortedSelection())
+		if (motion_tracking::HasTrackableMotionClip(*line)) return true;
+	return false;
+}
+
+void DialogMotionTrack::UpdateChannelControls() {
+	bool clip_available = HasTrackClip();
+	// SetValue does not emit a toggle event. Reassert both values even when the
+	// selected button is clicked again or a requested switch is unavailable.
+	subtitle_channel_button->SetValue(!editing_clip);
+	clip_channel_button->SetValue(editing_clip);
+	subtitle_channel_button->Enable(!tracking);
+	clip_channel_button->Enable(clip_available && !tracking);
+	clip_channel_button->SetToolTip(clip_available ?
+		_("Edit the separate clip tracking channel. Switching channels preserves both tracks and does not start tracking.") :
+		_("Select a subtitle with a usable \\clip or \\iclip to edit the clip tracking channel."));
+}
+
 void DialogMotionTrack::SwitchTrack(bool clip) {
-	if (clip == editing_clip || tracking) return;
+	if (clip == editing_clip || tracking || (clip && !HasTrackClip())) {
+		UpdateChannelControls();
+		return;
+	}
 	StopPlayback();
+	UpdateSettingsFromControls();
 	using std::swap;
 	swap(result,other_channel.result);
 	swap(segments,other_channel.segments);
@@ -2013,9 +2041,10 @@ void DialogMotionTrack::SwitchTrack(bool clip) {
 	UpdatePanels();
 }
 
-void DialogMotionTrack::TrackMotion(bool clip) {
+void DialogMotionTrack::TrackMotion() {
 	if (tracking) return;
 	CheckSession();
+	bool clip = editing_clip;
 	// Replacing/removing a clip invalidates only its pass. A new clip pass can
 	// bind the current shape while retaining the already tracked subtitle motion.
 	if (clip) {
@@ -2024,7 +2053,7 @@ void DialogMotionTrack::TrackMotion(bool clip) {
 		auto active = context->selectionController->GetActiveLine();
 		auto core = motion_tracking::ValidateMotionSources(source_identity,selected,source_active_id,active ? active->Id : 0,false);
 		if (core.empty() && (invalid_reason.empty() || invalid_reason == "The tracked clip changed. Track the clip again.")) {
-			if (!invalid_reason.empty()) { SwitchTrack(true); ClearData(); }
+			if (!invalid_reason.empty()) ClearData();
 			for (auto& identity : source_identity) for (auto line : selected)
 				if (line->Id == identity.id) identity.clip = motion_tracking::MotionClipSignature(*line);
 			invalid_reason.clear();
@@ -2034,14 +2063,10 @@ void DialogMotionTrack::TrackMotion(bool clip) {
 		wxMessageBox(to_wx(invalid_reason),_("Motion Track"),wxOK | wxICON_INFORMATION,this);
 		return;
 	}
-	if (clip) {
-		bool applicable = false;
-		for (auto line : context->selectionController->GetSortedSelection()) applicable |= motion_tracking::HasMotionClip(*line);
-		if (!applicable) return;
-	}
-	SwitchTrack(clip);
+	if (clip && !HasTrackClip()) return;
+	UpdateApplyStatus();
 	if (!HasCurrentMarker()) {
-		apply_status->SetLabel(clip ? _("Place a tracker square on the clip's object, then press Track for \\clip again.") :
+		apply_status->SetLabel(clip ? _("Place a tracker square on the clip's object, then press Track Motion again.") :
 			_("Place a tracker square on the subtitle's object, then press Track Motion again."));
 		return;
 	}
@@ -2056,6 +2081,7 @@ void DialogMotionTrack::NewSession() {
 	if (tracking) return;
 	StopPlayback();
 	StopFrameCache();
+	SwitchTrack(false);
 	CalculateSelectedFrameRange();
 	ClearData();
 	result.fps = context->project->Timecodes().FPS();
@@ -2098,7 +2124,7 @@ bool AdvancedMotionApply(wxWindow* parent, motion_tracking::MotionApplyOptions& 
 	check(_("Apply vector clips"),options.vector_clips);
 	layout->Add(grid,0,wxALL,6);
 	auto clip = new wxChoice(&dialog,-1);
-	clip->Append(_("Separate Track for \\clip"));
+	clip->Append(_("Separate clip track"));
 	clip->Append(_("Follow main motion track"));
 	clip->Append(_("Keep clip unchanged"));
 	clip->SetSelection(static_cast<int>(options.clip_source));
