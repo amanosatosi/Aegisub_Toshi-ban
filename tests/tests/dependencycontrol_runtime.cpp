@@ -55,12 +55,37 @@ TEST(DependencyControlRuntime, PackagedModuleLoadsWithBundledFallbacks) {
         assert(legacy.config.updates.mode == 'off')
         assert(legacy.config.updates.checkInterval == 98765)
         assert(legacy.marker == 'user state')
-        for alias, provider in pairs({
-            ['BM.BadMutex'] = 'l0.DependencyControl.shims.BadMutex',
-            ['PT.PreciseTimer'] = 'l0.DependencyControl.shims.PreciseTimer',
-            ['DM.DownloadManager'] = 'l0.DependencyControl.shims.DownloadManager'
-        }) do
-            assert(require(alias) == require(provider), alias .. ' must use the bundled fallback')
+        -- The portable build includes native legacy modules in addition to
+        -- DependencyControl's built-in replacements. Real modules must take
+        -- precedence over the fallback aliases when both are installed.
+        local moduleProvider = require('l0.DependencyControl.ModuleProvider')
+        local legacyModules = {
+            ['BM.BadMutex'] = {
+                fallback = 'l0.DependencyControl.shims.BadMutex',
+                methods = {'tryLock', 'lock', 'unlock'}
+            },
+            ['PT.PreciseTimer'] = {
+                fallback = 'l0.DependencyControl.shims.PreciseTimer',
+                methods = {'timeElapsed', 'sleep'}
+            },
+            ['DM.DownloadManager'] = {
+                fallback = 'l0.DependencyControl.shims.DownloadManager',
+                methods = {'addDownload', 'waitForFinish', 'clear'}
+            }
+        }
+        for alias, spec in pairs(legacyModules) do
+            assert(moduleProvider.getProvider(alias) == spec.fallback,
+                alias .. ' must have a registered built-in fallback')
+            local bundled = require(alias)
+            local fallback = require(spec.fallback)
+            assert(type(bundled) == 'table', alias .. ' must load from the portable package')
+            assert(type(fallback) == 'table', spec.fallback .. ' must remain loadable')
+            assert(bundled ~= fallback,
+                alias .. ' must prefer the packaged legacy module, not its fallback')
+            for _, method in ipairs(spec.methods) do
+                assert(type(bundled[method]) == 'function',
+                    alias .. ' is missing compatibility method ' .. method)
+            end
         end
     )";
 	ASSERT_EQ(0, luaL_dostring(L, program)) << lua_tostring(L, -1);
