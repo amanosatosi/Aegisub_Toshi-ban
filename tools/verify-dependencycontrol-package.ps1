@@ -51,13 +51,21 @@ $retired = @(
 foreach ($path in $retired) {
     if (Test-Path -LiteralPath (Join-Path $PortableRoot $path)) { throw "Retired portable payload: $path" }
 }
-$zipList = 7z l "$BuildRoot\aegisub-portable-64.zip"
-if ($LASTEXITCODE -ne 0 -or !($zipList -match 'DependencyControl\.moon') -or
-    $zipList -match 'garret\.depctrl_config\.lua') {
+# Inspect actual archive member paths rather than regex-matching the entire
+# multi-line 7-Zip listing. PowerShell's -notmatch on an array returns all
+# nonmatching lines, which made valid archives fail verification.
+$zipList = @(7z l -slt "$BuildRoot\aegisub-portable-64.zip")
+if ($LASTEXITCODE -ne 0) { throw 'Could not list the portable archive.' }
+$zipPaths = @($zipList | Where-Object { $_ -like 'Path = *' } |
+    ForEach-Object { $_.Substring(7).Replace('\', '/') })
+$include = 'aegisub-portable/automation/include/'
+if (($include + 'l0/DependencyControl.moon') -cnotin $zipPaths -or
+    @($zipPaths | Where-Object { $_ -match '(^|/)garret\.depctrl_config\.lua$' }).Count -gt 0) {
     throw 'Portable archive has a missing DependencyControl entry or retired payload.'
 }
 foreach ($entry in $LegacyEntries) {
-    if ($zipList -notmatch [regex]::Escape(($entry -replace '\\', '\'))) {
+    $expected = $include + $entry.Replace('\', '/')
+    if ($expected -cnotin $zipPaths) {
         throw "Legacy Automation helper is absent from portable zip: $entry"
     }
 }
