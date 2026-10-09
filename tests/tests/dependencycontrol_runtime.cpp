@@ -74,7 +74,7 @@ TEST(DependencyControlRuntime, PackagedModuleLoadsWithBundledFallbacks) {
             }
         }
         for alias, spec in pairs(legacyModules) do
-            assert(moduleProvider.getProvider(alias) == spec.fallback,
+            assert(moduleProvider:getProvider(alias) == spec.fallback,
                 alias .. ' must have a registered built-in fallback')
             local bundled = require(alias)
             local fallback = require(spec.fallback)
