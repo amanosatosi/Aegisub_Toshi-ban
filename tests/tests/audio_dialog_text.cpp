@@ -28,9 +28,9 @@ TEST(AudioDialogText, AssAndUnicodeNeverSplitMidToken) {
     Pieces split;
     std::string tagged = "{\\i1}光\\N未来";
     EXPECT_FALSE(SplitAtCaret(tagged, 3, split));
-    EXPECT_FALSE(SplitAtCaret(tagged, 8, split)); // interior of multibyte UTF-8
-    EXPECT_FALSE(SplitAtCaret(tagged, 12, split)); // between backslash and N
-    ASSERT_TRUE(SplitAtCaret(tagged, 11, split));
+    EXPECT_FALSE(SplitAtCaret(tagged, 6, split)); // interior of multibyte UTF-8
+    EXPECT_FALSE(SplitAtCaret(tagged, 9, split)); // between backslash and N
+    ASSERT_TRUE(SplitAtCaret(tagged, 8, split));
     EXPECT_EQ("{\\i1}光", split.before);
     EXPECT_EQ("\\N未来", split.after);
 }
