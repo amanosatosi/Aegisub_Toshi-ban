@@ -67,6 +67,7 @@ all_test_sources += [
     'tests/application_updates.cpp',
     'tests/dependencycontrol_runtime.cpp',
     'tests/audio.cpp',
+    'tests/audio_dialog_text.cpp',
     'tests/cajun.cpp',
     'tests/calltip_provider.cpp',
     'tests/character_count.cpp',
