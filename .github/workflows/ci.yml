@@ -33,6 +33,8 @@ jobs:
         run: python tests/python/test_release_preparation.py
       - name: Check subtitle-relative readout fade menu wiring
         run: python tests/python/test_fade_controls.py
+      - name: Check Shift-drag audio boundary wiring
+        run: python tests/python/test_audio_dialog_time_changer.py
       - name: Check Mangetsu chat style toolbar wiring
         run: python tests/python/test_chat_style_controls.py
       - name: Check Perspective and Distort mode wiring
