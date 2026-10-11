@@ -656,8 +656,15 @@ bool AudioTimingControllerDialogue::ApplyDialogTimeChanger(int drag_start_ms, in
 	if (!line || drag_start_ms == drag_end_ms)
 		return false;
 
-	AssDialogue *next = nullptr;
 	auto line_it = context->ass->iterator_to(*line);
+	AssDialogue *previous = nullptr;
+	if (line_it != context->ass->Events.begin())
+	{
+		auto prev_it = line_it;
+		previous = &*--prev_it;
+	}
+
+	AssDialogue *next = nullptr;
 	auto next_it = line_it;
 	if (++next_it != context->ass->Events.end())
 		next = &*next_it;
@@ -718,24 +725,44 @@ bool AudioTimingControllerDialogue::ApplyDialogTimeChanger(int drag_start_ms, in
 		return true;
 	}
 
-	if (!next)
+	// Preserve the next-line behavior when neighboring lines overlap, but also
+	// allow Shift+drag to adjust the boundary with the previous line.
+	AssDialogue *adjacent = nullptr;
+	bool change_start = false;
+	if (next && ((contains(line, drag_start_ms) && contains(next, drag_end_ms)) ||
+	             (contains(next, drag_start_ms) && contains(line, drag_end_ms))))
+		adjacent = next;
+	else if (previous && ((contains(line, drag_start_ms) && contains(previous, drag_end_ms)) ||
+	                      (contains(previous, drag_start_ms) && contains(line, drag_end_ms))))
+	{
+		adjacent = previous;
+		change_start = true;
+	}
+
+	if (!adjacent)
 		return false;
 
-	const bool forward_boundary_drag = contains(line, drag_start_ms) && contains(next, drag_end_ms);
-	const bool backward_boundary_drag = contains(next, drag_start_ms) && contains(line, drag_end_ms);
-	if (!forward_boundary_drag && !backward_boundary_drag)
-		return false;
-
+	// In either direction, the release position is the new shared boundary.
 	const int boundary = drag_end_ms;
-	if (!valid_duration(line->Start, boundary) || !valid_duration(boundary, next->End))
+	const int overall_start = change_start ? adjacent->Start : line->Start;
+	const int overall_end = change_start ? line->End : adjacent->End;
+	if (!valid_duration(overall_start, boundary) || !valid_duration(boundary, overall_end))
 		return false;
 
-	line->End = boundary;
-	next->Start = boundary;
-	context->selectionController->SetSelectionAndActive({ line, next }, line);
+	if (change_start)
+	{
+		adjacent->End = boundary;
+		line->Start = boundary;
+	}
+	else
+	{
+		line->End = boundary;
+		adjacent->Start = boundary;
+	}
+	context->selectionController->SetSelectionAndActive({ line, adjacent }, line);
 	context->ass->Commit(_("dialog time changer"), AssFile::COMMIT_DIAG_TIME);
 	if (preview_range)
-		*preview_range = TimeRange(line->Start, next->End);
+		*preview_range = TimeRange(overall_start, overall_end);
 	return true;
 }
 
