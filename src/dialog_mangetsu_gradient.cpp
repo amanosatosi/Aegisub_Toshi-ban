@@ -16,6 +16,7 @@
 #include "include/aegisub/context.h"
 #include "mangetsu_gradient_placement.h"
 #include "mangetsu_gradient_scope.h"
+#include "mangetsu_gradient_stop_drag.h"
 #include "selection_controller.h"
 #include "text_selection_controller.h"
 #include "video_display.h"
@@ -484,8 +485,8 @@ void GradientStopBar::OnMouse(wxMouseEvent& event) {
 
 	if (event.Dragging() && event.LeftIsDown() && dragging) {
 		UpdateMarker(pos, true);
-		dialog->stops[dialog->selected_stop].pos = dialog->PosFromMouse(pos);
-		dialog->SortStops();
+		dialog->selected_stop = static_cast<int>(mangetsu::MoveGradientStop(
+			dialog->stops, static_cast<size_t>(dialog->selected_stop), dialog->PosFromMouse(pos)));
 		dialog->MarkGradientChanged(false);
 		return;
 	}
