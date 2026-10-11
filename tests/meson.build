@@ -101,6 +101,7 @@ all_test_sources += [
     'tests/mangetsu_renderer_offer.cpp',
     'tests/mangetsu_curved_text.cpp',
     'tests/mangetsu_gradient_placement.cpp',
+    'tests/mangetsu_gradient_stop_drag.cpp',
     'tests/mangetsu_gradient_scope.cpp',
     'tests/mangetsu_chat_style.cpp',
     'tests/option.cpp',
