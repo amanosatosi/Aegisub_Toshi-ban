@@ -64,6 +64,20 @@ composes with the resulting span state. This supports later resets and per-span
 scales/rotations. Global position intents are inserted only once. Authored text
 and tags are copied byte for byte.
 
+## Default workflow
+
+Normal Track Motion and Apply preserve each tracked frame as a relative movement
+transform and keep the selected subtitle as one event. Movement-only tracking is
+the default. Pattern and search are distinct squares; the latter is axis-aligned
+like the OpenCV search window. Scale, rotation, and motion simplification are
+explicit choices in the tracker/Advanced Apply UI rather than automatic additions.
+
+Native layers start with the existing `[toshiban motion track helper]` annotation
+so Better View collapses them to `{motion tracking}`; an additional
+`[toshiban native motion v2]` ownership annotation allows Revert/Reapply without
+deleting legacy user-authored helper blocks. Old native-v2-only blocks remain
+revertible.
+
 ## Simplification and Advanced Apply
 
 The optimizer uses iterative Douglas-Peucker in actual media time with exact
@@ -81,7 +95,7 @@ Six decimal places prevent relative interval rounding drift.
 
 Advanced Apply exposes:
 
-* **Automatic**: bounded fitting; difficult paths use exact sampled transform
+* **Automatic** (Advanced Apply only): bounded fitting; difficult paths use exact sampled transform
   intervals when fitting would retain nearly every sample.
 * **Force optimized**: always keep the bounded piecewise fit, without silently
   enlarging the chosen tolerances.
@@ -91,7 +105,7 @@ Advanced Apply exposes:
 * Rectangular/vector clip applicability and a separate **clip channel** pass,
   the main motion track, or an unchanged clip.
 
-Normal Apply uses automatic defaults. Mangetsu must be selected because these
+Normal Apply uses movement-only, frame-by-frame defaults. Mangetsu must be selected because these
 are Mangetsu extensions. There is no standard-ASS splitting fallback.
 
 ## Clip tracking
@@ -107,9 +121,7 @@ the selected X/Y/Scale/Rotation controls apply to both.
 
 ## Ownership, Reapply and Revert
 
-Only complete override blocks beginning with the exact annotation
-`[toshiban native motion v2]` belong to this implementation. This is a valid
-Mangetsu annotation, and the payload is ordinary readable tags.
+Only complete override blocks beginning with `[toshiban motion track helper][toshiban native motion v2]` or the legacy native-v2-only annotation belong to native Apply. A plain `[toshiban motion track helper]` block is user-authored and must not be removed during Reapply/Revert. The payload remains readable Mangetsu tags.
 
 Reapply strips only owned blocks before replanning. Revert removes them in
 place, preserving unrelated transforms and edits made after Apply. Markers
