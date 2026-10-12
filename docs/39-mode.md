@@ -137,17 +137,34 @@ Base tokenization is independent of tap count. Tested yoon and foreign-sound
 clusters form one mora; っ, ん and ー remain individual base morae. Punctuation and
 spaces take no timing block. Written vowel sequences remain separate base morae.
 
-Every mora has a single-mora edge. Named rules may add two-mora edges for a long
-mark, supported preceding-mora sokuon grouping, moraic nasal continuation,
-written long-vowel-like sequences, and vowel adjacency inside a known lexeme.
-There is no arbitrary substring partitioning, no universal sokuon attachment
-claim and no rule forcing every long mark to merge.
+Every mora has a single-mora edge. Named rules optionally join two morae
+for long marks, preceding-mora sokuon, moraic nasal continuation, written long
+vowels (including expressive small vowels such as ねぇ), and vowel adjacency
+within a supported spoken lexeme. These are possible sung groupings, never
+mandatory merges. Particle, punctuation, recognized word, and protected
+verb-ending boundaries remain hard boundaries.
 
-The bounded k-best DP traverses these edges with exactly N sung blocks, retaining
-up to eight alternatives by default. Gaps do not consume morae. Per-edge scores
-separate provisional phonological priors, lexical/source features and soft
-log-duration fit. `ScoringModel` centralizes weights. The second-best margin
-determines timing ambiguity. Unsupported counts retain RED and raw capture.
+If no ordinary phonological path can fit the captured attack count, 39 Mode
+makes a *second pass* with low-confidence rhythmic compression: contiguous
+groups of up to four base morae within non-forbidden boundaries. This is an
+acoustic/timing fallback, **not** a Japanese dictionary or a new claim about
+how many linguistic morae comprise one syllable. It is YELLOW even if it has
+only one candidate, and requires explicit review/selection before committing.
+The original tap times and rests do not change; the regular phonological pass
+retains priority over any rhythmic fallback. Unrecognized readings, poetry,
+and unfamiliar vocabulary can therefore remain editable without turning an
+otherwise clean performance into a forced retake. Counts requiring five or
+more contiguous morae in one attack, or more attacks than base morae (melisma),
+still need manual placement/review and are not automatically solved.
+
+The bounded k-best DP traverses phonological edges with exactly N sung blocks
+first, retaining up to eight alternatives by default; if none reaches the
+endpoint it retries using lower-priority rhythmic edges. Gaps do not consume
+morae. Per-edge scores separate provisional phonological priors,
+lexical/source features, grouping length and soft log-duration fit.
+`ScoringModel` centralizes weights. The second-best margin determines
+ambiguity in the normal pass; using the rhythmic pass always requires review.
+Truly unsupported counts retain RED and raw capture.
 Lines over 512 morae are refused to bound memory use on weak hardware.
 
 `TimingLane` owns held keys, current owner, blocks and gaps. `TimingAssignment`

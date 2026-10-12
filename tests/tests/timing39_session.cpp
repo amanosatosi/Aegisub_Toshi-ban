@@ -72,7 +72,7 @@ TEST(Timing39Session, ToshikiDraftApplyCancelAndResetPreserveRhythmRaw) {
 	Start(session);Tap(session,'F',1050,1400);session.Stop(1500);
 	auto raw=session.Raw(0);
 	auto& result=session.Results()[0];
-	ASSERT_EQ(Confidence::Red,result.GetConfidence());
+	ASSERT_EQ(Confidence::Yellow,result.GetConfidence());
 	toshiki_timing::Draft cancelled;
 	cancelled.Begin(1000,1500,result.lanes[0].capture.blocks);
 	ASSERT_TRUE(cancelled.Split(1200));
@@ -96,7 +96,7 @@ TEST(Timing39Session, ToshikiDraftApplyCancelAndResetPreserveRhythmRaw) {
 	EXPECT_EQ(Confidence::Green,result.GetConfidence());
 	EXPECT_EQ(raw,session.Raw(0));
 	ASSERT_TRUE(session.ResetManualTiming(0,0));
-	EXPECT_EQ(Confidence::Red,result.GetConfidence());
+	EXPECT_EQ(Confidence::Yellow,result.GetConfidence());
 	EXPECT_FALSE(result.lanes[0].timing_override_active);
 	EXPECT_EQ(raw,session.Raw(0));
 }
@@ -232,7 +232,7 @@ TEST(Timing39Session, FailedLineDoesNotShiftLaterLinesAndRetakeIsIsolated) {
 	Timing39Session s;s.Prepare({Target(1,1000,1500),Target(2,2000,2500)},true,"opaque style",900,2500);Start(s);
 	Tap(s,'F',1050,1400);Tap(s,'D',1100,1200);Tap(s,'K',1300,1450);
 	Tap(s,'F',2050,2200);Tap(s,'J',2250,2450);s.Stop(2500);
-	ASSERT_EQ(2u,s.Results().size());EXPECT_EQ(Confidence::Red,s.Results()[0].lanes[0].match.confidence);
+	ASSERT_EQ(2u,s.Results().size());EXPECT_EQ(Confidence::Yellow,s.Results()[0].lanes[0].match.confidence);
 	EXPECT_EQ(Confidence::Green,s.Results()[1].lanes[0].match.confidence);
 	auto primary_raw=s.Raw(0), secondary=s.Results()[0].lanes[1].capture.blocks, later=s.Results()[1].lanes[0].capture.blocks;
 	ASSERT_TRUE(s.Retake(0,0,100));Start(s);Tap(s,'F',1050,1200);Tap(s,'J',1250,1400);s.Stop(1500);

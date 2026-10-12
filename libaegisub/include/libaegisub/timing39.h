@@ -12,7 +12,7 @@ namespace agi { namespace timing39 {
 constexpr size_t unknown = std::numeric_limits<size_t>::max();
 enum class Confidence { Green, Yellow, Red };
 enum class WordKind { Unknown, Noun, Verb, Adjective, Particle, Auxiliary, Expression };
-enum class Join { Single, LongMark, Sokuon, Nasal, WrittenLongVowel, Vowel };
+enum class Join { Single, LongMark, Sokuon, Nasal, WrittenLongVowel, Vowel, Rhythmic };
 enum class BoundaryKind { Forbidden, Unknown, Strong, Soft };
 enum class CandidateStrength { Base, Strong, Soft };
 
@@ -137,7 +137,10 @@ struct MatchPath {
 // These are provisional, inspectable priors, not linguistic rules. Illegal
 // candidates never reach this scorer regardless of any weight setting.
 struct ScoringModel {
-	std::array<double, 6> join_prior{{0, 0.25, 0.65, 0.85, 0.6, 1.0}};
+	std::array<double, 7> join_prior{{0, 0.25, 0.65, 0.85, 0.6, 1.0, 2.4}};
+	// Rhythmic compression is a review-only rescue when no phonetic path covers
+	// the captured taps; each additional mora costs more than a normal join.
+	double extra_rhythmic_mora = 1.75;
 	double unknown_language = 0.25, different_span = 0.05, duration_fit = 0.65;
 	double source_support = -0.05;
 	double soft_candidate = 0.75;

@@ -874,13 +874,15 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    for(size_t i=0;i<r.target.analysis.morae.size();++i)text+=std::to_string(i)+" ["+r.target.analysis.morae[i].text+"]\n";
    text+="\nLOCAL BLOCKS\n";
    for(size_t i=0;i<l.capture.blocks.size();++i){auto const& b=l.capture.blocks[i];text+=std::to_string(i)+" "+std::to_string(b.start)+".."+std::to_string(b.end)+(b.gap?" gap\n":" sung\n");}
-   text+="\nRELEVANT CANDIDATES\n";
+   text+="\nRELEVANT PHONETIC CANDIDATES\n";
    bool any=false;
-   for(auto const& edges:r.target.analysis.graph)for(auto const& edge:edges)if(edge.count>1){
-    any=true;std::string group;for(size_t i=0;i<edge.count;++i)group+=r.target.analysis.morae[edge.first+i].text;
-    text+="["+group+"] "+(edge.features.strength==t39::CandidateStrength::Soft?"SOFT ":"STRONG ")+edge.reason+"\n";
-   }
+   for(auto const& edges:r.target.analysis.graph)for(auto const& edge:edges)
+    if(edge.count>1 && edge.features.type!=t39::Join::Rhythmic){
+     any=true;std::string group;for(size_t i=0;i<edge.count;++i)group+=r.target.analysis.morae[edge.first+i].text;
+     text+="["+group+"] "+(edge.features.strength==t39::CandidateStrength::Soft?"SOFT ":"STRONG ")+edge.reason+"\n";
+    }
    if(!any)text+="(none)\n";
+   text+="Rhythmic rescue: bounded 2-4 mora groups, only if phonetic matching fails; review required.\n";
    text+="\nLOCAL RAW INDICES ";for(auto index:l.capture.raw_indices)text+=std::to_string(index)+" ";text+="\n";
    auto const& raw=session.RawForResult(size_t(&r-session.Results().data()),selected_lane);
    auto const& ownership=l.timing_override_active?l.automatic_capture:l.capture;

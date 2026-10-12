@@ -64,18 +64,22 @@ inline size_t SungTapCount(PartitionedCapture const& capture) {
 
 inline size_t LegalMergeCandidateCount(Analysis const& analysis) {
 	size_t count=0;
-	for(auto const& edges:analysis.graph)for(auto const& edge:edges)if(edge.count>1)++count;
+	for(auto const& edges:analysis.graph)for(auto const& edge:edges)
+		if(edge.count>1 && edge.features.type!=Join::Rhythmic)++count;
 	return count;
 }
 inline std::string PossibleGroupingGuidance(Analysis const& analysis) {
 	std::string text;
-	for(auto const& edges:analysis.graph)for(auto const& edge:edges)if(edge.count>1) {
-		std::string group;
-		for(size_t i=0;i<edge.count;++i)group+=analysis.morae[edge.first+i].text;
-		if(!text.empty())text+="   ";
-		text+="["+group+"] "+(edge.features.strength==CandidateStrength::Soft?"soft": "strong");
-	}
-	return text.empty()?"No supported automatic pairings; manual placement can still be used.":text;
+	for(auto const& edges:analysis.graph)for(auto const& edge:edges)
+		if(edge.count>1 && edge.features.type!=Join::Rhythmic) {
+			std::string group;
+			for(size_t i=0;i<edge.count;++i)group+=analysis.morae[edge.first+i].text;
+			if(!text.empty())text+="   ";
+			text+="["+group+"] "+(edge.features.strength==CandidateStrength::Soft?"soft": "strong");
+		}
+	if(text.empty())text="No confident phonetic joins identified.";
+	text+=" Rhythmic fallback (up to four morae) is considered only when needed and requires review.";
+	return text;
 }
 
 inline std::string CompactAmbiguity(Analysis const& analysis,MatchResult const& match) {

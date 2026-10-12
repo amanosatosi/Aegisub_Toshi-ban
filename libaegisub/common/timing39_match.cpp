@@ -82,48 +82,61 @@ MatchResult Match(Analysis const& a,std::vector<TimingBlock> const& blocks,Scori
 	// tens of morae; this limit prevents an untrusted subtitle freezing the UI.
 	if(m>512) {result.reason="Line exceeds the 512-mora analysis limit; split at dialogue checkpoints";return result;}
 	double unit=total_duration/m;
-	struct Node {double cost=0; size_t previous=unknown, edge=0, position=0; Score score;};
-	std::vector<Node> nodes(1);
-	using Cell=std::vector<size_t>;
-	std::vector<Cell> current(m+1),next(m+1); current[0].push_back(0);
-	size_t keep=std::max<size_t>(2,std::min<size_t>(weights.alternatives,16));
-	for(size_t used=0;used<n;++used) {
-		for(auto& cell:next) cell.clear();
-		for(size_t pos=0;pos<m;++pos) for(auto previous:current[pos]) {
-			for(size_t e=0;e<a.graph[pos].size();++e) {
-				auto const& edge=a.graph[pos][e];size_t to=pos+edge.count;
-				if(to>m || m-to<n-used-1) continue;
-				Score score;
-				score.prior=weights.join_prior[static_cast<size_t>(edge.features.type)];
-				if(edge.count>1) score.language=(edge.features.uncertain_language?weights.unknown_language:0) +
-					(!edge.features.same_reading_span&&!edge.features.same_lexeme?weights.different_span:0) +
-					(edge.features.source_supported?weights.source_support:0) +
-					(edge.features.strength==CandidateStrength::Soft?weights.soft_candidate:0);
-				double duration=blocks[sung[used]].end-blocks[sung[used]].start;
-				// Log-ratio is scale independent and soft: singing is not metronomic.
-				score.duration=weights.duration_fit*std::pow(std::log(duration/(unit*edge.count)),2);
-				double cost=nodes[previous].cost+score.Total();
-				auto& cell=next[to];
-				if(cell.size()==keep && cost>=nodes[cell.back()].cost) continue;
-				nodes.push_back({cost,previous,e,pos,score});size_t index=nodes.size()-1;
-				auto at=std::upper_bound(cell.begin(),cell.end(),cost,[&](double x,size_t y){return x<nodes[y].cost;});cell.insert(at,index);
-				if(cell.size()>keep) cell.pop_back();
+	// Keep established Japanese phonology authoritative. Only if that graph
+	// cannot explain the sung tap count do we admit review-only rhythmic groups.
+	// This prevents a permissive fallback from displacing a normal assignment.
+	bool rhythmic_fallback=false;
+	for(int pass=0;pass<2 && result.paths.empty();++pass) {
+		struct Node {double cost=0; size_t previous=unknown, edge=0, position=0; Score score;};
+		std::vector<Node> nodes(1);
+		using Cell=std::vector<size_t>;
+		std::vector<Cell> current(m+1),next(m+1); current[0].push_back(0);
+		size_t keep=std::max<size_t>(2,std::min<size_t>(weights.alternatives,16));
+		for(size_t used=0;used<n;++used) {
+			for(auto& cell:next) cell.clear();
+			for(size_t pos=0;pos<m;++pos) for(auto previous:current[pos]) {
+				for(size_t e=0;e<a.graph[pos].size();++e) {
+					auto const& edge=a.graph[pos][e];
+					bool rhythmic=edge.features.type==Join::Rhythmic;
+					if(rhythmic && pass==0) continue;
+					size_t to=pos+edge.count;
+					if(to>m || m-to<n-used-1) continue;
+					Score score;
+					score.prior=weights.join_prior[static_cast<size_t>(edge.features.type)] +
+						(rhythmic?weights.extra_rhythmic_mora*(edge.count-2):0);
+					if(edge.count>1) score.language=(edge.features.uncertain_language?weights.unknown_language:0) +
+						(!edge.features.same_reading_span&&!edge.features.same_lexeme?weights.different_span:0) +
+						(edge.features.source_supported?weights.source_support:0) +
+						(edge.features.strength==CandidateStrength::Soft?weights.soft_candidate:0);
+					double duration=blocks[sung[used]].end-blocks[sung[used]].start;
+					// Log-ratio is scale independent and soft: singing is not metronomic.
+					score.duration=weights.duration_fit*std::pow(std::log(duration/(unit*edge.count)),2);
+					double cost=nodes[previous].cost+score.Total();
+					auto& cell=next[to];
+					if(cell.size()==keep && cost>=nodes[cell.back()].cost) continue;
+					nodes.push_back({cost,previous,e,pos,score});size_t index=nodes.size()-1;
+					auto at=std::upper_bound(cell.begin(),cell.end(),cost,[&](double x,size_t y){return x<nodes[y].cost;});cell.insert(at,index);
+					if(cell.size()>keep) cell.pop_back();
+				}
 			}
+			current.swap(next);
 		}
-		current.swap(next);
-	}
-	for(auto terminal:current[m]) {
-		MatchPath path;path.cost=nodes[terminal].cost;
-		for(size_t used=n;used>0;--used) {
-			auto const& node=nodes[terminal];auto const& edge=a.graph[node.position][node.edge];
-			path.assignments.push_back({sung[used-1],edge.first,edge.count});path.scores.push_back(node.score);terminal=node.previous;
+		for(auto terminal:current[m]) {
+			MatchPath path;path.cost=nodes[terminal].cost;
+			for(size_t used=n;used>0;--used) {
+				auto const& node=nodes[terminal];auto const& edge=a.graph[node.position][node.edge];
+				path.assignments.push_back({sung[used-1],edge.first,edge.count});path.scores.push_back(node.score);terminal=node.previous;
+			}
+			std::reverse(path.assignments.begin(),path.assignments.end());std::reverse(path.scores.begin(),path.scores.end());
+			result.paths.push_back(std::move(path));
 		}
-		std::reverse(path.assignments.begin(),path.assignments.end());std::reverse(path.scores.begin(),path.scores.end());result.paths.push_back(std::move(path));
+		if(!result.paths.empty()) rhythmic_fallback=pass==1;
 	}
 	if(result.paths.empty()) {result.reason="No supported candidate path for this captured count; raw timing is preserved";return result;}
 	result.margin=result.paths.size()>1?result.paths[1].cost-result.paths[0].cost:std::numeric_limits<double>::infinity();
-	result.confidence=result.margin<weights.ambiguity_margin?Confidence::Yellow:Confidence::Green;
-	result.reason=result.confidence==Confidence::Yellow?"Several legal paths remain close after language and duration scoring":"Clear preferred legal assignment";
+	result.confidence=(rhythmic_fallback || result.margin<weights.ambiguity_margin)?Confidence::Yellow:Confidence::Green;
+	result.reason=rhythmic_fallback?"Rhythmic sung grouping inferred; review the mora assignment before committing":
+		result.confidence==Confidence::Yellow?"Several legal paths remain close after language and duration scoring":"Clear preferred legal assignment";
 	if(result.confidence==Confidence::Yellow) {
 		auto has_boundary=[](MatchPath const& path,size_t boundary) {
 			return std::any_of(path.assignments.begin(),path.assignments.end(),[&](TimingAssignment const& x){return x.first_mora+x.mora_count==boundary;});

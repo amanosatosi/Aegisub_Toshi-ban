@@ -11,7 +11,15 @@ std::vector<TimingBlock> Taps(size_t count,int duration=100) {
 std::vector<std::string> Morae(Analysis const& a) {std::vector<std::string> out;for(auto const& m:a.morae)out.push_back(m.text);return out;}
 bool Has(Analysis const& a,std::string const& text) {
 	for(auto const& edges:a.graph)for(auto const& e:edges) {
-		if(e.count==1)continue;std::string s;for(size_t j=0;j<e.count;++j)s+=a.morae[e.first+j].text;if(s==text)return true;
+		if(e.count==1 || e.features.type==Join::Rhythmic)continue;std::string s;for(size_t j=0;j<e.count;++j)s+=a.morae[e.first+j].text;if(s==text)return true;
+	}return false;
+}
+// Includes low-confidence rhythmic edges; use this for hard boundary checks.
+bool AnyGroup(Analysis const& a,std::string const& text) {
+	for(auto const& edges:a.graph)for(auto const& e:edges) {
+		if(e.count<2)continue;std::string s;
+		for(size_t j=0;j<e.count;++j)s+=a.morae[e.first+j].text;
+		if(s==text)return true;
 	}return false;
 }
 }
@@ -62,10 +70,10 @@ TEST(Timing39, ExplicitReadingAuthorityAndIndependentLexemes) {
 	EXPECT_FALSE(Analyze(u8"<病|>").error.empty());EXPECT_FALSE(Analyze("\xff").error.empty());
 }
 TEST(Timing39, GrammarDeletesEdgesBeforeMatching) {
-	auto a=Analyze(u8"<彷徨う|さまよう>");EXPECT_EQ((std::vector<std::string>{u8"さ",u8"ま",u8"よ",u8"う"}),Morae(a));EXPECT_FALSE(Has(a,u8"よう"));EXPECT_EQ(Confidence::Red,Match(a,Taps(3)).confidence);
-	a=Analyze(u8"<幻想|げんそう>を<映し出す|うつしだす>けど");EXPECT_FALSE(Has(a,u8"をう"));EXPECT_TRUE(Has(a,u8"そう"));
-	a=Analyze(u8"<今|いま>という<瞬間|しゅんかん>がいつだって<明日|あす>を<作る|つくる>から");EXPECT_FALSE(Has(a,u8"とい"));EXPECT_FALSE(Has(a,u8"がい"));
-	EXPECT_FALSE(Has(Analyze(u8"こ、う"),u8"こう"));EXPECT_FALSE(Has(Analyze(u8"ぼくわじまたえ"),u8"ぼく"));EXPECT_FALSE(Has(Analyze(u8"ぼくわじまたえ"),u8"たえ"));
+	auto a=Analyze(u8"<彷徨う|さまよう>");EXPECT_EQ((std::vector<std::string>{u8"さ",u8"ま",u8"よ",u8"う"}),Morae(a));EXPECT_FALSE(AnyGroup(a,u8"よう"));EXPECT_EQ(Confidence::Yellow,Match(a,Taps(3)).confidence);
+	a=Analyze(u8"<幻想|げんそう>を<映し出す|うつしだす>けど");EXPECT_FALSE(AnyGroup(a,u8"をう"));EXPECT_TRUE(Has(a,u8"そう"));
+	a=Analyze(u8"<今|いま>という<瞬間|しゅんかん>がいつだって<明日|あす>を<作る|つくる>から");EXPECT_FALSE(AnyGroup(a,u8"とい"));EXPECT_FALSE(AnyGroup(a,u8"がい"));
+	EXPECT_FALSE(AnyGroup(Analyze(u8"こ、う"),u8"こう"));EXPECT_FALSE(Has(Analyze(u8"ぼくわじまたえ"),u8"ぼく"));EXPECT_FALSE(Has(Analyze(u8"ぼくわじまたえ"),u8"たえ"));
 }
 TEST(Timing39, NegativeNaiIsASoftOptionalTimingGroup) {
 	for(auto const& text:{u8"しない",u8"できない",u8"わからない",u8"いらない"}) {
@@ -159,7 +167,7 @@ TEST(Timing39, ExactCountAndNamedGroups) {
 	auto a=Analyze(u8"ゴール");auto all=Match(a,Taps(3));ASSERT_EQ(Confidence::Green,all.confidence);for(auto const& x:all.paths[0].assignments)EXPECT_EQ(1u,x.mora_count);
 	auto merge=Match(a,Taps(2));ASSERT_FALSE(merge.paths.empty());EXPECT_EQ(2u,merge.paths[0].assignments[0].mora_count);
 	EXPECT_TRUE(Has(Analyze(u8"まって"),u8"まっ"));EXPECT_TRUE(Has(Analyze(u8"しんじる"),u8"しん"));EXPECT_TRUE(Has(Analyze(u8"合図"),u8"あい"));
-	EXPECT_EQ(Confidence::Red,Match(Analyze(u8"みく"),Taps(1)).confidence);
+	EXPECT_EQ(Confidence::Yellow,Match(Analyze(u8"みく"),Taps(1)).confidence);
 	EXPECT_EQ(Confidence::Red,Match(a,{}).confidence);EXPECT_EQ(Confidence::Red,Match(a,{{100,90,false}}).confidence);
 }
 TEST(Timing39, RealLyricsAndConfidence) {
@@ -169,6 +177,86 @@ TEST(Timing39, RealLyricsAndConfidence) {
 	a=Analyze(u8"<いっせーのーで鳴り響いたスタートの合図|いっせーのーでなりひびいたすたーとのあいず>");ASSERT_EQ(21u,a.morae.size());r=Match(a,Taps(18));ASSERT_GT(r.paths.size(),1u);EXPECT_EQ(18u,r.paths[0].assignments.size());EXPECT_EQ(Confidence::Yellow,r.confidence);EXPECT_FALSE(r.ambiguous_mora_boundaries.empty());EXPECT_FALSE(agi::timing39::ui::CompactAmbiguity(a,r).empty());EXPECT_FALSE(Has(a,u8"のあ"));
 	auto more=Match(a,Taps(21));EXPECT_EQ(Confidence::Green,more.confidence);EXPECT_EQ(21u,a.morae.size());
 }
+TEST(Timing39, SungJapaneseRealWorldRetakesKeepAllRawAttacks) {
+	// Captured sung phrasing: ねぇ | ほん | とう | の | き | も | ち |
+	// が | し | り | たい | よ. The 16 base morae require four joins.
+	auto first=Analyze(u8"ねぇ<本当|ほんとう>の<気持ち|きもち>が<知りたい|しりたい>よ");
+	ASSERT_TRUE(first.error.empty())<<first.error;
+	ASSERT_EQ(16u,first.morae.size());
+	EXPECT_TRUE(Has(first,u8"ねぇ"));
+	EXPECT_TRUE(Has(first,u8"ほん"));
+	EXPECT_TRUE(Has(first,u8"とう"));
+	EXPECT_TRUE(Has(first,u8"たい"));
+	std::vector<TimingBlock> first_raw={
+		{50390,50797,false},{50797,51281,false},{51281,51562,false},
+		{51562,51812,false},{51812,51984,false},{51984,52219,false},
+		{52219,52406,false},{52406,52625,false},{52625,52750,false},
+		{52750,52922,false},{52922,53203,false},{53203,53594,false},
+		{53594,53620,true}};
+	auto first_saved=first_raw;
+	auto first_match=Match(first,first_raw);
+	ASSERT_FALSE(first_match.paths.empty())<<first_match.reason;
+	EXPECT_NE(Confidence::Red,first_match.confidence);
+	std::vector<size_t> first_counts{2,2,2,1,1,1,1,1,1,1,2,1};
+	std::vector<TimingAssignment> first_expected;
+	size_t pos=0;
+	for(size_t i=0;i<first_counts.size();++i) {
+		first_expected.push_back({i,pos,first_counts[i]});pos+=first_counts[i];
+	}
+	EXPECT_TRUE(ValidAssignments(first,first_raw,first_expected));
+	EXPECT_EQ(first_saved,first_raw);
+
+	// Captured sung phrasing: な | の | に | き | み | は | ま | た |
+	// し | お | たい | おう. The recorded 16/31 ms gaps are real rests.
+	auto second=Analyze(u8"なのに<君|きみ>はまた<塩対応|しおたいおう>");
+	ASSERT_TRUE(second.error.empty())<<second.error;
+	ASSERT_EQ(14u,second.morae.size());
+	EXPECT_TRUE(Has(second,u8"たい"));
+	EXPECT_TRUE(Has(second,u8"おう"));
+	std::vector<TimingBlock> second_raw={
+		{53790,54165,false},{54165,54181,true},{54181,54368,false},
+		{54368,54587,false},{54587,54759,false},{54759,54962,false},
+		{54962,54993,true},{54993,55181,false},{55181,55337,false},
+		{55337,55556,false},{55556,55790,false},{55790,55962,false},
+		{55962,56243,false},{56243,56759,false},{56759,57020,true}};
+	auto second_saved=second_raw;
+	auto second_match=Match(second,second_raw);
+	ASSERT_FALSE(second_match.paths.empty())<<second_match.reason;
+	EXPECT_NE(Confidence::Red,second_match.confidence);
+	std::vector<size_t> second_counts{1,1,1,1,1,1,1,1,1,1,2,2};
+	std::vector<TimingAssignment> second_expected;
+	pos=0;
+	for(size_t i=0,block=0;i<second_counts.size();++i) {
+		while(second_raw[block].gap)++block;
+		second_expected.push_back({block,pos,second_counts[i]});
+		pos+=second_counts[i];++block;
+	}
+	EXPECT_TRUE(ValidAssignments(second,second_raw,second_expected));
+	EXPECT_EQ(second_saved,second_raw);
+}
+
+TEST(Timing39, UnknownSungPhrasesHaveConservativeRhythmicRescue) {
+	// Unknown Japanese lyrics are no longer RED merely because the singer
+	// compresses consonant-bearing morae into fewer attacks.
+	auto unknown_word=Analyze(u8"<煌|きらめく>");
+	ASSERT_TRUE(unknown_word.error.empty())<<unknown_word.error;
+	ASSERT_EQ(4u,unknown_word.morae.size());
+	for(size_t n:{1u,2u,3u}) {
+		auto raw=Taps(n);auto saved=raw;
+		auto result=Match(unknown_word,raw);
+		ASSERT_FALSE(result.paths.empty())<<result.reason;
+		EXPECT_EQ(Confidence::Yellow,result.confidence);
+		EXPECT_EQ(n,result.paths[0].assignments.size());
+		EXPECT_EQ(saved,raw);
+	}
+	// A bounded fallback is not a licence to ignore grammar/punctuation.
+	EXPECT_EQ(Confidence::Red,Match(Analyze(u8"あ、いう"),Taps(1)).confidence);
+	EXPECT_EQ(Confidence::Red,Match(Analyze(u8"きらめくよ"),Taps(1)).confidence);
+	auto particle=Analyze(u8"<幻想|げんそう>を<映し出す|うつしだす>");
+	EXPECT_FALSE(AnyGroup(particle,u8"をう"));
+	EXPECT_FALSE(AnyGroup(Analyze(u8"<彷徨う|さまよう>"),u8"よう"));
+}
+
 TEST(Timing39, ResultsStatusStylesAreDistinct) {
 	using agi::timing39::ui::StatusStyle;
 	auto green=StatusStyle(Confidence::Green),yellow=StatusStyle(Confidence::Yellow),red=StatusStyle(Confidence::Red);
@@ -257,7 +345,7 @@ TEST(Timing39, VisibleCaptureVisitorMatchesPreviewWithoutFullSessionCopy) {
 TEST(Timing39, DurationRanksOnlyLegalPaths) {
 	auto a=Analyze(u8"こーこー");auto blocks=Taps(3);blocks[0].end=200;blocks[1]={200,300,false};blocks[2]={300,400,false};
 	auto r=Match(a,blocks);ASSERT_FALSE(r.paths.empty());EXPECT_EQ(2u,r.paths[0].assignments[0].mora_count);
-	EXPECT_EQ(Confidence::Red,Match(Analyze(u8"みく"),{{0,5000,false}}).confidence);
+	EXPECT_EQ(Confidence::Yellow,Match(Analyze(u8"みく"),{{0,5000,false}}).confidence);
 }
 TEST(Timing39, OwnershipGapsAndIndependentLanes) {
 	TimingCaptureSession session;for(auto& lane:session.lanes)lane.Begin(0,1000);

@@ -75,7 +75,13 @@ std::vector<Lexeme> const& Lexicon() {
 		{u8"愛",u8"あい",WordKind::Noun}, {u8"声",u8"こえ",WordKind::Noun},
 		{u8"心",u8"こころ",WordKind::Noun}, {u8"夢",u8"ゆめ",WordKind::Noun},
 		{u8"ドア",u8"どあ",WordKind::Noun}, {u8"みく",u8"みく",WordKind::Noun},
-		{u8"繊細",u8"せんさい",WordKind::Adjective}
+		{u8"繊細",u8"せんさい",WordKind::Adjective},
+		// Common sung expressions and words; explicit ruby always overrides these.
+		{u8"ねぇ",u8"ねぇ",WordKind::Expression}, {u8"ねえ",u8"ねえ",WordKind::Expression},
+		{u8"本当",u8"ほんとう",WordKind::Noun}, {u8"気持ち",u8"きもち",WordKind::Noun},
+		{u8"知りたい",u8"しりたい",WordKind::Verb}, {u8"なのに",u8"なのに",WordKind::Expression},
+		{u8"また",u8"また",WordKind::Expression}, {u8"塩対応",u8"しおたいおう",WordKind::Noun},
+		{u8"塩",u8"しお",WordKind::Noun}, {u8"対応",u8"たいおう",WordKind::Noun}
 	};
 	return words;
 }
@@ -369,9 +375,11 @@ void TokenizeAndGate(Analysis& a) {
 		b={true,"unsupported phonological relationship",BoundaryKind::Unknown};
 		if(left.reading_end!=right.reading_begin) { b={true,"punctuation / spacing",BoundaryKind::Forbidden}; continue; }
 		bool same=left.lexeme!=unknown && left.lexeme==right.lexeme && a.words[left.lexeme].certain;
-		if(left.lexeme!=right.lexeme && left.lexeme!=unknown && right.lexeme!=unknown &&
-			((a.words[left.lexeme].kind==WordKind::Particle&&a.words[left.lexeme].certain) ||
-			 (a.words[right.lexeme].kind==WordKind::Particle&&a.words[right.lexeme].certain))) {
+		// A recognized particle is a hard lyric boundary even when the
+		// adjacent word has no dictionary entry.
+		if(left.lexeme!=right.lexeme &&
+			((left.lexeme!=unknown && a.words[left.lexeme].kind==WordKind::Particle && a.words[left.lexeme].certain) ||
+			 (right.lexeme!=unknown && a.words[right.lexeme].kind==WordKind::Particle && a.words[right.lexeme].certain))) {
 			b={true,"source/context-supported particle boundary",BoundaryKind::Forbidden};continue;
 		}
 		if(left.lexeme!=right.lexeme && left.lexeme!=unknown && right.lexeme!=unknown && a.words[left.lexeme].certain && a.words[right.lexeme].certain) {
@@ -389,7 +397,10 @@ void TokenizeAndGate(Analysis& a) {
 		else if(right.text==u8"ー" && (v || left.text==u8"ー")) {type=Join::LongMark;reason="long mark continuation";}
 		else if(right.text==u8"っ" && v) {type=Join::Sokuon;reason="supported preceding-mora sokuon grouping (separate also legal)";}
 		else if(right.text==u8"ん" && v) {type=Join::Nasal;reason="moraic nasal continuation";}
-		else if(v && (right.text==u8"あ"||right.text==u8"い"||right.text==u8"う"||right.text==u8"え"||right.text==u8"お")) {
+		// Sung elongated vowels may be written with small kana (ねぇ, あぁ,
+		// もうぅ). Keep these as separate base morae, with an optional join.
+		else if(v && (right.text==u8"あ"||right.text==u8"い"||right.text==u8"う"||right.text==u8"え"||right.text==u8"お"||
+			right.text==u8"ぁ"||right.text==u8"ぃ"||right.text==u8"ぅ"||right.text==u8"ぇ"||right.text==u8"ぉ")) {
 			char next=Vowel(right.text);
 			bool long_like=v==next || (v=='o'&&next=='u') || (v=='e'&&next=='i');
 			// General vowel adjacency requires a recognized shared lexeme.
@@ -400,6 +411,26 @@ void TokenizeAndGate(Analysis& a) {
 		} else continue;
 		b={false,reason,strength==CandidateStrength::Soft?BoundaryKind::Soft:BoundaryKind::Strong};
 		a.graph[i-1].push_back({i-1,2,{type,same,left.span==right.span,!same,same&&a.words[left.lexeme].source_supported,strength},reason});
+	}
+	// Singing uses attacks, not a fixed one-attack-per-mora pronunciation.
+	// Generate bounded, lower-trust rhythmic alternatives for unfamiliar words,
+	// quick syllables, and several morae on one attack. Match() tries the
+	// phonological graph first, and only considers these edges if it fails.
+	// Punctuation, high-confidence lexical/particle boundaries and protected
+	// verb endings remain impossible to cross even in rhythmic fallback.
+	constexpr size_t max_sung_group = 4;
+	for(size_t first=0;first<a.morae.size();++first) {
+		for(size_t count=2;count<=max_sung_group && first+count<=a.morae.size();++count) {
+			if(a.boundaries[first+count-1].kind==BoundaryKind::Forbidden) break;
+			if(count==2 && std::any_of(a.graph[first].begin(),a.graph[first].end(),
+				[](TimingGroupCandidate const& edge){return edge.count==2;})) continue;
+			auto const& left=a.morae[first];auto const& right=a.morae[first+count-1];
+			bool same=left.lexeme!=unknown && left.lexeme==right.lexeme && a.words[left.lexeme].certain;
+			a.graph[first].push_back({first,count,
+				{Join::Rhythmic,same,left.span==right.span,!same,
+				 same&&a.words[left.lexeme].source_supported,CandidateStrength::Soft},
+				 "possible sung rhythmic grouping (requires review)"});
+		}
 	}
 }
 } // namespace
