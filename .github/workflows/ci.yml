@@ -404,6 +404,23 @@ jobs:
           .\build\tests\gtest-main.exe --gtest_filter=DependencyControlRuntime.PackagedModuleLoadsWithBundledFallbacks
           if ($LASTEXITCODE -ne 0) { throw 'Packaged DependencyControl failed to load in Aegisub runtime.' }
 
+      - name: Verify packaged Mangetsu Karaoke Templater include
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $module = "automation\include\mangetsu-karaskel.lua"
+          $portable = Join-Path "build\aegisub-portable" $module
+          $installed = Join-Path "build\install\share\aegisub" $module
+          foreach ($path in @($portable, $installed)) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Packaged Karaoke Templater include missing: $path"
+            }
+          }
+          $zipList = 7z l "build\aegisub-portable-64.zip"
+          if ($LASTEXITCODE -ne 0 -or -not ($zipList -match 'mangetsu-karaskel\.lua')) {
+            throw 'Portable zip is missing the Mangetsu Karaoke Templater include.'
+          }
+
       - name: Verify bundled ASSDraw packages
         if: matrix.config.os == 'windows-latest'
         shell: pwsh
