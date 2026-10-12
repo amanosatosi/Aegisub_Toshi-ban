@@ -1079,7 +1079,14 @@ void DialogMotionTrack::CreateControls() {
 	mode_choice->Append(_("Movement + size + rotation"));
 	mode_choice->SetSelection(0); // Plain movement by default; rotation and size are opt-in.
 	mode_choice->SetToolTip(_("Choose which motion components the tracker should calculate and export."));
-	output_row->Add(mode_choice, 0);
+	output_row->Add(mode_choice, 0, wxRIGHT, 12);
+	output_row->Add(new wxStaticText(this, -1, _("View:")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 3);
+	view_choice = new wxChoice(this, -1);
+	view_choice->Append(_("Fast"));
+	view_choice->Append(_("Viewable"));
+	view_choice->SetSelection(0);
+	view_choice->SetToolTip(_("Fast tracks without extra delay. Viewable displays every frame and both tracker squares long enough to spot drift; tracking results are identical."));
+	output_row->Add(view_choice, 0);
 	controls->Add(output_row, 0, wxBOTTOM, 4);
 
 	auto cleanup_row = new wxBoxSizer(wxHORIZONTAL);
@@ -1852,15 +1859,26 @@ void DialogMotionTrack::TrackRange(int target_frame) {
 	UpdateApplyStatus();
 	wxBusyCursor busy;
 	int step = target_frame > current_frame ? 1 : -1;
+	// Capture once per run: this is a presentation option, not tracking state.
+	// Don't dispatch arbitrary GUI events while tracking the modeless dialog.
+	bool const viewable = view_choice && view_choice->GetSelection() == 1;
 	while (current_frame != target_frame) {
+		auto const frame_started = std::chrono::steady_clock::now();
 		int next = current_frame + step;
 		TrackOne(next);
 		if (!markers.count(next))
 			break;
-		// Paint the preview without dispatching arbitrary input which could
-		// close the modeless dialog or swap channels midway through a run.
+		// TrackOne refreshes the actual video frame, marker and both regions.
+		// Update() paints pending changes synchronously without allowing UI
+		// events to close this window or mutate the active tracking session.
 		preview->Update();
 		frame_bar->Update();
+		if (viewable) {
+			graph->Update();
+			// A visible dwell makes a fast decoder's individual tracking steps
+			// readable. Slow tracking needs no artificial additional delay.
+			std::this_thread::sleep_until(frame_started + std::chrono::milliseconds(40));
+		}
 	}
 	tracking = false;
 	UpdateApplyStatus();
