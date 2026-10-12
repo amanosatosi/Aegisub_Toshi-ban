@@ -4,6 +4,7 @@ lua_files = files(
     'clipboard.lua',
     'karaskel-auto4.lua',
     'karaskel.lua',
+    'mangetsu-karaskel.lua',
     'lfs.lua',
     'moonscript.lua',
     're.lua',
