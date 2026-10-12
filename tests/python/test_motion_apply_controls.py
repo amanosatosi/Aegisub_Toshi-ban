@@ -113,6 +113,26 @@ class NativeMotionContracts(unittest.TestCase):
         # with the complete results/segments rather than being regenerated.
         self.assertNotIn("BuildStitchedMotionResult", switch)
 
+    def test_view_selector_defaults_to_fast_and_viewable_preserves_tracking(self):
+        header = (ROOT / "src/dialog_motion_track.h").read_text(encoding="utf-8")
+        create = method(self.window, "CreateControls")
+        track = method(self.window, "TrackRange")
+        step = method(self.window, "TrackOne")
+        self.assertIn("wxChoice *view_choice", header)
+        self.assertIn('view_choice->Append(_("Fast"))', create)
+        self.assertIn('view_choice->Append(_("Viewable"))', create)
+        self.assertIn("view_choice->SetSelection(0)", create)
+        self.assertIn("view_choice->GetSelection() == 1", track)
+        self.assertIn("TrackOne(next)", track)
+        self.assertIn("preview->Update()", track)
+        self.assertIn("frame_bar->Update()", track)
+        self.assertIn("graph->Update()", track)
+        self.assertIn("sleep_until(frame_started + std::chrono::milliseconds(40))", track)
+        self.assertNotIn("wxYieldIfNeeded", track)
+        self.assertNotIn("wxYield", track)
+        self.assertNotIn("view_choice", step)
+        self.assertLess(track.index("TrackOne(next)"), track.index("if (viewable)"))
+
     def test_tracking_action_uses_selected_channel_and_both_directions(self):
         create = method(self.window, "CreateControls")
         self.assertIn("main_track_button->Bind(wxEVT_BUTTON, [=](wxCommandEvent&) { TrackMotion(); })", create)
