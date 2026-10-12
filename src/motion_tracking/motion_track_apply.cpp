@@ -15,6 +15,20 @@ namespace motion_tracking {
 namespace {
 bool ClipTag(AssOverrideTag const& t) { return t.Name == "\\clip" || t.Name == "\\iclip"; }
 
+// Better View collapses blocks beginning with [toshiban motion track helper].
+// The native ownership suffix distinguishes new layers from user-authored Lua
+// motion helper blocks. Still recognize old native-v2 output for Revert/Reapply.
+bool IsNativeLayer(std::string const& text, size_t start, size_t end) {
+	for (std::string const marker : {std::string(MotionLayerMarker),
+		std::string(LegacyNativeMotionLayerMarker)}) {
+		size_t after = start + marker.size();
+		if (after <= end && text.compare(start, marker.size(), marker) == 0 &&
+			(after == end || text[after] == '\\'))
+			return true;
+	}
+	return false;
+}
+
 std::string Number(double v) {
 	if (!std::isfinite(v)) throw std::invalid_argument("Motion contains a non-finite value.");
 	if (std::abs(v) < 0.0000005) v = 0;
@@ -163,6 +177,27 @@ void Inspect(AssDialogueBlockOverride const& block, bool moving_position, bool c
 	}
 }
 
+// Plain formatting (\\b, \\fs, \\c, etc.) does not reset an active tracking
+// transform. Recompose only when authored tags actually modify a tracked
+// scalar. Without this guard every formatting span got redundant +/-\\frz.
+bool ChangesTrackedScalar(AssDialogueBlockOverride const& block,
+	bool object_scale, bool rotation, bool clip_scale, int depth = 0) {
+	if (depth > 16) throw std::invalid_argument("Authored motion transforms are nested too deeply.");
+	for (auto const& tag : block.Tags) {
+		if (tag.Name == "\\t" && tag.Params.size() == 4 && !tag.Params[3].omitted) {
+			if (ChangesTrackedScalar(*tag.Params[3].Get<AssDialogueBlockOverride*>(),
+				object_scale,rotation,clip_scale,depth+1))
+				return true;
+		}
+		else if ((tag.Name == "\\r" && (object_scale || rotation || clip_scale)) ||
+			(object_scale && tag.Name == "\\scale") ||
+			(clip_scale && tag.Name == "\\clips") ||
+			(rotation && (tag.Name == "\\frz" || tag.Name == "\\fr")))
+			return true;
+	}
+	return false;
+}
+
 struct Signal {
 	std::string tag;
 	std::vector<MotionSample> samples;
@@ -247,7 +282,7 @@ std::string RemoveMotionLayers(std::string const& text) {
 		if (open == std::string::npos) break;
 		auto close = text.find('}',open+1);
 		if (close == std::string::npos) break;
-		if (text.compare(open+1,sizeof(MotionLayerMarker)-1,MotionLayerMarker) == 0) {
+		if (IsNativeLayer(text,open+1,close)) {
 			result += text.substr(copied,open-copied);
 			copied = close+1;
 		}
@@ -337,7 +372,16 @@ MotionApplication BuildMotionApplication(AssDialogue const& input, MotionStyleRe
 	std::vector<Signal> previous;
 	size_t count = 0;
 	for (size_t g = 0; g < groups.size(); ++g) {
-		if (g) insertions[groups[g].start] += Layer(previous,o.encoding,-1,count);
+		if (g) {
+			bool needs_recomposition = false;
+			for (auto const& block : groups[g].blocks)
+				if (auto override = dynamic_cast<AssDialogueBlockOverride const*>(block.get()))
+					needs_recomposition |= ChangesTrackedScalar(*override,
+						want_main && o.scale, want_main && o.rotation, want_clip && o.scale);
+			if (!needs_recomposition)
+				continue; // Keep one tracking block across bold, font and color changes.
+			insertions[groups[g].start] += Layer(previous,o.encoding,-1,count);
+		}
 		std::vector<Signal> local;
 		auto make = [&](std::string tag,std::vector<double> tol) {
 			local.push_back({std::move(tag),{},std::move(tol)});
