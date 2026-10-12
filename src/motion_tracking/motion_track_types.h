@@ -65,7 +65,7 @@ struct MotionTrackSettings {
 	int end_frame = 0;
 	int square_size = 80;
 	int search_size = 200;
-	MotionTrackMode mode = MotionTrackMode::PositionSizeRotation;
+	MotionTrackMode mode = MotionTrackMode::PositionOnly;
 	MotionTrackBase base = MotionTrackBase::PreviousFrame;
 	bool brightness_normalize = true;
 	bool prepass = true;
