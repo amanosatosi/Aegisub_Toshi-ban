@@ -166,3 +166,14 @@ TEST(BetterView, RefreshReflectsRemovalAndUndoReadditionWithoutStaleTokens) {
 	EXPECT_EQ(without_block, agi::BuildBetterViewConversion(without_block, true).display_text);
 	EXPECT_EQ("abc{motion tracking}def", agi::BuildBetterViewConversion(with_block, true).display_text);
 }
+
+
+TEST(BetterView, NativeOwnedMotionLayerUsesExistingCompactDisplay) {
+	std::string native="{[toshiban motion track helper][toshiban native motion v2]\\t(0,40,\\pos(~+1,~+2))}";
+	auto converted=agi::BuildBetterViewConversion("before"+native+"after",true);
+	EXPECT_EQ("before{motion tracking}after",converted.display_text);
+	ASSERT_EQ(1u,converted.motion_blocks.size());
+	EXPECT_EQ(native,converted.MotionBlockText(converted.motion_blocks[0]));
+	EXPECT_EQ("before"+native+"after",
+		agi::ApplyBetterViewEdit(converted,converted.display_text).raw_text);
+}
