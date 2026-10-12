@@ -143,7 +143,8 @@ TEST(MotionApply, ParsedCombinedPayloadKeepsComponentsInsideTransform) {
 TEST(MotionApply, LinearXYStaysOneCompactEvent) {
 	auto track=Track(Linear(40));
 	for (size_t i=0;i<track.frames.size();++i) track.frames[i].y+=i*2;
-	auto source=Line(40); auto output=Apply(source,track); One(output,source);
+	MotionApplyOptions o; o.encoding=MotionEncoding::Automatic;
+	auto source=Line(40); auto output=Apply(source,track,o); One(output,source);
 	EXPECT_EQ(1u,Count(output.events[0].Text.get(),"\\t("));
 	for (int i=0;i<40;++i) {
 		auto s=Render(output.events[0],i*40);
@@ -159,21 +160,24 @@ TEST(MotionApply, StationaryDoesNotEmitTrackingOrRewriteOrdinarySubtitles) {
 }
 TEST(MotionApply, MoveStopMoveNeedsTwoTransforms) {
 	auto track=Track({100,105,110,115,120,120,120,120,120,116,112,108});
-	auto source=Line(12); auto output=Apply(source,track); One(output,source);
+	MotionApplyOptions o; o.encoding=MotionEncoding::Automatic;
+	auto source=Line(12); auto output=Apply(source,track,o); One(output,source);
 	EXPECT_EQ(2u,Count(output.events[0].Text.get(),"\\t("));
 	for (int i=0;i<12;++i) EXPECT_NEAR(200+track.frames[i].x-100,Render(output.events[0],i*40).x,0.00001);
 }
 TEST(MotionApply, StopMoveAndMoveStopKeepCompactHolds) {
 	for (auto const& values : {std::vector<double>{100,100,100,105,110,115},
 		std::vector<double>{100,105,110,115,115,115}}) {
-		auto output=Apply(Line(6),Track(values));
+		MotionApplyOptions o; o.encoding=MotionEncoding::Automatic;
+		auto output=Apply(Line(6),Track(values),o);
 		EXPECT_EQ(1u,output.events.size()); EXPECT_EQ(1u,Count(output.events[0].Text.get(),"\\t("));
 	}
 }
 TEST(MotionApply, NonlinearSerializedFitStaysWithinPixelTolerance) {
 	auto track=Track(Linear(100));
 	for (int i=0;i<100;++i) { track.frames[i].x=100+30*std::sin(i*0.08); track.frames[i].y=100+20*std::cos(i*0.11); }
-	auto source=Line(100); auto output=Apply(source,track); One(output,source);
+	MotionApplyOptions o; o.encoding=MotionEncoding::Automatic;
+	auto source=Line(100); auto output=Apply(source,track,o); One(output,source);
 	EXPECT_LT(Count(output.events[0].Text.get(),"\\t("),99u);
 	for (int i=0;i<99;++i) for (int ms=0;ms<40;ms+=5) {
 		double p=ms/40.0;
@@ -196,7 +200,8 @@ TEST(MotionApply, MainReferencePreservesAuthoredPlacementAndScaleRotation) {
 		track.frames[i].rotation_deg=i*4; track.frames[i].y+=i*3;
 	}
 	auto source=Line(8,"{\\pos(900,700)\\scale150\\frz-30\\fscx80\\fscy120\\bord4}Sign");
-	auto output=Apply(source,track,{},3); One(output,source);
+	MotionApplyOptions o; o.scale=true; o.rotation=true;
+	auto output=Apply(source,track,o,3); One(output,source);
 	auto s=Render(output.events[0],120);
 	EXPECT_NEAR(900,s.x,0.00001); EXPECT_NEAR(700,s.y,0.00001);
 	EXPECT_NEAR(150,s.scale,0.00001); EXPECT_NEAR(-30,s.rotation,0.00001);
@@ -234,7 +239,8 @@ TEST(MotionApply, RotationUnwrapsBoth360And180Boundaries) {
 	for (auto angles : {std::vector<double>{350,355,0,5,10},std::vector<double>{170,175,180,-175,-170}}) {
 		auto track=Track(std::vector<double>(5,100));
 		for (int i=0;i<5;++i) track.frames[i].rotation_deg=angles[i];
-		auto source=Line(5,"{\\frz30}Sign"); auto output=Apply(source,track,{},2);
+		MotionApplyOptions o; o.rotation=true; o.encoding=MotionEncoding::Automatic;
+		auto source=Line(5,"{\\frz30}Sign"); auto output=Apply(source,track,o,2);
 		EXPECT_EQ(1u,Count(output.events[0].Text.get(),"\\t("));
 		for (int i=0;i<5;++i) EXPECT_NEAR(30-(i-2)*5,Render(output.events[0],i*40).rotation,0.00001);
 	}
@@ -245,7 +251,8 @@ TEST(MotionApply, ComponentsOptimizeIndependentlyAndCombineMatchingIntervals) {
 		track.frames[i].rotation_deg=i<4 ? i*3 : i<8 ? 9 : 9+(i-7)*2;
 		track.frames[i].scale_x=track.frames[i].scale_y=1+i*0.01;
 	}
-	auto output=Apply(Line(12),track);
+	MotionApplyOptions o; o.scale=true; o.rotation=true; o.encoding=MotionEncoding::Automatic;
+	auto output=Apply(Line(12),track,o);
 	EXPECT_EQ(3u,Count(output.events[0].Text.get(),"\\t(")); // pos+scale together, two rotation runs
 	for (int i=0;i<12;++i) {
 		auto s=Render(output.events[0],i*40);
@@ -257,7 +264,8 @@ TEST(MotionApply, AnimatedObjectScaleComposesWithoutDeletingAuthoredTransforms) 
 	auto track=Track(std::vector<double>(6,100));
 	for (int i=0;i<6;++i) track.frames[i].scale_x=track.frames[i].scale_y=1+i*0.1;
 	auto source=Line(6,"{\\scale150\\t(0,200,2,\\scale200)\\t(0,200,\\frz~+20)\\fad(20,30)\\k20}Sign");
-	auto output=Apply(source,track,{},2); One(output,source);
+	MotionApplyOptions o; o.scale=true; o.rotation=true; o.encoding=MotionEncoding::Automatic;
+	auto output=Apply(source,track,o,2); One(output,source);
 	EXPECT_EQ(source.Text.get(),RemoveMotionLayers(output.events[0].Text.get()));
 	for (int ms=0;ms<=200;++ms) {
 		auto original=Render(source,ms), actual=Render(output.events[0],ms);
@@ -269,7 +277,8 @@ TEST(MotionApply, InlineResetsAndPerSpanScaleAreComposed) {
 	auto track=Track(std::vector<double>(5,100));
 	for (int i=0;i<5;++i) { track.frames[i].scale_x=track.frames[i].scale_y=1+i*0.1; track.frames[i].rotation_deg=i*3; }
 	auto source=Line(5,"{\\scale150\\frz20}A{\\r\\scale80\\frz-10}B{\\scale~+20}C");
-	auto output=Apply(source,track,{},2);
+	MotionApplyOptions o; o.scale=true; o.rotation=true; o.encoding=MotionEncoding::Automatic;
+	auto output=Apply(source,track,o,2);
 	EXPECT_EQ(source.Text.get(),RemoveMotionLayers(output.events[0].Text.get()));
 	for (int i=0;i<5;++i) {
 		auto states=RenderStates(output.events[0],i*40);
@@ -287,7 +296,7 @@ TEST(MotionApply, FourClipFormsKeepGeometryAndDrawingScale) {
 		auto track=Track(Linear(5));
 		for (int i=0;i<5;++i) { track.frames[i].y+=i*10; track.frames[i].scale_x=track.frames[i].scale_y=1+i*0.1; }
 		auto source=Line(5,std::string("{")+shape+"\\clippos(4,6)\\clips150}Mask");
-		MotionApplyOptions o; o.object_motion=false;
+		MotionApplyOptions o; o.object_motion=false; o.scale=true;
 		auto output=Apply(source,{},o,2,&track); One(output,source);
 		EXPECT_TRUE(output.used_clippos);
 		EXPECT_EQ(source.Text.get(),RemoveMotionLayers(output.events[0].Text.get()));
@@ -311,6 +320,7 @@ TEST(MotionApply, ClipRelativeYBothDirectionsAndAnimatedClipScale) {
 	auto track=Track(std::vector<double>(6,100));
 	for (int i=0;i<6;++i) track.frames[i].scale_x=track.frames[i].scale_y=1+i*0.1;
 	MotionApplyOptions o; o.object_motion=false;
+	o.encoding=MotionEncoding::Automatic;
 	auto source=Line(6,"{\\iclip(2,m 0 0 l 20 0 20 20)\\clips120\\t(0,200,\\clips~+30)}Mask");
 	auto output=Apply(source,{},o,2,&track);
 	for (int ms=0;ms<=200;++ms) EXPECT_NEAR(Render(source,ms).clips*(1+ms/400.0)/1.2,Render(output.events[0],ms).clips,0.20001);
@@ -366,7 +376,8 @@ TEST(MotionApply, VfrPreservesSubCentisecondTimingsAndUsesExactMediaTimes) {
 	for (int i=0;i<8;++i) track.frames[i].x=100+tc.TimeAtFrame(i)*0.1;
 	auto source=Line(8); source.Start=7; source.End=281;
 	AssStyle style;
-	auto output=BuildMotionApplication(source,[&](std::string const&) {return &style;},track,nullptr,3,tc,640,480);
+	MotionApplyOptions o; o.encoding=MotionEncoding::Automatic;
+	auto output=BuildMotionApplication(source,[&](std::string const&) {return &style;},track,nullptr,3,tc,640,480,o);
 	One(output,source);
 	EXPECT_EQ(1u,Count(output.events[0].Text.get(),"\\t("));
 	for (int i=1;i<=6;++i) EXPECT_NEAR(200+(tc.TimeAtFrame(i)-73)*0.1,Render(output.events[0],tc.TimeAtFrame(i)-int(source.Start)).x,0.00001);
@@ -389,6 +400,7 @@ TEST(MotionApply, AmbiguousCompetingPositionAndUnsupportedClipRotationExplainRej
 	EXPECT_NO_THROW(Apply(Line(5,"{\\move(0,0,50,0)}Sign"),track,o));
 	for (int i=0;i<5;++i) track.frames[i].rotation_deg=i*10;
 	o.object_motion=false; o.position_x=o.position_y=true;
+	o.rotation=true;
 	EXPECT_THROW(Apply(Line(5,"{\\clip(0,0,20,20)}Mask"),{},o,0,&track),std::invalid_argument);
 	o.rotation=false;
 	EXPECT_NO_THROW(Apply(Line(5,"{\\clip(0,0,20,20)}Mask"),{},o,0,&track));
@@ -413,4 +425,27 @@ TEST(MotionOptimizer, ExactEndpointsAndBoundsAcrossAllModes) {
 		}
 		if (mode==MotionEncoding::FrameByFrame) EXPECT_EQ(79u,fit.regions.size());
 	}
+}
+
+
+TEST(MotionApply, NativeLayerCollapsesButLegacyHelperIsUntouched) {
+	const std::string legacy="{[toshiban motion track helper]\\t(0,40,\\pos(~+3,~+0))}";
+	EXPECT_FALSE(HasMotionLayers(legacy));
+	EXPECT_EQ(legacy,RemoveMotionLayers(legacy));
+	auto native="{"+std::string(MotionLayerMarker)+"\\t(0,40,\\pos(~+3,~+0))}";
+	EXPECT_EQ(legacy,RemoveMotionLayers(native+legacy));
+	EXPECT_EQ(0u,std::string(MotionLayerMarker).find("[toshiban motion track helper]"));
+	EXPECT_EQ("Sign",RemoveMotionLayers("{[toshiban native motion v2]\\frz~+1}Sign"));
+}
+TEST(MotionApply, SimpleDefaultIsFrameExactAndIgnoresFormattingBoundaries) {
+	auto track=Track(Linear(7));
+	for (size_t i=0;i<track.frames.size();++i) track.frames[i].rotation_deg=i*0.1;
+	auto source=Line(7,"{\\pos(200,300)}A{\\b1\\fs30}B{\\c&HFFFFFF&}C");
+	AssStyle style;
+	auto output=BuildMotionApplication(source,[&](std::string const&){return &style;},
+		track,nullptr,0,agi::vfr::Framerate(25.0),640,480);
+	EXPECT_EQ(1u,Count(output.events[0].Text.get(),MotionLayerMarker));
+	EXPECT_EQ(6u,Count(output.events[0].Text.get(),"\\t("));
+	EXPECT_EQ(0u,Count(output.events[0].Text.get(),"\\frz"));
+	EXPECT_EQ(source.Text.get(),RemoveMotionLayers(output.events[0].Text.get()));
 }
