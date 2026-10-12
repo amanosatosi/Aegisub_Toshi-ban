@@ -529,7 +529,15 @@ class MotionTrackPreviewPanel final : public wxPanel {
 			dc.DrawPolygon(4, corners);
 		};
 
-		draw_square(search_half, wxPen(search_colour, 1, wxPENSTYLE_SHORT_DASH));
+		// The actual OpenCV search window is axis-aligned, even if the
+		// tracked pattern has rotation. Draw both separately and clearly.
+		wxPoint search_top_left(
+			static_cast<int>(std::lround(center.m_x - search_half * scale)),
+			static_cast<int>(std::lround(center.m_y - search_half * scale)));
+		int search_extent = std::max(1, static_cast<int>(std::lround(2 * search_half * scale)));
+		dc.SetBrush(*wxTRANSPARENT_BRUSH);
+		dc.SetPen(wxPen(search_colour, 2, wxPENSTYLE_SHORT_DASH));
+		dc.DrawRectangle(search_top_left.x, search_top_left.y, search_extent, search_extent);
 		draw_square(half, wxPen(marker_colour, 2));
 
 		wxPoint handle_rel = RotatePoint(half * scale, 0.0, angle);
@@ -1069,7 +1077,7 @@ void DialogMotionTrack::CreateControls() {
 	mode_choice->Append(_("Movement + rotation"));
 	mode_choice->Append(_("Movement + size"));
 	mode_choice->Append(_("Movement + size + rotation"));
-	mode_choice->SetSelection(3);
+	mode_choice->SetSelection(0); // Plain movement by default; rotation and size are opt-in.
 	mode_choice->SetToolTip(_("Choose which motion components the tracker should calculate and export."));
 	output_row->Add(mode_choice, 0);
 	controls->Add(output_row, 0, wxBOTTOM, 4);
