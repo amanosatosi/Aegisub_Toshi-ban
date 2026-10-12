@@ -58,7 +58,7 @@ class DialogMotionTrack final : public wxDialog {
 		int base_frame = -1;
 		int active_segment = -1;
 		double initial_marker_size = 80;
-		motion_tracking::MotionTrackMode mode = motion_tracking::MotionTrackMode::PositionSizeRotation;
+		motion_tracking::MotionTrackMode mode = motion_tracking::MotionTrackMode::PositionOnly;
 	};
 	TrackChannel other_channel;
 	bool editing_clip = false;
