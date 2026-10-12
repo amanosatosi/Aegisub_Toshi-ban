@@ -368,7 +368,13 @@ TEST(Timing39, CorrectionPreservesCaptureAndRejectsIllegalBoundaries) {
 	auto a=Analyze(u8"こーー");auto blocks=Taps(2);auto saved=blocks;auto r=Match(a,blocks);ASSERT_EQ(2u,r.paths.size());
 	AssignmentEditor editor;editor.Reset(r.paths[0].assignments);EXPECT_TRUE(editor.Choose(a,r.paths[1].assignments));EXPECT_TRUE(editor.Undo());EXPECT_TRUE(editor.Redo());
 	int delta=editor.Get()[0].mora_count==1?1:-1;EXPECT_TRUE(editor.Move(a,1,delta));EXPECT_EQ(saved,blocks);EXPECT_FALSE(editor.Move(a,0,1));
-	a=Analyze(u8"まって");r=Match(a,Taps(2));editor.Reset(r.paths[0].assignments);EXPECT_FALSE(editor.Move(a,1,-1));
+	a=Analyze(u8"まって");r=Match(a,Taps(2));editor.Reset(r.paths[0].assignments);
+	// Reviewed sung rhythm permits ま | って as an alternate placement.
+	EXPECT_TRUE(editor.Move(a,1,-1));
+	EXPECT_EQ(1u,editor.Get()[0].mora_count);
+	// Punctuation is still a hard boundary: こー | う cannot become こ | ーう.
+	a=Analyze(u8"こー、う");r=Match(a,Taps(2));ASSERT_FALSE(r.paths.empty());
+	editor.Reset(r.paths[0].assignments);EXPECT_FALSE(editor.Move(a,1,-1));
 	EXPECT_NE(std::string::npos,Inspect(a,Taps(2),r,&editor).find("FIXED"));
 }
 TEST(Timing39, StyleInferenceUsesEvidenceAndRequiresCorroboration) {
