@@ -5,6 +5,18 @@ with the same ID, native millisecond start/end, fields, folds and extradata.
 The OpenCV engine, markers, forward/backward runs, handoff stitching, preview,
 graphs, cleanup and AE export remain acquisition tools.
 
+## Tracking preview speed
+
+The Track Motion dialog's **View** selector offers **Fast** (default) and
+**Viewable**. Fast retains direct preview and timeline updates without an
+artificial delay. Viewable additionally updates the motion graph and holds
+each tracked frame for approximately 40 milliseconds (roughly 25 fps),
+making pattern/search squares and visible drift easier to inspect.
+Both use identical OpenCV acquisition, confidence, frame samples, and
+Apply output. The mode is purely a display preference for the current
+dialog, and never restarts tracking or changes the selected channel.
+Neither mode pumps unrestricted GUI events while tracking.
+
 ## Tracking channels
 
 The workflow row keeps **Track Motion** on the left, the **Main video reference**
