@@ -15,12 +15,13 @@ namespace motion_tracking {
 enum class ClipMotionSource { SeparateTrack, MainTrack, KeepUnchanged };
 
 struct MotionApplyOptions {
-	MotionEncoding encoding = MotionEncoding::Automatic;
+	// Preserve every video-frame sample by default; simplification is opt-in in Advanced Apply.
+	MotionEncoding encoding = MotionEncoding::FrameByFrame;
 	MotionTolerances tolerance;
 	bool position_x = true;
 	bool position_y = true;
-	bool scale = true;
-	bool rotation = true;
+	bool scale = false;
+	bool rotation = false;
 	bool object_motion = true; // false for a standalone Track for \\clip pass
 	ClipMotionSource clip_source = ClipMotionSource::SeparateTrack;
 	bool rectangular_clips = true;
@@ -47,7 +48,10 @@ bool HasMotionClip(AssDialogue const& line);
 bool HasTrackableMotionClip(AssDialogue const& line);
 std::string MotionClipSignature(AssDialogue const& line);
 // Exact owned blocks only. Original text, including user transforms, is byte-preserved.
-constexpr char MotionLayerMarker[] = "[toshiban native motion v2]";
+// Start with the editor's existing Better View marker; a second annotation
+// marks native-owned output so Reapply/Revert never delete legacy helper tags.
+constexpr char MotionLayerMarker[] = "[toshiban motion track helper][toshiban native motion v2]";
+constexpr char LegacyNativeMotionLayerMarker[] = "[toshiban native motion v2]";
 std::string RemoveMotionLayers(std::string const& text);
 bool HasMotionLayers(std::string const& text);
 
