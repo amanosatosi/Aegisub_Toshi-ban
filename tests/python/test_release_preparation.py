@@ -57,9 +57,9 @@ class ReleasePreparation(unittest.TestCase):
         self.assertIn("'include/mangetsu-karaskel.lua'", read("automation/meson.build"))
         self.assertIn("'mangetsu-karaskel.lua'", read("automation/include/meson.build"))
         installer = read("packages/win_installer/fragment_automation.iss")
-        self.assertIn(r"automation\\include\\mangetsu-karaskel.lua", installer)
+        self.assertIn(r"automation\include\mangetsu-karaskel.lua", installer)
         portable = read("packages/win_installer/portable/create-portable.ps1")
-        self.assertIn(r"share\\aegisub\\automation\\*", portable)
+        self.assertIn(r"share\aegisub\automation\*", portable)
 
     def test_runtime_build_contract(self):
         moonscript = read("automation/include/moonscript.lua")
