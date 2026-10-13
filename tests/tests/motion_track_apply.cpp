@@ -320,7 +320,8 @@ TEST(MotionApply, ClipRelativeYBothDirectionsAndAnimatedClipScale) {
 	auto track=Track(std::vector<double>(6,100));
 	for (int i=0;i<6;++i) track.frames[i].scale_x=track.frames[i].scale_y=1+i*0.1;
 	MotionApplyOptions o; o.object_motion=false;
-	o.encoding=MotionEncoding::Automatic;
+	// Animated clip zoom must be explicitly requested; scale defaults to off.
+	o.scale=true; o.encoding=MotionEncoding::Automatic;
 	auto source=Line(6,"{\\iclip(2,m 0 0 l 20 0 20 20)\\clips120\\t(0,200,\\clips~+30)}Mask");
 	auto output=Apply(source,{},o,2,&track);
 	for (int ms=0;ms<=200;++ms) EXPECT_NEAR(Render(source,ms).clips*(1+ms/400.0)/1.2,Render(output.events[0],ms).clips,0.20001);

@@ -62,9 +62,21 @@ TEST(Timing39Karaoke, AbsoluteRoundingDoesNotAccumulate) {
 	ASSERT_TRUE(Serialize(d,a,b,r.paths[0].assignments,out,error))<<error;EXPECT_EQ(u8"{\\k10}み{\\k11}く{\\k9}み",out);
 	d.Text=out;AssKaraoke k(&d,false,false);EXPECT_EQ(1300,(k.end()-1)->start_time+(k.end()-1)->duration);
 }
-TEST(Timing39Karaoke, RedNeverWritesAndUnknownNeedsReading) {
-	AssDialogue d;d.Start=0;d.End=100;d.Text=u8"みく";auto a=AnalyzeDialogue(d);std::string out="unchanged",error;
-	EXPECT_FALSE(Serialize(d,a,{{0,100,false}},{{0,0,2}},out,error));EXPECT_EQ("unchanged",out);
+TEST(Timing39Karaoke, HardRedNeverWritesAndUnknownNeedsReading) {
+	AssDialogue d;d.Start=0;d.End=100;d.Text=u8"み、く";auto a=AnalyzeDialogue(d);std::string out="unchanged",error;
+	std::vector<TimingBlock> blocks{{0,100,false}};
+	// Punctuation is a protected boundary. A genuinely impossible assignment
+	// must never write, even if the caller supplies that mapping directly.
+	EXPECT_EQ(Confidence::Red,Match(a,blocks).confidence);
+	EXPECT_FALSE(Serialize(d,a,blocks,{{0,0,2}},out,error));EXPECT_EQ("unchanged",out);
+	// Natural みく on a single sung attack is now reviewable YELLOW, not RED.
+	// Explicit placement/selection may serialize it; automatic session commit
+	// remains guarded by SessionResult::GetConfidence().
+	d.Text=u8"みく";a=AnalyzeDialogue(d);
+	auto rescue=Match(a,blocks);ASSERT_EQ(Confidence::Yellow,rescue.confidence);
+	ASSERT_FALSE(rescue.paths.empty());
+	EXPECT_TRUE(Serialize(d,a,blocks,rescue.paths[0].assignments,out,error,true))<<error;
+	EXPECT_EQ(u8"{\\k10}みく",out);
 	d.Text=u8"魑魅魍魎";EXPECT_FALSE(AnalyzeDialogue(d).error.empty());
 	d.Text=u8"<宇宙|そら>";a=AnalyzeDialogue(d);EXPECT_EQ(u8"そら",a.reading.normalized);
 }
