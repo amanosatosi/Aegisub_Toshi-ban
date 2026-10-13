@@ -61,6 +61,17 @@ class ReleasePreparation(unittest.TestCase):
         portable = read("packages/win_installer/portable/create-portable.ps1")
         self.assertIn(r"share\aegisub\automation\*", portable)
 
+    def test_unused_subtitle_renderers_do_not_scan_fonts_at_startup(self):
+        main = read("src/main.cpp")
+        for backend in ("libass", "libassmod", "mangetsu"):
+            self.assertNotIn(backend + "::CacheFonts();", main)
+        provider = read("src/subtitles_provider_libass.cpp")
+        self.assertIn("std::call_once(once,", provider)
+        self.assertRegex(provider, r"CacheFonts\(\);\s*return agi::make_unique<LibassSubtitlesProvider>")
+        warmup = provider.split("void CacheFonts() {", 1)[1]
+        self.assertNotIn("ass_renderer_init(library)", warmup)
+        self.assertNotIn("ass_set_fonts(ass_renderer", warmup)
+
     def test_runtime_build_contract(self):
         moonscript = read("automation/include/moonscript.lua")
         version = re.search(r'local version = "(\d+)\.(\d+)\.(\d+)"', moonscript)

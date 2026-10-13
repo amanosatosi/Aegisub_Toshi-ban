@@ -292,9 +292,8 @@ bool AegisubApp::OnInit() {
 
 		// Load plugins
 		Automation4::ScriptFactory::Register(agi::make_unique<Automation4::LuaScriptFactory>());
-		libass::CacheFonts();
-		libassmod::CacheFonts();
-		mangetsu::CacheFonts();
+		// Font discovery happens when the selected subtitle provider is opened.
+		// Do not warm three separate font indexes for two unused renderers.
 
 		// Enumerating providers registers the available renderers. Handle the
 		// migration before creating any project/video renderer for this session.
