@@ -327,7 +327,7 @@ public:
 		wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER), context(context) {
 		auto line = context->selectionController->GetActiveLine();
 		auto style = context->ass->GetStyle(line->Style);
-		defaults = style ? DefaultChatAppearance(style->primary, style->secondary, style->outline, style->shadow, style->outline_w) : DefaultChatAppearance();
+		defaults = DefaultChatPalette();
 		state = LoadChatStyle(line->Text.get(), defaults);
 		valid_presets = presets.Load(OPT_GET("Tool/Mangetsu Chat/Presets")->GetString());
 		auto root = new wxBoxSizer(wxVERTICAL);
