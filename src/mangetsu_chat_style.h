@@ -38,6 +38,7 @@ struct ChatStyleState {
 ChatAppearance DefaultChatAppearance(agi::Color text = {255, 255, 255},
 	agi::Color name = {255, 0, 0}, agi::Color fill = {}, agi::Color panel = {},
 	double outline_size = 2);
+ChatAppearance DefaultChatPalette();
 void RefreshAutomaticChatHeader(ChatAppearance& appearance);
 bool ParseChatBubbleTuple(std::string const& tuple, ChatBubbleStyle& result);
 std::string SerializeChatBubbleTuple(ChatBubbleStyle const& style);
