@@ -1,5 +1,5 @@
 [wrap-git]
 directory = libassmod
 url = https://github.com/amanosatosi/libassmod.git
-revision = master
+revision = 3f5640045bbd737661f3858480ec948fece929cb
 diff_files = libassmod/0001-disable-override.patch
