@@ -31,6 +31,24 @@ ChatAppearance Sample() {
 	return appearance;
 }
 
+TEST(mangetsu_chat_style, editor_palette_has_distinct_readable_colors) {
+    auto defaults = DefaultChatPalette();
+    EXPECT_EQ(agi::Color(50, 120, 200), defaults.panel);
+    EXPECT_EQ(agi::Color(229, 231, 235), defaults.left.fill);
+    EXPECT_EQ(agi::Color(179, 230, 167), defaults.right.fill);
+    EXPECT_EQ(agi::Color(), defaults.left.text);
+    EXPECT_EQ(agi::Color(), defaults.right.text);
+    auto loaded = LoadChatStyle("Hi", defaults);
+    EXPECT_EQ(defaults.left.fill, loaded.appearance.left.fill);
+    EXPECT_EQ(defaults.right.fill, loaded.appearance.right.fill);
+    EXPECT_TRUE(loaded.authored.none());
+    auto reset = LoadChatStyle("{\\msgleft()\\msgright()}Hi", defaults);
+    EXPECT_EQ(defaults.left.fill, reset.appearance.left.fill);
+    EXPECT_EQ(defaults.right.fill, reset.appearance.right.fill);
+    auto inherited = LoadChatStyle("{\\3c&H112233&}Hi", defaults);
+    EXPECT_EQ(agi::Color(0x33, 0x22, 0x11), inherited.appearance.left.fill);
+    EXPECT_EQ(inherited.appearance.left.fill, inherited.appearance.right.fill);
+}
 TEST(mangetsu_chat_style, parses_left_tuple_in_renderer_field_order) {
 	auto loaded = LoadChatStyle("{\\msgleft" + tuple + "}Message", DefaultChatAppearance());
 	auto const& side = loaded.appearance.left;
