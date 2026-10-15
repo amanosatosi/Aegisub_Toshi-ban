@@ -160,6 +160,14 @@ ChatAppearance DefaultChatAppearance(agi::Color text, agi::Color name, agi::Colo
 	RefreshAutomaticChatHeader(result);
 	return result;
 }
+ChatAppearance DefaultChatPalette() {
+    auto result = DefaultChatAppearance({0, 0, 0}, {0, 0, 0},
+        {229, 231, 235}, {50, 120, 200}, 0);
+    result.right.fill = {179, 230, 167};
+    result.right.border = result.right.fill;
+    result.right.outline = result.right.fill;
+    return result;
+}
 void RefreshAutomaticChatHeader(ChatAppearance& appearance) {
 	bool dark = (appearance.panel.r * 299 + appearance.panel.g * 587 + appearance.panel.b * 114) / 1000 < 128;
 	if (appearance.automatic_header) appearance.header = dark ? agi::Color(255, 255, 255) : agi::Color();
@@ -201,6 +209,7 @@ ChatStyleState LoadChatStyle(std::string const& text, ChatAppearance const& defa
 	auto& a = result.appearance;
 	auto tags = Tags(text);
 	ChatBubbleStyle baseline = defaults.left;
+    ChatBubbleStyle right_baseline = defaults.right;
 	// Ordinary leading chat paint supplies defaults when a side tuple is absent.
 	for (auto const& tag : tags) if (tag.prefix) {
 		if (tag.name == "c" || tag.name == "1c") Color(tag.value, baseline.text);
@@ -220,7 +229,27 @@ ChatStyleState LoadChatStyle(std::string const& text, ChatAppearance const& defa
 			Alpha(tag.value, baseline.fill); Alpha(tag.value, baseline.outline);
 		}
 	}
-	a.left = a.right = baseline;
+	// Apply ordinary leading paint equally without erasing distinct side defaults.
+	for (auto const& tag : tags) if (tag.prefix) {
+		if (tag.name == "c" || tag.name == "1c") Color(tag.value, right_baseline.text);
+		else if (tag.name == "1a") Alpha(tag.value, right_baseline.text);
+		else if (tag.name == "2c") Color(tag.value, right_baseline.name);
+		else if (tag.name == "2a") Alpha(tag.value, right_baseline.name);
+		else if (tag.name == "3c" || tag.name == "bubc") Color(tag.value, right_baseline.fill);
+		else if (tag.name == "3a" || tag.name == "buba") Alpha(tag.value, right_baseline.fill);
+		else if (tag.name == "bubbc") Color(tag.value, right_baseline.border);
+		else if (tag.name == "bubba") Alpha(tag.value, right_baseline.border);
+		else if (tag.name == "bubbs") Size(tag.value, right_baseline.border_size);
+		else if (tag.name == "bc") Color(tag.value, right_baseline.outline);
+		else if (tag.name == "ba") Alpha(tag.value, right_baseline.outline);
+		else if (tag.name == "bs" || tag.name == "bord") Size(tag.value, right_baseline.outline_size);
+		else if (tag.name == "alpha") {
+			Alpha(tag.value, right_baseline.text); Alpha(tag.value, right_baseline.name);
+			Alpha(tag.value, right_baseline.fill); Alpha(tag.value, right_baseline.outline);
+		}
+	}
+	a.left = baseline;
+    a.right = right_baseline;
 	for (auto const& tag : tags) {
 		if (tag.prefix && tag.name == "alpha") Alpha(tag.value, a.panel);
 		if (tag.name == "chatmode" && (Trim(tag.value) == "1" || Trim(tag.value) == "2" || Trim(tag.value) == "3"))
@@ -258,7 +287,7 @@ ChatStyleState LoadChatStyle(std::string const& text, ChatAppearance const& defa
 				case ChatStyleTag::Right: {
 					auto& side = i == Index(ChatStyleTag::Left) ? a.left : a.right;
 					valid = ParseChatBubbleTuple(tag.value, side);
-					if (Trim(tag.value) == "()") { side = baseline; valid = true; }
+					if (Trim(tag.value) == "()") { side = i == Index(ChatStyleTag::Left) ? baseline : right_baseline; valid = true; }
 					break;
 				}
 				case ChatStyleTag::ReadMark:
