@@ -229,6 +229,25 @@ ChatStyleState LoadChatStyle(std::string const& text, ChatAppearance const& defa
 			Alpha(tag.value, baseline.fill); Alpha(tag.value, baseline.outline);
 		}
 	}
+	// Apply ordinary leading paint equally without erasing distinct side defaults.
+	for (auto const& tag : tags) if (tag.prefix) {
+		if (tag.name == "c" || tag.name == "1c") Color(tag.value, right_baseline.text);
+		else if (tag.name == "1a") Alpha(tag.value, right_baseline.text);
+		else if (tag.name == "2c") Color(tag.value, right_baseline.name);
+		else if (tag.name == "2a") Alpha(tag.value, right_baseline.name);
+		else if (tag.name == "3c" || tag.name == "bubc") Color(tag.value, right_baseline.fill);
+		else if (tag.name == "3a" || tag.name == "buba") Alpha(tag.value, right_baseline.fill);
+		else if (tag.name == "bubbc") Color(tag.value, right_baseline.border);
+		else if (tag.name == "bubba") Alpha(tag.value, right_baseline.border);
+		else if (tag.name == "bubbs") Size(tag.value, right_baseline.border_size);
+		else if (tag.name == "bc") Color(tag.value, right_baseline.outline);
+		else if (tag.name == "ba") Alpha(tag.value, right_baseline.outline);
+		else if (tag.name == "bs" || tag.name == "bord") Size(tag.value, right_baseline.outline_size);
+		else if (tag.name == "alpha") {
+			Alpha(tag.value, right_baseline.text); Alpha(tag.value, right_baseline.name);
+			Alpha(tag.value, right_baseline.fill); Alpha(tag.value, right_baseline.outline);
+		}
+	}
 	a.left = baseline;
     a.right = right_baseline;
 	for (auto const& tag : tags) {
