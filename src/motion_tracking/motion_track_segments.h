@@ -41,6 +41,11 @@ struct MotionTrackSegment {
 	std::string name;
 };
 
+// Return a valid source observation for a tracking step. Keep the confidence
+// and status from a previously tracked frame rather than replacing it with
+// Untracked; a manually placed anchor is authoritative for the new run.
+MotionTrackSegmentSample ConfirmTrackingSource(MotionTrackSegment const& segment,
+	int frame, MotionTrackMarker const& marker);
 void UpsertSegmentSample(MotionTrackSegment& segment, MotionTrackSegmentSample sample);
 void TrimSegmentToEnd(MotionTrackSegment& segment);
 void RecalculateSegmentAccumulatedOffsets(std::vector<MotionTrackSegment>& segments);

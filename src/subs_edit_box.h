@@ -41,6 +41,8 @@
 
 #include <libaegisub/signal.h>
 
+#include "better_view.h"
+
 namespace agi { namespace vfr { class Framerate; } }
 namespace agi { struct Context; }
 namespace agi { class Time; }
@@ -140,8 +142,8 @@ class SubsEditBox final : public wxPanel {
 
 	size_t last_bracket_pair_index_ = 1;
 	bool better_view_enabled_ = true;
-	std::vector<int> display_to_raw_;
-	std::string display_to_raw_raw_text_;
+	agi::BetterViewConversion better_view_conversion_;
+	std::vector<size_t> expanded_motion_blocks_;
 
 	void RebuildDisplayMapping(std::string const& raw_utf8);
 	std::string BuildDisplayTextWithMapping(std::string const& raw_utf8);
@@ -153,7 +155,7 @@ class SubsEditBox final : public wxPanel {
 	void CommitTimes(TimeField field);
 	/// @brief Commits the current edit box contents
 	/// @param desc Undo description to use
-	void CommitText(wxString const& desc);
+	void CommitText(wxString const& desc, std::string const& normalized_text);
 	void Commit(wxString const& desc, int type, bool amend, AssDialogue *line);
 
 	/// Last commit ID for undo coalescing
@@ -208,7 +210,6 @@ class SubsEditBox final : public wxPanel {
 	void UpdateJoinButtons();
 	void UpdateSecondaryEditor();
 	wxString MakeDisplayText(wxString const& raw) const;
-	wxString MakeAssText(wxString const& display) const;
 
 	void SetPlaceholderCtrl(wxControl *ctrl, wxString const& value);
 
@@ -286,5 +287,7 @@ public:
 	void FocusTextCtrl();
 	bool MapDisplayRangeToRaw(int disp_start, int disp_end, std::string const& raw_utf8, int& raw_start, int& raw_end);
 	int MapRawToDisplay(int raw_offset, std::string const& raw_utf8);
+	bool GetMotionTrackingBlockAtDisplayPosition(int display_pos, std::string& raw_block, bool& expanded);
+	bool ToggleMotionTrackingBlockAtDisplayPosition(int display_pos);
 	bool BetterViewEnabled() const { return better_view_enabled_; }
 };

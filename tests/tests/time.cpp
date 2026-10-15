@@ -32,6 +32,14 @@ TEST(lagi_time, rounds_to_cs) {
 	EXPECT_EQ(10, (int)Time(14));
 }
 
+TEST(lagi_time, native_milliseconds_do_not_change_ass_rounding) {
+	Time time(7);
+	EXPECT_EQ(7, time.GetMilliseconds());
+	EXPECT_EQ(10, static_cast<int>(time));
+	EXPECT_EQ("0:00:00.01", time.GetAssFormatted());
+	EXPECT_EQ("0:00:00.007", time.GetAssFormatted(true));
+}
+
 TEST(lagi_time, cs_formatting) {
 	EXPECT_STREQ("1:23:45.67", Time((((1 * 60) + 23) * 60 + 45) * 1000 + 670).GetAssFormatted().c_str());
 }

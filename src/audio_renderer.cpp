@@ -32,6 +32,7 @@
 /// @ingroup audio_ui
 
 #include "audio_renderer.h"
+#include "audio_perf.h"
 
 #include <libaegisub/audio/provider.h>
 #include <libaegisub/make_unique.h>
@@ -167,6 +168,7 @@ wxBitmap const& AudioRenderer::GetCachedBitmap(const int i, const AudioRendering
 	auto& bmp = bitmaps[style].Get(i, &created);
 	if (created)
 	{
+		AudioPerf::Scope tile_timer(AudioPerf::TileBuild);
 		renderer->Render(bmp, i*cache_bitmap_width, style);
 		needs_age = true;
 	}
@@ -215,6 +217,14 @@ void AudioRenderer::Render(wxDC &dc, wxPoint origin, const int start, const int 
 		renderer->AgeCache(cache_renderer_maxsize);
 		needs_age = false;
 	}
+}
+
+void AudioRenderer::RenderReview(wxBitmap &bmp, double start_ms,
+	double review_ms_per_pixel, AudioRenderingStyle style)
+{
+	if (!provider || !renderer || !bmp.IsOk() || review_ms_per_pixel <= 0) return;
+	renderer->RenderReview(bmp, start_ms, review_ms_per_pixel, style);
+	renderer->AgeCache(cache_renderer_maxsize);
 }
 
 void AudioRenderer::Invalidate()

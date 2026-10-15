@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1280" height="1280" viewBox="0 0 1280 1280" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">39 Mode logo</title>
+  <desc id="desc">White 39 numerals edged in turquoise and charcoal, above turquoise audio bars. A central timing marker runs from a circular head to a downward arrow. Transparent background; all artwork is vector.</desc>
+  <defs>
+    <linearGradient id="teal" x1="260" y1="220" x2="1010" y2="1090" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#20ddd2"/>
+      <stop offset="1" stop-color="#19cbbb"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="350" y1="840" x2="870" y2="1060" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a3f6ea"/>
+      <stop offset="1" stop-color="#94f1e5"/>
+    </linearGradient>
+    <linearGradient id="white" x1="630" y1="300" x2="630" y2="770" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f7f9fa"/>
+    </linearGradient>
+    <path id="three" d="M251 309 H490 C550 309 590 352 590 412 C590 455 568 479 542 499 L525 513 C570 525 590 562 590 609 V631 C590 708 532 761 450 761 H205 Q198 761 203 754 L266 674 Q271 668 278 668 H445 C474 668 494 648 494 620 C494 594 476 575 450 575 H363 Q349 575 359 563 L480 468 C493 458 499 447 499 433 C499 417 488 407 474 407 H319 Q312 407 307 400 L247 320 Q240 309 251 309 Z"/>
+    <path id="nine" fill-rule="evenodd" clip-rule="evenodd" d="M844 302 C950 302 1035 384 1035 490 C1035 550 1010 595 973 639 L881 748 Q870 761 852 761 H753 Q743 761 750 752 L856 627 H819 C729 627 659 566 659 477 C659 380 741 302 844 302 Z M844 396 C799 396 763 432 763 476 C763 520 799 556 844 556 C889 556 925 520 925 476 C925 432 889 396 844 396 Z"/>
+  </defs>
+  <g id="cursor-stem">
+    <path d="M626.5 260 V1041" stroke="#1c262b" stroke-width="79"/>
+  </g>
+  <!-- Numerals: broad charcoal perimeter, fine turquoise keyline, white face. -->
+  <g id="numerals" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#1c262b" stroke-width="72">
+      <use xlink:href="#three"/>
+      <use xlink:href="#nine"/>
+    </g>
+    <g fill="url(#white)" stroke="url(#teal)" stroke-width="15">
+      <use xlink:href="#three"/>
+      <use xlink:href="#nine"/>
+    </g>
+  </g>
+  <!-- Audio bars remain separate editable rounded rectangles. -->
+  <g id="equalizer" stroke="#1c262b" stroke-width="24">
+    <rect x="156" y="913" width="66" height="98" rx="29" fill="url(#teal)"/>
+    <rect x="247" y="885" width="81" height="149" rx="29" fill="url(#mint)"/>
+    <rect x="353" y="831" width="82" height="233" rx="30" fill="url(#mint)"/>
+    <rect x="463" y="856" width="127" height="197" rx="31" fill="url(#teal)"/>
+    <rect x="664" y="856" width="128" height="197" rx="31" fill="url(#teal)"/>
+    <rect x="819" y="828" width="82" height="240" rx="30" fill="url(#mint)"/>
+    <rect x="926" y="885" width="81" height="149" rx="29" fill="url(#mint)"/>
+    <rect x="1031" y="913" width="68" height="98" rx="29" fill="url(#teal)"/>
+  </g>
+  <!-- Timing cursor: continuous center stem, circular head and pointer. -->
+  <g id="timing-marker">
+    <path d="M626.5 248 V1043" stroke="#1bd7ca" stroke-width="27"/>
+    <circle cx="626.5" cy="211.5" r="66.5" fill="url(#teal)" stroke="#1c262b" stroke-width="26"/>
+    <circle cx="626.5" cy="211.5" r="28" fill="#ffffff"/>
+    <path d="M579 1027 H674 C689 1027 696 1040 687 1053 L640 1122 C633 1133 620 1133 613 1122 L566 1053 C557 1040 564 1027 579 1027 Z" fill="#1bd7ca" stroke="#1c262b" stroke-width="24" stroke-linejoin="round" paint-order="stroke fill"/>
+    <path d="M599 1044 H654 C662 1044 666 1051 661 1058 L634 1097 C630 1103 623 1103 619 1097 L592 1058 C587 1051 591 1044 599 1044 Z" fill="#ffffff"/>
+  </g>
+</svg>

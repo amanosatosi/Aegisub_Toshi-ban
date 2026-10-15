@@ -34,6 +34,7 @@
 #include "libaegisub/io.h"
 #include "libaegisub/json.h"
 #include "libresrc/libresrc.h"
+#include "main.h"
 #include "options.h"
 #include "preferences_base.h"
 #include "theme_preset.h"
@@ -68,6 +69,14 @@
 #include <cstring>
 
 namespace {
+bool DarkModeChangeRequiresRestart() {
+#if defined(__WXMSW__) && wxVERSION_NUMBER >= 3300
+	return true;
+#else
+	return false;
+#endif
+}
+
 /// General preferences page
 void General(wxTreebook *book, Preferences *parent) {
 	auto p = new OptionPage(book, parent, _("General"));
@@ -337,7 +346,7 @@ void Interface(wxTreebook *book, Preferences *parent) {
 
 #if defined(__WXMSW__) && wxVERSION_NUMBER >= 3300
 	auto dark_mode = p->PageSizer(_("Dark Mode"));
-	auto dark_mode_ctrl = p->OptionAdd(dark_mode, _("Enable experimental dark mode (restart required)"), "App/Dark Mode");
+	auto dark_mode_ctrl = p->OptionAdd(dark_mode, _("Enable experimental dark mode"), "App/Dark Mode");
 	if (auto cb = dynamic_cast<wxCheckBox*>(dark_mode_ctrl)) {
 		cb->Bind(wxEVT_CHECKBOX, [parent](wxCommandEvent &evt) {
 			parent->SetPendingThemePreset(evt.IsChecked() ? "dark_mode_unofficial" : std::string(), true);
@@ -1232,12 +1241,45 @@ void Preferences::ApplyPendingThemePreset() {
 	}
 }
 
+void Preferences::PromptForDarkModeRestart() {
+	if (!DarkModeChangeRequiresRestart())
+		return;
+
+	bool dark_mode = OPT_GET("App/Dark Mode")->GetBool();
+	if (dark_mode != last_committed_dark_mode) {
+		last_committed_dark_mode = dark_mode;
+		restart_prompt_dismissed = false;
+	}
+
+	// The saved preference may differ from the mode used to create wxWidgets'
+	// native controls when an earlier restart was deferred.
+	if (dark_mode == dark_mode_at_startup || restart_prompt_dismissed)
+		return;
+
+	wxMessageDialog dialog(
+		this,
+		_("Restart Aegisub to apply dark mode?\n\nAegisub needs to restart to update native Windows controls."),
+		_("Restart Aegisub?"),
+		wxYES_NO | wxICON_QUESTION | wxCENTER);
+	dialog.SetYesNoLabels(_("Restart Now"), _("Later"));
+	dialog.SetEscapeId(wxID_NO);
+	if (dialog.ShowModal() == wxID_YES) {
+		restart_requested = true;
+		EndModal(wxID_OK);
+	}
+	else {
+		restart_prompt_dismissed = true;
+	}
+}
+
 void Preferences::OnOK(wxCommandEvent &event) {
 	OnApply(event);
-	EndModal(0);
+	if (!restart_requested)
+		EndModal(wxID_OK);
 }
 
 void Preferences::OnApply(wxCommandEvent &) {
+	bool const had_changes = !pending_changes.empty() || !pending_callbacks.empty();
 	for (auto const& change : pending_changes)
 		OPT_SET(change.first)->Set(change.second.get());
 	pending_changes.clear();
@@ -1248,6 +1290,8 @@ void Preferences::OnApply(wxCommandEvent &) {
 
 	applyButton->Enable(false);
 	config::opt->Flush();
+	if (had_changes)
+		PromptForDarkModeRestart();
 }
 
 void Preferences::OnResetDefault(wxCommandEvent&) {
@@ -1260,6 +1304,9 @@ void Preferences::OnResetDefault(wxCommandEvent&) {
 			opt->Reset();
 	}
 	config::opt->Flush();
+	PromptForDarkModeRestart();
+	if (restart_requested)
+		return;
 
 	agi::hotkey::Hotkey def_hotkeys("", GET_DEFAULT_CONFIG(default_hotkey));
 	hotkey::inst->SetHotkeyMap(def_hotkeys.GetHotkeyMap());
@@ -1271,6 +1318,9 @@ void Preferences::OnResetDefault(wxCommandEvent&) {
 
 Preferences::Preferences(wxWindow *parent): wxDialog(parent, -1, _("Preferences"), wxDefaultPosition, wxSize(-1, -1), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER) {
 	SetIcon(GETICON(options_button_16));
+
+	dark_mode_at_startup = wxGetApp().IsDarkModeActive();
+	last_committed_dark_mode = OPT_GET("App/Dark Mode")->GetBool();
 
 	book = new wxTreebook(this, -1, wxDefaultPosition, wxDefaultSize);
 	General(book, this);
@@ -1319,6 +1369,13 @@ Preferences::Preferences(wxWindow *parent): wxDialog(parent, -1, _("Preferences"
 	defaultButton->Bind(wxEVT_BUTTON, &Preferences::OnResetDefault, this);
 }
 
-void ShowPreferences(wxWindow *parent) {
-	while (Preferences(parent).ShowModal() < 0);
+bool ShowPreferences(wxWindow *parent) {
+	for (;;) {
+		Preferences preferences(parent);
+		int result = preferences.ShowModal();
+		if (preferences.ShouldRestart())
+			return true;
+		if (result >= 0)
+			return false;
+	}
 }

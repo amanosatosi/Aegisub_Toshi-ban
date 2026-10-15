@@ -40,7 +40,9 @@ class AssDialogueBlockOverride;
 /// Type of parameter
 enum class AssParameterClass {
 	NORMAL,
-	ABSOLUTE_SIZE,
+	ABSOLUTE_SIZE_X,
+	ABSOLUTE_SIZE_Y,
+	ABSOLUTE_SIZE_XY,
 	ABSOLUTE_POS_X,
 	ABSOLUTE_POS_Y,
 	RELATIVE_SIZE_X,
@@ -50,7 +52,10 @@ enum class AssParameterClass {
 	KARAOKE,
 	DRAWING,
 	ALPHA,
-	COLOR
+	COLOR,
+	PERSPECTIVE_A, PERSPECTIVE_B, PERSPECTIVE_TX,
+	PERSPECTIVE_C, PERSPECTIVE_D, PERSPECTIVE_TY,
+	PERSPECTIVE_P, PERSPECTIVE_Q
 };
 
 enum class VariableDataType {

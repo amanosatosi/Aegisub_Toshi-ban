@@ -16,24 +16,58 @@ all_test_deps += [
 ]
 all_test_deps += deps
 all_test_dep_libs += [
-    libaegisub
+    libaegisub,
+    libluabins,
 ]
 all_test_sources += [
     'support/main.cpp',
     'support/util.cpp',
     'support/float_to_string_stub.cpp',
+    'support/ass_file_resampler_stub.cpp',
 
     # Compile minimal Aegisub sources needed for AssKaraoke tests
+    '../src/ass_attachment.cpp',
+    '../src/ass_parser.cpp',
+    '../src/string_codec.cpp',
+    '../src/mkv_subtitle_packet.cpp',
+    '../src/subtitles_provider_serialization.cpp',
+    '../src/subtitles_provider_libassmod_render.cpp',
+    '../src/application_updates.cpp',
     '../src/ass_dialogue.cpp',
+    '../src/ass_file_script_info.cpp',
+    '../src/ass_file_extradata.cpp',
     '../src/ass_font_tag_selection.cpp',
     '../src/ass_override.cpp',
+    '../src/ass_style.cpp',
+    '../src/ass_tag_edit.cpp',
     '../src/ass_karaoke.cpp',
+    '../src/timing39_karaoke.cpp',
+    '../src/timing39_session_setup.cpp',
+    '../src/better_view.cpp',
     '../src/motion_tracking/motion_track_export_ae.cpp',
     '../src/motion_tracking/motion_track_segments.cpp',
+    '../src/motion_tracking/motion_track_optimizer.cpp',
+    '../src/motion_tracking/motion_track_apply.cpp',
+    '../src/motion_tracking/motion_track_commit.cpp',
+    '../src/mangetsu_distort.cpp',
+    '../src/mangetsu_renderer_offer.cpp',
+    '../src/mangetsu_curved_text.cpp',
     '../src/mangetsu_gradient_placement.cpp',
+    '../src/mangetsu_gradient_scope.cpp',
+    '../src/mangetsu_chat_style.cpp',
+    '../src/perspective_geometry.cpp',
+    '../src/project_properties.cpp',
+    '../src/resolution_resampler.cpp',
+    '../src/style_import.cpp',
+    '../src/vector2d.cpp',
 
     'tests/access.cpp',
+    'tests/subtitles_provider_libassmod.cpp',
+    'tests/mkv_subtitle_packet.cpp',
+    'tests/application_updates.cpp',
+    'tests/dependencycontrol_runtime.cpp',
     'tests/audio.cpp',
+    'tests/audio_dialog_text.cpp',
     'tests/cajun.cpp',
     'tests/calltip_provider.cpp',
     'tests/character_count.cpp',
@@ -45,8 +79,16 @@ all_test_sources += [
     'tests/iconv.cpp',
     'tests/ifind.cpp',
     'tests/ass_karaoke_preserve_split.cpp',
+    'tests/ass_karaoke_mangetsu.cpp',
+    'tests/better_view.cpp',
     'tests/ass_font_tag_selection.cpp',
+    'tests/ass_tag_edit.cpp',
+    'tests/resolution_resampler_classification.cpp',
+    'tests/resolution_resampler.cpp',
     'tests/toshiki_k_timing_model.cpp',
+    'tests/timing39.cpp',
+    'tests/timing39_session.cpp',
+    'tests/timing39_karaoke.cpp',
     'tests/karaoke_split.cpp',
     'tests/karaoke_matcher.cpp',
     'tests/keyframe.cpp',
@@ -54,7 +96,14 @@ all_test_sources += [
     'tests/line_wrap.cpp',
     'tests/mru.cpp',
     'tests/motion_track_segments.cpp',
+    'tests/motion_track_apply.cpp',
+    'tests/mangetsu_distort.cpp',
+    'tests/mangetsu_renderer_offer.cpp',
+    'tests/mangetsu_curved_text.cpp',
     'tests/mangetsu_gradient_placement.cpp',
+    'tests/mangetsu_gradient_stop_drag.cpp',
+    'tests/mangetsu_gradient_scope.cpp',
+    'tests/mangetsu_chat_style.cpp',
     'tests/option.cpp',
     'tests/path.cpp',
     'tests/signals.cpp',
@@ -87,7 +136,14 @@ runner = executable(
     cpp_args : extra_args,
     link_with : all_test_dep_libs,
 )    
-test('gtest main', runner)
+provider_test_env = [
+    'AEGISUB_AUTOMATION_INCLUDE_DIR=' + (meson.project_source_root() / 'automation/include'),
+    'AEGISUB_LIBASSMOD_TEST_LIBRARY=' + (meson.project_build_root() / libassmod_output),
+]
+if get_option('with_mangetsu')
+    provider_test_env += 'AEGISUB_MANGETSU_TEST_LIBRARY=' + (meson.project_build_root() / mangetsu_output)
+endif
+test('gtest main', runner, env: provider_test_env)
 
 
 # setup test env

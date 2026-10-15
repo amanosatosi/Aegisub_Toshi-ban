@@ -31,7 +31,8 @@ public:
 	enum class TagType {
 		k,
 		kf,
-		ko
+		ko,
+		kO
 	};
 
 	/// Parsed syllable data
@@ -52,6 +53,7 @@ public:
 		TagType GetTagType() const {
 			if (tag_type == "\\kf") return TagType::kf;
 			if (tag_type == "\\ko") return TagType::ko;
+			if (tag_type == "\\kO") return TagType::kO;
 			return TagType::k;
 		}
 	};
@@ -61,10 +63,19 @@ private:
 	int line_end_time = 0;
 	bool has_karaoke_tags = false;
 
+	/// Source-preserving Mangetsu furigana layout. When present, syllable text
+	/// contains only the logical timing text (the ruby side of <base|ruby>),
+	/// while these fields map logical byte boundaries back into the ASS source.
+	bool has_mangetsu_furigana = false;
+	std::string mangetsu_source;
+	std::string mangetsu_logical_text;
+	std::vector<size_t> mangetsu_source_offsets;
+
 	bool no_announce = false;
 
 	agi::signal::Signal<> AnnounceSyllablesChanged;
 	void ParseSyllables(const AssDialogue *line, Syllable &syl);
+	std::string GetMangetsuText(bool k_tags) const;
 
 public:
 	/// Constructor
@@ -122,9 +133,12 @@ public:
 
 	/// Get the line's text, optionally with karaoke tags
 	std::string GetText(bool k_tags = true) const;
+	/// Exact serialized contribution of each syllable, in order. The pieces
+	/// concatenate to GetText(true), including Mangetsu ruby source wrappers.
+	std::vector<std::string> GetTextFragments() const;
 
 	/// Get the karaoke tag type used, with leading slash
-	/// @returns "\k", "\kf", or "\ko"
+	/// @returns "\k", "\K", "\kf", "\ko", or "\kO"
 	std::string GetTagType() const;
 	/// Set the tag type for all karaoke tags in this line
 	void SetTagType(std::string const& new_type, bool announce = true);

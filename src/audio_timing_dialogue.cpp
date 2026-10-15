@@ -28,6 +28,7 @@
 // Aegisub Project http://www.aegisub.org/
 
 #include "ass_dialogue.h"
+#include "audio_dialog_text.h"
 #include "ass_file.h"
 #include "audio_marker.h"
 #include "audio_rendering_style.h"
@@ -37,6 +38,8 @@
 #include "options.h"
 #include "pen.h"
 #include "selection_controller.h"
+#include "subs_edit_box.h"
+#include "text_selection_controller.h"
 #include "time_range.h"
 #include "utils.h"
 
@@ -44,6 +47,7 @@
 #include <libaegisub/make_unique.h>
 
 #include <boost/range/algorithm.hpp>
+#include <optional>
 #include <wx/pen.h>
 
 namespace {
@@ -656,8 +660,15 @@ bool AudioTimingControllerDialogue::ApplyDialogTimeChanger(int drag_start_ms, in
 	if (!line || drag_start_ms == drag_end_ms)
 		return false;
 
-	AssDialogue *next = nullptr;
 	auto line_it = context->ass->iterator_to(*line);
+	AssDialogue *previous = nullptr;
+	if (line_it != context->ass->Events.begin())
+	{
+		auto prev_it = line_it;
+		previous = &*--prev_it;
+	}
+
+	AssDialogue *next = nullptr;
 	auto next_it = line_it;
 	if (++next_it != context->ass->Events.end())
 		next = &*next_it;
@@ -673,6 +684,41 @@ bool AudioTimingControllerDialogue::ApplyDialogTimeChanger(int drag_start_ms, in
 	const int drag_end = std::max(drag_start_ms, drag_end_ms);
 	const int old_start = line->Start;
 	const int old_end = line->End;
+
+	// Read the caret from the subtitle editor, not the audio cursor. The editor
+	// stores UTF-8 byte positions in the displayed text, so Better View must
+	// translate it back to raw ASS before any text is touched.
+	auto caret_pieces = [&]() -> std::optional<audio_dialog_text::Pieces> {
+		if (!context->subsEditBox || !context->textSelectionController ||
+		    context->selectionController->GetActiveLine() != line)
+			return std::nullopt;
+
+		auto *selection = context->textSelectionController.get();
+		if (selection->GetSelectionStart() != selection->GetSelectionEnd())
+			return std::nullopt;
+
+		int caret = selection->GetInsertionPoint();
+		int raw_begin = -1, raw_end = -1;
+		if (!context->subsEditBox->MapDisplayRangeToRaw(caret, caret, line->Text.get(), raw_begin, raw_end) ||
+		    raw_begin != raw_end || raw_begin < 0)
+			return std::nullopt;
+
+		audio_dialog_text::Pieces pieces;
+		if (!audio_dialog_text::SplitAtCaret(line->Text.get(), static_cast<size_t>(raw_begin), pieces))
+			return std::nullopt;
+		return pieces;
+	};
+
+	// Keep the text cursor at the changed boundary after the editor reloads
+	// the active line in response to the single document commit.
+	auto restore_caret = [&](size_t raw_position) {
+		if (!context->subsEditBox || !context->textSelectionController)
+			return;
+		int display_position = context->subsEditBox->MapRawToDisplay(
+			static_cast<int>(raw_position), line->Text.get());
+		context->textSelectionController->SetSelection(display_position, display_position);
+		context->textSelectionController->SetInsertionPoint(display_position);
+	};
 
 	if (contains(line, drag_start_ms) && contains(line, drag_end_ms))
 	{
@@ -705,37 +751,96 @@ bool AudioTimingControllerDialogue::ApplyDialogTimeChanger(int drag_start_ms, in
 		if (!valid_duration(old_start, drag_begin) || !valid_duration(drag_end, old_end))
 			return false;
 
+		// A real split uses the text caret rather than duplicating all text.
+		auto pieces = caret_pieces();
+		if (!pieces)
+			return false;
+
 		auto split_line = new AssDialogue(*line);
 		line->End = drag_begin;
+		line->Text = pieces->before;
 		split_line->Start = drag_end;
 		split_line->End = old_end;
+		split_line->Text = pieces->after;
 		context->ass->Events.insert(++line_it, *split_line);
 
 		context->selectionController->SetSelectionAndActive({ line, split_line }, line);
-		context->ass->Commit(_("dialog time changer"), AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_DIAG_TIME);
+		context->ass->Commit(_("dialog time changer"),
+			AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_DIAG_TIME | AssFile::COMMIT_DIAG_TEXT);
+		restore_caret(line->Text.get().size());
 		if (preview_range)
 			*preview_range = TimeRange(line->Start, split_line->End);
 		return true;
 	}
 
-	if (!next)
+	// Preserve the next-line behavior when neighboring lines overlap, but also
+	// allow Shift+drag to adjust the boundary with the previous line.
+	AssDialogue *adjacent = nullptr;
+	bool change_start = false;
+	if (next && ((contains(line, drag_start_ms) && contains(next, drag_end_ms)) ||
+	             (contains(next, drag_start_ms) && contains(line, drag_end_ms))))
+		adjacent = next;
+	else if (previous && ((contains(line, drag_start_ms) && contains(previous, drag_end_ms)) ||
+	                      (contains(previous, drag_start_ms) && contains(line, drag_end_ms))))
+	{
+		adjacent = previous;
+		change_start = true;
+	}
+
+	if (!adjacent)
 		return false;
 
-	const bool forward_boundary_drag = contains(line, drag_start_ms) && contains(next, drag_end_ms);
-	const bool backward_boundary_drag = contains(next, drag_start_ms) && contains(line, drag_end_ms);
-	if (!forward_boundary_drag && !backward_boundary_drag)
-		return false;
-
+	// In either direction, the release position is the new shared boundary.
 	const int boundary = drag_end_ms;
-	if (!valid_duration(line->Start, boundary) || !valid_duration(boundary, next->End))
+	const int overall_start = change_start ? adjacent->Start : line->Start;
+	const int overall_end = change_start ? line->End : adjacent->End;
+	if (!valid_duration(overall_start, boundary) || !valid_duration(boundary, overall_end))
 		return false;
 
-	line->End = boundary;
-	next->Start = boundary;
-	context->selectionController->SetSelectionAndActive({ line, next }, line);
-	context->ass->Commit(_("dialog time changer"), AssFile::COMMIT_DIAG_TIME);
+	// Only entering the active line from a neighboring line transfers text.
+	// Dragging outward from the active line changes timing but leaves text alone.
+	const bool entering_current = contains(adjacent, drag_start_ms) && contains(line, drag_end_ms);
+	int commit_type = AssFile::COMMIT_DIAG_TIME;
+	std::optional<size_t> new_caret;
+	if (entering_current)
+	{
+		if (auto pieces = caret_pieces())
+		{
+			if (change_start && !pieces->before.empty())
+			{
+				// Previous -> current: leading text joins the end of previous.
+				adjacent->Text = audio_dialog_text::Join(adjacent->Text.get(), pieces->before);
+				line->Text = pieces->after;
+				new_caret = 0;
+				commit_type |= AssFile::COMMIT_DIAG_TEXT;
+			}
+			else if (!change_start && !pieces->after.empty())
+			{
+				// Next -> current: trailing text joins the start of next.
+				adjacent->Text = audio_dialog_text::Join(pieces->after, adjacent->Text.get());
+				line->Text = pieces->before;
+				new_caret = line->Text.get().size();
+				commit_type |= AssFile::COMMIT_DIAG_TEXT;
+			}
+		}
+	}
+
+	if (change_start)
+	{
+		adjacent->End = boundary;
+		line->Start = boundary;
+	}
+	else
+	{
+		line->End = boundary;
+		adjacent->Start = boundary;
+	}
+	context->selectionController->SetSelectionAndActive({ line, adjacent }, line);
+	context->ass->Commit(_("dialog time changer"), commit_type);
+	if (new_caret)
+		restore_caret(*new_caret);
 	if (preview_range)
-		*preview_range = TimeRange(line->Start, next->End);
+		*preview_range = TimeRange(overall_start, overall_end);
 	return true;
 }
 

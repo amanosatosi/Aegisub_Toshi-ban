@@ -82,6 +82,7 @@
         { "command" : "tool/resampleres" },
         { "command" : "subtitle/spellcheck" },
         {},
+        { "command" : "tool/assdraw" },
         { "submenu" : "main/subtitle/insert lines", "text" : "&Insert Lines" },
         { "command" : "edit/line/duplicate" },
         { "command" : "edit/line/split/before" },
@@ -219,6 +220,7 @@
         { "command" : "audio/view/waveform" },
         {},
         { "command" : "audio/karaoke/toshiki_ktiming" },
+        { "command" : "audio/karaoke/39" },
         { "command" : "audio/karaoke/auto_cut_kana" },
         { "command" : "audio/open/blank" },
         { "command" : "audio/open/noise" }

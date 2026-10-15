@@ -9,7 +9,6 @@ install_data(
     'autoload/kara-templater.lua',
     'autoload/macro-1-edgeblur.lua',
     'autoload/macro-2-mkfullwitdh.lua',
-    'autoload/garret.depctrl_config.lua',
     'autoload/select-overlaps.moon',
     'autoload/strip-tags.lua',
     install_dir: automation_dir / 'autoload')
@@ -25,6 +24,7 @@ install_data(
     'include/clipboard.lua',
     'include/karaskel-auto4.lua',
     'include/karaskel.lua',
+    'include/mangetsu-karaskel.lua',
     'include/kCompatibility.lua',
     'include/lfs.lua',
     'include/moonscript.lua',

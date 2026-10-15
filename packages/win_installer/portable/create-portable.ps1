@@ -34,8 +34,6 @@ $InstallerDir = Join-Path $BuildRoot "install"
 $InstallerDepsDir = Join-Path $BuildRoot "installer-deps"
 $PortableOutputDir = Join-Path $BuildRoot "aegisub-portable"
 
-. (Join-Path $SourceRoot "tools\apply-git-patch.ps1")
-
 
 Write-Output Goto building dir
 Set-Location $BuildRoot
@@ -50,6 +48,7 @@ Write-Output 'Make install'
 meson install --no-rebuild --destdir $InstallerDir
 Write-Output 'Gathering files'
 Copy-New-Item $InstallerDir\bin\aegisub.exe  $PortableOutputDir
+Copy-New-Item $InstallerDepsDir\assdraw\ASSDraw3.exe  $PortableOutputDir
 Copy-New-Item $InstallerDir\bin\libassmod.dll  $PortableOutputDir
 if (Test-Path "$InstallerDir\bin\mangetsu.dll") {
     Copy-New-Item $InstallerDir\bin\mangetsu.dll  $PortableOutputDir
@@ -75,7 +74,6 @@ Write-Output 'Copying - codecs\VapourSynth'
 Copy-New-Item $InstallerDepsDir\L-SMASH-Works\libvslsmashsource.dll  $PortableOutputDir\vapoursynth
 Copy-New-Item $InstallerDepsDir\BestSource\BestSource.dll  $PortableOutputDir\vapoursynth
 Copy-New-Item $InstallerDepsDir\SCXVid\libscxvid.dll  $PortableOutputDir\vapoursynth
-Copy-New-Item $InstallerDepsDir\WWXD\libwwxd64.dll  $PortableOutputDir\vapoursynth
 Write-Output 'Copying - codecs\VSFilter'
 Copy-New-Item $InstallerDepsDir\VSFilter\x64\VSFilter.dll  $PortableOutputDir\csri
 Write-Output 'Copying - runtimes\MS-CRT'
@@ -98,23 +96,22 @@ $DepCtrlDir = Join-Path $InstallerDepsDir "DependencyControl"
 if (!(Test-Path $DepCtrlDir)) {
     throw "DependencyControl installer dependency was not found at $DepCtrlDir. Run the installer dependency setup first."
 }
-$DepCtrlPatchDir = Join-Path $SourceRoot "tools\patches\dependencycontrol"
-Apply-GitPatch -RepoDir $DepCtrlDir -PatchPath (Join-Path $DepCtrlPatchDir "0001-windows-unicode-long-paths.patch")
-Copy-New-Items "$InstallerDepsDir\DependencyControl\modules\*"  "$PortableOutputDir\automation\include\l0\"  -Recurse
+Copy-New-Items "$InstallerDepsDir\DependencyControl\modules\l0\*"  "$PortableOutputDir\automation\include\l0\"  -Recurse
 Copy-New-Items "$InstallerDepsDir\DependencyControl\macros\*"  "$PortableOutputDir\automation\autoload\"  -Recurse
+Write-Output 'Copying - legacy Automation compatibility modules'
+foreach ($name in @('requireffi', 'BM', 'PT', 'DM')) {
+    $source = Join-Path $InstallerDepsDir "LegacyAutomation\include\$name"
+    if (!(Test-Path -LiteralPath $source -PathType Container)) {
+        throw "Legacy Automation helper not staged: $name"
+    }
+    Copy-New-Items "$source\*" "$PortableOutputDir\automation\include\$name" -Recurse
+}
 Copy-New-Item $InstallerDepsDir\Yutils\src\Yutils.lua  $PortableOutputDir\automation\include
 Copy-New-Items "$InstallerDepsDir\luajson\lua\*"  "$PortableOutputDir\automation\include\"  -Recurse
 
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\requireffi\requireffi.lua  $PortableOutputDir\automation\include\requireffi
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\bad-mutex\BadMutex.dll  $PortableOutputDir\automation\include\BM\BadMutex
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\bad-mutex\BadMutex.lua  $PortableOutputDir\automation\include\BM
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\precise-timer\PreciseTimer.dll  $PortableOutputDir\automation\include\PT\PreciseTimer
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\precise-timer\PreciseTimer.lua  $PortableOutputDir\automation\include\PT
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\download-manager\DownloadManager.dll  $PortableOutputDir\automation\include\DM\DownloadManager
-Copy-New-Item $InstallerDepsDir\ffi-experiments\build\download-manager\DownloadManager.lua  $PortableOutputDir\automation\include\DM
-
 Write-Output 'Copying - portable-config'
 Copy-New-Item $SourceRoot\packages\win_installer\portable\config.json  $PortableOutputDir
+Copy-New-Item $SourceRoot\packages\win_installer\license.txt  $PortableOutputDir
 
 Write-Output 'Copying - themes'
 Copy-New-Items "$InstallerDir\share\aegisub\themes\*"  "$PortableOutputDir\themes\"  -Recurse

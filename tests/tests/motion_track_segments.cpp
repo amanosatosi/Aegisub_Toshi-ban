@@ -345,3 +345,40 @@ TEST(motion_track_cleanup, size_rotation_cleanup_changes_enabled_components) {
 	EXPECT_DOUBLE_EQ(2.0, frames[1].scale_x);
 	EXPECT_DOUBLE_EQ(45.0, frames[1].rotation_deg);
 }
+
+TEST(motion_track_segments, source_frames_remain_usable_for_apply_after_each_step) {
+	// Real TrackOne used to overwrite the source frame with Untracked on
+	// every step, leaving only the last frame eligible for motion Apply.
+	auto run = Segment(0,3,100.0,100.0);
+	for (int frame = 0; frame < 3; ++frame) {
+		MotionTrackMarker source = Marker(100.0+frame*5,100.0);
+		UpsertSegmentSample(run,ConfirmTrackingSource(run,frame,source));
+		AddSample(run,frame+1,100.0+(frame+1)*5,100.0);
+	}
+	auto stitched = BuildStitchedMotionResult(Metadata(),{run});
+	ASSERT_EQ(4u,stitched.frames.size());
+	for (int i=0;i<4;++i) {
+		EXPECT_EQ(i,stitched.frames[i].frame);
+		EXPECT_TRUE(IsUsableMotionTrackState(stitched.frames[i].state));
+	}
+	EXPECT_DOUBLE_EQ(15.0,stitched.frames.back().x-stitched.frames.front().x);
+}
+
+TEST(motion_track_segments, source_frame_preserves_weak_and_predicted_status) {
+	auto run = Segment(5,7,100.0,100.0);
+	AddSample(run,6,105.0,100.0);
+	run.tracked_center_by_frame.back().state = MotionTrackState::WeakTracked;
+	run.tracked_center_by_frame.back().confidence = 0.65;
+	auto weak = ConfirmTrackingSource(run,6,Marker(106.0,101.0));
+	EXPECT_EQ(MotionTrackState::WeakTracked,weak.state);
+	EXPECT_DOUBLE_EQ(0.65,weak.confidence);
+	UpsertSegmentSample(run,weak);
+	run.tracked_center_by_frame.back().state = MotionTrackState::Predicted;
+	const auto predicted = ConfirmTrackingSource(run,6,Marker(106.0,101.0));
+	EXPECT_EQ(MotionTrackState::Predicted,predicted.state);
+	const auto manual = ConfirmTrackingSource(run,5,Marker(100.0,100.0));
+	EXPECT_EQ(MotionTrackState::Tracked,manual.state);
+	EXPECT_TRUE(IsUsableMotionTrackState(manual.state));
+	EXPECT_FALSE(IsUsableMotionTrackState(MotionTrackState::Untracked));
+	EXPECT_FALSE(IsUsableMotionTrackState(MotionTrackState::Lost));
+}

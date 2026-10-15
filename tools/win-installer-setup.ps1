@@ -14,6 +14,16 @@ if (!(Test-Path $DepsDir)) {
 	New-Item -ItemType Directory -Path $DepsDir
 }
 
+$AssDrawDir = Join-Path $DepsDir "assdraw"
+$AssDrawExe = Join-Path $AssDrawDir "ASSDraw3.exe"
+if (!(Test-Path -LiteralPath $AssDrawExe -PathType Leaf)) {
+	throw "Bundled ASSDraw is missing at $AssDrawExe. Run tools\build-assdraw.ps1 before Windows packaging."
+}
+$AssDrawPayload = @(Get-ChildItem -LiteralPath $AssDrawDir -File)
+if ($AssDrawPayload.Count -ne 1 -or $AssDrawPayload[0].Name -cne "ASSDraw3.exe") {
+	throw "Bundled ASSDraw staging must contain ASSDraw3.exe and no other runtime files."
+}
+
 $Env:BUILD_ROOT = $BuildRoot
 $Env:SOURCE_ROOT = $SourceRoot
 
@@ -88,18 +98,80 @@ function Assert-FileHash {
 	}
 }
 
-. (Join-Path $SourceRoot "tools\apply-git-patch.ps1")
-
-$DepCtrlPatchDir = Join-Path $SourceRoot "tools\patches\dependencycontrol"
-
-# DepCtrl
+# DepCtrl: also retarget a cached 0.6.x checkout, discarding the old local patch.
+$DependencyControlVersion = "v0.9.0"
 if (!(Test-Path DependencyControl)) {
-	git clone https://github.com/TypesettingTools/DependencyControl.git
-	Set-Location DependencyControl
-	git checkout v0.6.3-alpha
-	Set-Location $DepsDir
+	git clone --depth 1 --branch $DependencyControlVersion https://github.com/TypesettingTools/DependencyControl.git
+	if ($LASTEXITCODE -ne 0) { throw "DependencyControl clone failed." }
 }
-Apply-GitPatch -RepoDir (Join-Path $DepsDir "DependencyControl") -PatchPath (Join-Path $DepCtrlPatchDir "0001-windows-unicode-long-paths.patch")
+else {
+	git -C DependencyControl fetch --depth 1 origin "refs/tags/${DependencyControlVersion}:refs/tags/${DependencyControlVersion}"
+	if ($LASTEXITCODE -ne 0) { throw "DependencyControl tag fetch failed." }
+}
+git -C DependencyControl checkout --force $DependencyControlVersion
+if ($LASTEXITCODE -ne 0) { throw "DependencyControl checkout failed." }
+# This is our dedicated installer dependency checkout, not user Automation data.
+$DepCtrlCheckout = (Resolve-Path -LiteralPath (Join-Path $DepsDir "DependencyControl")).ProviderPath
+$ResolvedDepsDir = (Resolve-Path -LiteralPath $DepsDir).ProviderPath
+if ((Split-Path -Parent $DepCtrlCheckout) -ne $ResolvedDepsDir) { throw "Unexpected DependencyControl checkout path." }
+git -C $DepCtrlCheckout clean -fd -- modules macros
+if ($LASTEXITCODE -ne 0) { throw "DependencyControl source cleanup failed." }
+
+# Legacy external Automation helpers used by third-party scripts. New DepCtrl
+# implements its own replacements, but it does not provide the old module names
+# such as requireffi.requireffi and BM.BadMutex. Keep the legacy distribution
+# separate from the v0.9.0 source checkout, and never clean users' libraries.
+$LegacyVersion = "v0.6.4-alpha"
+$LegacyArchiveName = "DependencyControl-v0.6.4-Win64.7z"
+$LegacyArchiveUrl = "https://github.com/TypesettingTools/DependencyControl/releases/download/$LegacyVersion/$LegacyArchiveName"
+$LegacyRoot = Join-Path $DepsDir "LegacyAutomation"
+$LegacyInclude = Join-Path $LegacyRoot "include"
+$LegacyExpected = @(
+    "requireffi\requireffi.lua",
+    "BM\BadMutex.lua", "BM\BadMutex\BadMutex.dll",
+    "PT\PreciseTimer.lua", "PT\PreciseTimer\PreciseTimer.dll",
+    "DM\DownloadManager.lua", "DM\DownloadManager\DownloadManager.dll"
+)
+$needLegacy = @($LegacyExpected | Where-Object { !(Test-Path -LiteralPath (Join-Path $LegacyInclude $_) -PathType Leaf) }).Count -gt 0
+if ($needLegacy) {
+    New-Item -ItemType Directory -Path $LegacyInclude -Force | Out-Null
+    $LegacyArchive = Join-Path $LegacyRoot $LegacyArchiveName
+    $LegacyExtract = Join-Path $LegacyRoot "extracted"
+    Invoke-WebRequestWithRetry -Uri $LegacyArchiveUrl -OutFile $LegacyArchive
+    # Size is from the official immutable release asset's GitHub metadata.
+    if ((Get-Item -LiteralPath $LegacyArchive).Length -ne 254032) {
+        throw "The pinned legacy Automation archive has an unexpected size."
+    }
+    if (Test-Path -LiteralPath $LegacyExtract) {
+        Remove-Item -LiteralPath $LegacyExtract -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $LegacyExtract -Force | Out-Null
+    & 7z x $LegacyArchive "-o$LegacyExtract" -y | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not extract pinned legacy Automation modules." }
+    foreach ($spec in @(
+        @{ namespace = "requireffi"; entry = "requireffi.lua" },
+        @{ namespace = "BM"; entry = "BadMutex.lua" },
+        @{ namespace = "PT"; entry = "PreciseTimer.lua" },
+        @{ namespace = "DM"; entry = "DownloadManager.lua" }
+    )) {
+        $found = @(Get-ChildItem -LiteralPath $LegacyExtract -Recurse -File |
+            Where-Object { $_.Name -ceq $spec.entry -and $_.Directory.Name -ceq $spec.namespace })
+        if ($found.Count -ne 1) {
+            throw "Expected one $($spec.namespace) legacy module from the official archive; got $($found.Count)."
+        }
+        # Select only helper folders. Do not stage the old DependencyControl code.
+        $target = Join-Path $LegacyInclude $spec.namespace
+        if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+        Copy-Item -LiteralPath $found[0].Directory.FullName -Destination $target -Recurse
+    }
+    Remove-Item -LiteralPath $LegacyExtract -Recurse -Force
+    Remove-Item -LiteralPath $LegacyArchive -Force
+}
+foreach ($entry in $LegacyExpected) {
+    if (!(Test-Path -LiteralPath (Join-Path $LegacyInclude $entry) -PathType Leaf)) {
+        throw "Missing pinned legacy Automation helper: $entry"
+    }
+}
 
 # YUtils
 if (!(Test-Path YUtils)) {
@@ -182,27 +254,9 @@ if (!(Test-Path SCXVid)) {
 	Invoke-WebRequestWithRetry -Uri $scxUrl -OutFile vapoursynth-scxvid-v1-win64.7z
 	7z x vapoursynth-scxvid-v1-win64.7z
 	Remove-Item vapoursynth-scxvid-v1-win64.7z
-	Set-Location $DepsDir
-}
-
-# WWXD
-if (!(Test-Path WWXD)) {
-	New-Item -ItemType Directory WWXD
-	$wwxdReleases = Invoke-WebRequest "https://api.github.com/repos/dubhater/vapoursynth-wwxd/releases/latest" -Headers $GitHeaders -UseBasicParsing | ConvertFrom-Json
-	$wwxdUrl = "https://github.com/dubhater/vapoursynth-wwxd/releases/download/" + $wwxdReleases.tag_name + "/libwwxd64.dll"
-	Invoke-WebRequestWithRetry -Uri $wwxdUrl -OutFile WWXD/libwwxd64.dll
-}
-
-
-# ffi-experiments
-if (!(Test-Path ffi-experiments)) {
-	Get-Command "moonc" # check to ensure Moonscript is present
-	git clone https://github.com/arch1t3cht/ffi-experiments.git
-	Set-Location ffi-experiments
-	meson build -Ddefault_library=static
-	if(!$?) { Exit $LASTEXITCODE }
-	meson compile -C build
-	if(!$?) { Exit $LASTEXITCODE }
+	if (!(Test-Path "libscxvid.dll")) {
+		throw "SCXVid archive did not contain libscxvid.dll."
+	}
 	Set-Location $DepsDir
 }
 

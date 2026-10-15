@@ -62,6 +62,108 @@ section below it.
 
 A later UI improvement can replace this with real disabled/gray dropdown items.
 
+## Video visual tools
+
+### Curved Text (`\ct`)
+
+The **Curved Text** video tool edits Mangetsu text-on-path data while the normal
+subtitle renderer remains responsible for shaping and preview. It does not split
+text into characters or create a second fake text renderer, so complex scripts
+such as Burmese remain unchanged.
+
+The default **Arc** mode is a visual authoring mode with start, end, and bend
+handles. The bend handle is the actual midpoint of the resulting curve; the
+tool converts it to a cubic ASS Bezier internally, so users do not need to type
+`m`, `l`, or `b` commands. Straight paths and the quadratic-style cubics created
+by the tool load back into the same three-handle representation.
+
+**Path** mode exposes anchors, cubic Bezier controls and their control lines for
+arbitrary `m`, `l` and `b` paths. Adjacent insert/remove controls reuse the
+vector-clip conventions for splitting segments, deleting nodes, and converting
+a Bezier to a line by removing a control. Complex paths are never simplified
+just by opening the tool or switching modes. **Reset Straight**, **Reverse
+Path**, and **Remove Curve** are explicit actions; only those buttons perform
+their named destructive geometry change.
+
+**Move Whole Path** translates all local path coordinates without changing
+`\pos` or `\move`. The other two modes edit `\ctx` along-path distance and
+perpendicular `\cty` offset. The compact anchor button opens a nine-choice
+`\ctan` menu, with the familiar numpad arrangement:
+
+```text
+7 8 9   text top on path
+4 5 6   text middle on path
+1 2 3   text bottom on path
+```
+
+The left, center, and right columns attach the text block to the path start,
+center, and end. A separate **Legacy baseline** choice removes `\ctan`.
+Opening the menu does not add one: without `\ctan`, existing baseline
+placement derived from horizontal `\an` remains in effect. The tool preserves
+unrelated override tags, including `\ta`.
+
+`\ta1` through `\ta9` independently control horizontal alignment between
+final visual lines: 1/4/7 mean left, 2/5/8 center, and 3/6/9 right. They do
+not change the event anchor controlled by `\an`. For example,
+`{\an7\ta2\ctan5\ct(m -300 0 l 300 0)}` keeps a top-left event anchor,
+centers shorter lines in the text block, and centers that block on the curve.
+
+`\ct` coordinates are local to the subtitle anchor. A `\pos` or frame-evaluated
+`\move` therefore moves the overlay with the subtitle without rewriting every
+path point. When the tool is activated on a line without `\ct`, it immediately
+creates a straight baseline from the measured text width. The baseline begins,
+centers, or ends at the anchor according to horizontal `\an`, which keeps the
+initial placement intuitive. Unknown path commands are left untouched rather
+than being partially normalized. Static tags are edited; `\ct` inside
+`\t(...)` is not an editing target.
+
+### Mangetsu Perspective (`\perspective`)
+
+The Perspective visual tool now has three explicit, non-destructive submodes:
+
+- **Perspective** (default) edits Mangetsu's projective local plane.
+- **Distort** edits Mangetsu's separate bilinear `\distort` deformation.
+- **arch1t3ct** keeps the existing ASS rotation/shear/scale approximation.
+
+Perspective uses P0 top-left, P1 top-right, P2 bottom-right, and P3 bottom-left
+as four editor handles around a fixed 200 by 100 local reference rectangle.
+The handles define a homography, not the current text rectangle. Selecting the
+mode is read-only; a line with no tag shows provisional identity handles and
+receives `\perspective` only on the first corner edit. The solid quad
+distinguishes this mode from Distort's dashed quad.
+
+The triangle is the positioning-anchor handle. Dragging it updates `\pos`, or
+translates both endpoints of an existing `\move`, while leaving the plane
+matrix unchanged. A drag uses the visual-tool base class's
+single coalesced undo transaction.
+
+The tool writes `\perspective(a,b,tx,c,d,ty,p,q,1)`. Its nine values map
+subtitle-local coordinates to anchor-relative screen coordinates. Text changes,
+newlines, font and scale changes leave the plane unchanged. Reopening a line
+projects the fixed reference rectangle through the saved matrix to reconstruct
+the handles. Historical eight-value corner pins remain unchanged until a handle
+is edited; that edit migrates the visible quad to the stable plane form.
+
+### Mangetsu Distort (`\distort`)
+
+The **Mangetsu Distort** sub-mode edits the renderer's bilinear artistic
+deformation. It is not true projective perspective; the separate Perspective
+mode authors `\perspective`, while arch1t3ct remains available with its existing
+ASS-tag approximation.
+
+The distortion source bounds now follow the first compactable same-style visual
+run across ordinary spaces, consecutive spaces and NBSP. Whitespace advances
+following glyphs but contributes no outline points of its own. Hard line breaks,
+effective style changes, `\distort` changes and vector-drawing chunks end the
+run. Both the historical six-argument form (implicit P0 `(0,0)`) and Mangetsu's
+eight-argument form are preserved. Editing P1/P2/P3 does not expand a legacy tag;
+editing P0 is the operation which requires the extended form.
+
+Distort mode shows four corner pins plus the restored triangle position handle.
+Dragging a corner edits only `\distort`; dragging the triangle translates
+`\pos`, or both endpoints of an existing `\move`, while leaving the normalized
+distortion values unchanged.
+
 ## Manual Checks
 
 - Select `Mangetsu` in the config while `mangetsu.dll`/`libmangetsu.so` is
@@ -76,6 +178,24 @@ A later UI improvement can replace this with real disabled/gray dropdown items.
   <path>`.
 
 ## Gradient Editor: fixed video placement
+
+The editor's **Target** list selects Primary, Secondary, Shadow, Fifth, or a
+numbered Outline layer. Its heading always names the active target. Outline
+layers have independent X and Y border-size controls; **+ New outline** adds
+the next available layer to the editing session. Its initial preview is
+provisional: the layer is written only after its gradient or size is changed.
+**Delete outline** discards a new layer
+from the current session.
+
+A text selection limits an edit to that selection and restores the previous
+effective color or gradient after it. Without a selection, the caret chooses
+the following text run. Inline tags for the selected target are suppressed in
+that run so they cannot defeat the preview; tags for other targets remain.
+Video preview uses a temporary subtitle snapshot. The selected target's
+working gradient appears even before an edit; an untouched preview never
+becomes a saved tag. **Apply** or **OK** writes
+the pending changes as one subtitle edit, while **Cancel** restores the original
+preview without changing subtitle text or undo history.
 
 The Mangetsu Gradient Editor has a **Lock Placement** button beside its angle
 controls. It changes a primary-fill attached gradient into a fixed-frame

@@ -34,6 +34,7 @@
 
 #include "main.h"
 
+#include "ass_file.h"
 #include "command/command.h"
 #include "include/aegisub/hotkey.h"
 
@@ -49,6 +50,8 @@
 #include "include/aegisub/context.h"
 #include "libresrc/libresrc.h"
 #include "options.h"
+#include "mangetsu_renderer_offer.h"
+#include "include/aegisub/subtitles_provider.h"
 #include "project.h"
 #include "subs_controller.h"
 #include "subtitles_provider_libass.h"
@@ -207,6 +210,7 @@ bool AegisubApp::OnInit() {
 	}
 
 	try {
+		config::opt->RegisterOptional(MangetsuRendererOfferKey);
 		config::opt->ConfigUser();
 		// Drop deprecated playback speed persistence; runtime-only now.
 		config::opt->Remove("Video/Playback/Speed");
@@ -228,9 +232,9 @@ bool AegisubApp::OnInit() {
 #endif
 
 #if defined(__WXMSW__) && wxVERSION_NUMBER >= 3300
-	bool dark_mode = OPT_GET("App/Dark Mode")->GetBool();
-	libresrc_set_dark_icons_enabled(dark_mode);
-	if (dark_mode) {
+	dark_mode_at_startup = OPT_GET("App/Dark Mode")->GetBool();
+	libresrc_set_dark_icons_enabled(dark_mode_at_startup);
+	if (dark_mode_at_startup) {
 		MSWEnableDarkMode(wxApp::DarkMode_Always);
 	}
 #endif
@@ -288,9 +292,24 @@ bool AegisubApp::OnInit() {
 
 		// Load plugins
 		Automation4::ScriptFactory::Register(agi::make_unique<Automation4::LuaScriptFactory>());
-		libass::CacheFonts();
-		libassmod::CacheFonts();
-		mangetsu::CacheFonts();
+		// Font discovery happens when the selected subtitle provider is opened.
+		// Do not warm three separate font indexes for two unused renderers.
+
+		// Enumerating providers registers the available renderers. Handle the
+		// migration before creating any project/video renderer for this session.
+		StartupLog("Offer Mangetsu renderer");
+		if (HandleMangetsuRendererOffer(*config::opt, SubtitlesProviderFactory::GetClasses(), []() -> std::optional<bool> {
+			// CI GUI smoke runs must not block on an unattended migration dialog.
+			wxString ci;
+			if (wxGetEnv("CI", &ci) && ci == "true") return std::nullopt;
+			return wxMessageBox(_("New renderer \"Mangetsu\" added. Would you like to use it?"),
+				_("Subtitle renderer"), wxYES_NO | wxCENTER) == wxYES;
+		})) {
+			try { config::opt->Flush(); }
+			catch (agi::fs::FileSystemError const& e) {
+				wxMessageBox(to_wx(e.GetMessage()), "Error saving config file", wxOK | wxICON_ERROR | wxCENTER);
+			}
+		}
 
 		// Load Automation scripts
 		StartupLog("Load global Automation scripts");
@@ -357,6 +376,9 @@ bool AegisubApp::OnInit() {
 }
 
 int AegisubApp::OnExit() {
+	bool const should_restart = restart_on_exit;
+	wxArrayString const arguments = restart_arguments;
+
 	for (auto frame : frames)
 		delete frame;
 	frames.clear();
@@ -379,7 +401,10 @@ int AegisubApp::OnExit() {
 	delete agi::log::log;
 	crash_writer::Cleanup();
 
-	return wxApp::OnExit();
+	int const exit_code = wxApp::OnExit();
+	if (should_restart)
+		RestartAegisub(arguments);
+	return exit_code;
 }
 
 agi::Context& AegisubApp::NewProjectContext() {
@@ -404,6 +429,36 @@ void AegisubApp::CloseAll() {
 		if (!frame->Close())
 			break;
 	}
+}
+
+bool AegisubApp::RequestRestart(agi::Context *context) {
+	wxArrayString arguments;
+	auto add_argument = [&](agi::fs::path const& path) {
+		if (path.empty()) return;
+		wxString argument(path.wstring());
+		if (arguments.Index(argument) == wxNOT_FOUND)
+			arguments.Add(argument);
+	};
+
+	// Work on a copy because accepted close events schedule frames for deletion.
+	auto frames_to_close = frames;
+	for (auto frame : frames_to_close) {
+		if (!frame->Close())
+			return false;
+
+		// Capture paths after Close(), as saving an untitled file may have assigned
+		// it a filename. The normal command-line loader restores linked project
+		// state from the subtitle file and directly supplied media paths.
+		if (frame->context.get() == context) {
+			add_argument(context->ass->Filename);
+			add_argument(context->project->VideoName());
+			add_argument(context->project->AudioName());
+		}
+	}
+
+	restart_arguments = std::move(arguments);
+	restart_on_exit = true;
+	return true;
 }
 
 void AegisubApp::UnhandledException(bool stackWalk) {

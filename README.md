@@ -23,6 +23,8 @@ Made for: **users first**
 1. Download the installer from Releases
 2. Install like a normal Windows app
 
+Windows installer and portable releases bundle the project's [ASSDraw fork](https://github.com/amanosatosi/assdraw) as `ASSDraw3.exe`; open it with Aegisub's existing ASSDraw command. Windows CI builds the current ASSDraw `master` branch from source and records the exact commit bundled by each build.
+
 > If something works in portable but not installer, please report it. I test both, but mistakes can happen.
 >  **Note:** The **wx master variant** of releases includes **experimental dark mode**. From my tests, it’s pretty stable, very small parts may still briefly appear in light mode.
 
@@ -242,6 +244,8 @@ Themes included in this release, with original authorship preserved.
  * Video panning
  * Line folding
  * Perspective tool
+ * Mangetsu Curved Text visual authoring tool with three-handle arcs, advanced path editing, `\ctx`, `\cty`, and nine-way `\ctan` anchoring; `\ta` is preserved when editing curves
+ * Mangetsu Distort visual tool with full runs across spaces/NBSP, six/eight-argument syntax, and a position triangle
  * Lua API additions
  * Stereo audio
 

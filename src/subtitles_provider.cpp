@@ -16,11 +16,6 @@
 
 #include "include/aegisub/subtitles_provider.h"
 
-#include "ass_dialogue.h"
-#include "ass_attachment.h"
-#include "ass_file.h"
-#include "ass_info.h"
-#include "ass_style.h"
 #include "compat.h"
 #include "factory_manager.h"
 #include "options.h"
@@ -29,8 +24,6 @@
 #include "subtitles_provider_libassmod.h"
 
 #include <libaegisub/log.h>
-
-#include <boost/algorithm/string/trim.hpp>
 
 #include <mutex>
 
@@ -62,15 +55,6 @@ namespace {
 			LOG_W("subtitle/provider") << message;
 			wxLogWarning("%s", to_wx(message));
 		});
-	}
-
-	static bool is_mangetsu_actor_colorcoding_metadata_comment(AssDialogue const& line) {
-		std::string effect = line.Effect.get();
-		boost::trim(effect);
-
-		return line.Comment
-			&& !line.Actor.get().empty()
-			&& effect == "mangetsu-colorcoding";
 	}
 
 	std::vector<factory> const& factories() {
@@ -144,52 +128,4 @@ std::unique_ptr<SubtitlesProvider> SubtitlesProviderFactory::GetProvider(agi::Ba
 	}
 
 	throw error;
-}
-
-void SubtitlesProvider::LoadSubtitles(AssFile *subs, int time) {
-	PrepareSubtitles(subs, time);
-	buffer.clear();
-
-	auto push_header = [&](const char *str) {
-		buffer.insert(buffer.end(), str, str + strlen(str));
-	};
-	auto push_line = [&](std::string const& str) {
-		buffer.insert(buffer.end(), &str[0], &str[0] + str.size());
-		buffer.push_back('\n');
-	};
-
-	push_header("\xEF\xBB\xBF[Script Info]\n");
-	for (auto const& line : subs->Info)
-		push_line(line.GetEntryData());
-
-	push_header("[V4+ Styles]\n");
-	for (auto const& line : subs->Styles)
-		push_line(line.GetEntryData());
-
-	if (!subs->Attachments.empty()) {
-		// TODO: some scripts may have a lot of attachments,
-		// so ideally we'd want to write only those actually used on the requested video frame,
-		// but this would require some pre-parsing of the attached font files with FreeType,
-		// which isn't probably trivial.
-		push_header("[Fonts]\n");
-		for (auto const& attachment : subs->Attachments)
-			if (attachment.Group() == AssEntryGroup::FONT)
-				push_line(attachment.GetEntryData());
-	}
-
-	push_header("[Events]\n");
-	push_header("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
-	for (auto const& line : subs->Events) {
-		if (is_mangetsu_actor_colorcoding_metadata_comment(line))
-			push_line(line.GetEntryData());
-		else
-			break;
-	}
-
-	for (auto const& line : subs->Events) {
-		if (!line.Comment && (time < 0 || !(line.Start > time || line.End <= time)))
-			push_line(line.GetEntryData());
-	}
-
-	LoadSubtitles(&buffer[0], buffer.size());
 }

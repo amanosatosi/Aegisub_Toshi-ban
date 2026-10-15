@@ -25,7 +25,8 @@
         "app/toggle/global_hotkeys",
         "",
         "audio/karaoke",
-        "audio/karaoke/toshiki_ktiming"
+        "audio/karaoke/toshiki_ktiming",
+        "audio/karaoke/39"
     ],
     "main" : [
         "subtitle/new",
@@ -52,6 +53,8 @@
         "",
         "am/meta",
         "",
+        "tool/assdraw",
+        "",
         "time/shift",
         "tool/style/assistant",
         "tool/translation_assistant",
@@ -74,6 +77,7 @@
         "video/tool/drag",
         "video/tool/rotate/z",
         "video/tool/rotate/xy",
+        "video/tool/curved_text",
         "video/tool/perspective",
         "video/tool/scale",
         "video/tool/clip",

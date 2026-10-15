@@ -255,6 +255,18 @@ void AudioSpectrumRenderer::FillBlock(size_t block_index, float *block)
 
 void AudioSpectrumRenderer::Render(wxBitmap &bmp, int start, AudioRenderingStyle style)
 {
+	RenderAt(bmp, 0, pixel_ms, style, start);
+}
+
+void AudioSpectrumRenderer::RenderReview(wxBitmap &bmp, double start_ms,
+	double review_ms_per_pixel, AudioRenderingStyle style)
+{
+	RenderAt(bmp, start_ms, review_ms_per_pixel, style, -1);
+}
+
+void AudioSpectrumRenderer::RenderAt(wxBitmap &bmp, double start_ms,
+	double step_ms, AudioRenderingStyle style, int main_start_pixel)
+{
 	// Misc. utility functions
 	auto floor_int = [] (float val) { return int (floorf (val       )); };
 	auto round_int = [] (float val) { return int (floorf (val + 0.5f)); };
@@ -265,11 +277,8 @@ void AudioSpectrumRenderer::Render(wxBitmap &bmp, int start, AudioRenderingStyle
 	assert(bmp.IsOk());
 	assert(bmp.GetDepth() == 24 || bmp.GetDepth() == 32);
 
-	int end = start + bmp.GetWidth();
-
-	assert(start >= 0);
-	assert(end >= 0);
-	assert(end >= start);
+	assert(start_ms >= 0);
+	assert(step_ms > 0);
 
 	// Prepare an image buffer to write
 	wxImage img(bmp.GetSize());
@@ -308,15 +317,22 @@ void AudioSpectrumRenderer::Render(wxBitmap &bmp, int start, AudioRenderingStyle
 	float log_ratio_calc = (b_fref - clin) / (clog - clin);
 	log_ratio_calc       = mid (0.f, log_ratio_calc, 1.f);
 
-	// ax = absolute x, absolute to the virtual spectrum bitmap
-	for (int ax = start; ax < end; ++ax)
+	for (int x = 0; x < bmp.GetWidth(); ++x)
 	{
-		// Derived audio data
-		size_t block_index = (size_t)(ax * pixel_ms * provider->GetSampleRate() / 1000) >> derivation_dist;
-		float *power = &cache->Get(block_index);
-
 		// Prepare bitmap writing
-		unsigned char *px = imgdata + (imgheight-1) * stride + (ax - start) * 3;
+		unsigned char *px = imgdata + (imgheight-1) * stride + x * 3;
+		int64_t sample = main_start_pixel >= 0 ?
+			int64_t((main_start_pixel + x) * step_ms * provider->GetSampleRate() / 1000) :
+			int64_t((start_ms + x * step_ms) * provider->GetSampleRate() / 1000);
+		if (sample >= provider->GetDecodedSamples()) {
+			for (int y = 0; y < imgheight; ++y, px -= stride)
+				pal->map(0.f, px);
+			continue;
+		}
+		// The FFT cache is sample-indexed, so main and Results views can share
+		// analysis even though their horizontal pixel scales differ.
+		size_t block_index = size_t(sample) >> derivation_dist;
+		float *power = &cache->Get(block_index);
 
 		float bin_prv = minband;
 		float bin_cur = minband;

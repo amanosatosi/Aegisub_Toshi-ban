@@ -437,6 +437,8 @@ AudioController::AudioController(agi::Context *context)
 
 AudioController::~AudioController()
 {
+	// Destroy session UI before stopping the player during context teardown.
+	timing_controller.reset();
 	Stop();
 }
 
@@ -521,6 +523,7 @@ void AudioController::PlayRange(const TimeRange &range)
 {
 	EnsureAudioPlayerForSpeed(1.0);
 	if (!player) return;
+	if (timing_controller) timing_controller->PlaybackStarting(range.begin());
 
 	playback_speed = 1.0;
 	playback_sample_offset = 0.0;
@@ -543,6 +546,7 @@ void AudioController::PlayRange(const TimeRange &range, double speed)
 
 	EnsureAudioPlayerForSpeed(speed);
 	if (!player || !speed_provider) return;
+	if (timing_controller) timing_controller->PlaybackStarting(range.begin());
 
 	int64_t start_sample = SamplesFromMilliseconds(range.begin());
 	int64_t sample_count = SamplesFromMilliseconds(range.length());
@@ -583,6 +587,7 @@ void AudioController::PlayToEnd(int start_ms)
 {
 	EnsureAudioPlayerForSpeed(1.0);
 	if (!player || !provider) return;
+	if (timing_controller) timing_controller->PlaybackStarting(start_ms);
 
 	playback_speed = 1.0;
 	playback_sample_offset = 0.0;
@@ -606,6 +611,7 @@ void AudioController::PlayToEnd(int start_ms, double speed)
 
 	EnsureAudioPlayerForSpeed(speed);
 	if (!player || !speed_provider || !provider) return;
+	if (timing_controller) timing_controller->PlaybackStarting(start_ms);
 
 	int64_t start_sample = SamplesFromMilliseconds(start_ms);
 	int64_t sample_count = provider->GetNumSamples() - start_sample;
@@ -630,7 +636,16 @@ void AudioController::PlayToEnd(int start_ms, double speed)
 
 void AudioController::Stop()
 {
-	if (!player) return;
+	int stopped_at = GetPlaybackPosition();
+	paused_position = 0;
+	// Some backends return zero once natural playback has ended. Preserve the
+	// endpoint before resetting the player so the final held block is retained.
+	if (IsPlaying() && !player->IsPlaying())
+		stopped_at = MillisecondsFromSamples(player->GetEndPosition());
+	if (!player) {
+		if (timing_controller) timing_controller->PlaybackStopped(stopped_at);
+		return;
+	}
 
 	player->Stop();
 	playback_mode = PM_NotPlaying;
@@ -639,6 +654,7 @@ void AudioController::Stop()
 		speed_provider->ResetStream();
 
 	AnnouncePlaybackStop();
+	if (timing_controller) timing_controller->PlaybackStopped(stopped_at);
 }
 
 bool AudioController::IsPlaying()
@@ -648,9 +664,15 @@ bool AudioController::IsPlaying()
 
 int AudioController::GetPlaybackPosition()
 {
-	if (!IsPlaying()) return 0;
+	if (!IsPlaying()) return paused_position;
 
 	return MillisecondsFromSamples(player->GetCurrentPosition());
+}
+
+void AudioController::SeekWhileStopped(int ms) {
+	if (IsPlaying()) return;
+	paused_position = std::max(0, std::min(ms, GetDuration()));
+	AnnouncePlaybackPosition(paused_position);
 }
 
 int AudioController::GetDuration() const

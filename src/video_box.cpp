@@ -31,7 +31,9 @@
 
 #include "ass_dialogue.h"
 #include "ass_file.h"
+#include "ass_tag_edit.h"
 #include "compat.h"
+#include "dialogs.h"
 #include "format.h"
 #include "include/aegisub/context.h"
 #include "include/aegisub/toolbar.h"
@@ -39,22 +41,54 @@
 #include "project.h"
 #include "selection_controller.h"
 #include "subs_edit_box.h"
+#include "text_selection_controller.h"
 #include "toast_popup.h"
 #include "video_controller.h"
 #include "video_display.h"
 #include "video_slider.h"
 
+#include <libaegisub/color.h>
+
 #include <boost/range/algorithm/binary_search.hpp>
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <wx/clipbrd.h>
 #include <wx/cursor.h>
 #include <wx/dataobj.h>
 #include <wx/combobox.h>
 #include <wx/choice.h>
+#include <wx/menu.h>
 #include <wx/sizer.h>
 #include <wx/statline.h>
 #include <wx/textctrl.h>
 #include <wx/toolbar.h>
+#include <wx/utils.h>
+
+namespace {
+
+agi::Color InitialFadeColor(std::string const& text, agi::ass::FadeSide side) {
+	std::string value = agi::ass::GetFadeColor(text, side);
+	auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
+	value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
+	value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
+	if (value.size() >= 2 && value[value.size() - 2] == '+' &&
+		(value.back() == 'a' || value.back() == 'A'))
+		value.resize(value.size() - 2);
+
+	size_t pos = 0;
+	if (pos < value.size() && value[pos] == '&') ++pos;
+	if (pos < value.size() && (value[pos] == 'H' || value[pos] == 'h')) ++pos;
+	size_t const hex_start = pos;
+	while (pos < value.size() && std::isxdigit(static_cast<unsigned char>(value[pos]))) ++pos;
+	size_t const hex_length = pos - hex_start;
+	if (pos < value.size() && value[pos] == '&') ++pos;
+	if (pos != value.size() || (hex_length != 6 && hex_length != 8))
+		return agi::Color();
+	return agi::Color(value);
+}
+
+}
 
 VideoBox::VideoBox(wxWindow *parent, bool isDetached, agi::Context *context)
 : wxPanel(parent, -1)
@@ -71,9 +105,10 @@ VideoBox::VideoBox(wxWindow *parent, bool isDetached, agi::Context *context)
 
 	VideoSubsPos = new wxTextCtrl(this, -1, "", wxDefaultPosition, wxSize(80, -1), wxTE_READONLY);
 	VideoSubsPos->SetMinSize(wxSize(60, -1));
-	VideoSubsPos->SetToolTip(_("Time of this frame relative to start and end of current subs"));
+	VideoSubsPos->SetToolTip(_("Time of this frame relative to start and end of current subs. Right-click for copy, insert, and fade actions."));
 	VideoSubsPos->SetCursor(wxCursor(wxCURSOR_HAND));
 	VideoSubsPos->Bind(wxEVT_LEFT_DOWN, &VideoBox::OnSubsReadoutClick, this);
+	VideoSubsPos->Bind(wxEVT_CONTEXT_MENU, &VideoBox::OnSubsReadoutContextMenu, this);
 
 	static const double playback_speeds[] = {
 		0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75, 2.00,
@@ -206,7 +241,87 @@ void VideoBox::OnSubsReadoutClick(wxMouseEvent &event) {
 		HandleReadoutClick(value);
 }
 
-bool VideoBox::GetSubsReadoutForPosition(wxPoint const& position, wxString &value) {
+void VideoBox::OnSubsReadoutContextMenu(wxContextMenuEvent &event) {
+	event.Skip(false);
+	wxPoint position = event.GetPosition();
+	if (position == wxDefaultPosition)
+		position = VideoSubsPos->ScreenToClient(wxGetMousePosition());
+	else
+		position = VideoSubsPos->ScreenToClient(position);
+	wxString value;
+	SubsReadoutKind kind;
+	if (!GetSubsReadoutForPosition(position, value, &kind))
+		return;
+
+	wxString const normalized = NormalizeReadout(value);
+	if (normalized.empty())
+		return;
+
+	using agi::ass::FadeColorChoice;
+	agi::ass::FadeSide const side = kind == SubsReadoutKind::Start ?
+		agi::ass::FadeSide::In : agi::ass::FadeSide::Out;
+	bool const video_available = context && context->project->VideoProvider();
+	int const video_time = video_available ?
+		context->videoController->TimeAtFrame(context->videoController->GetFrameN(), agi::vfr::EXACT) : 0;
+	bool fade_available = false;
+	if (video_available) {
+		auto applicable = [&](AssDialogue *line) {
+			return line && agi::ass::FadeDurationFromVideoTime(side, video_time, line->Start, line->End) >= 0;
+		};
+		auto const& selected = context->selectionController->GetSelectedSet();
+		fade_available = selected.empty() ? applicable(context->selectionController->GetActiveLine()) :
+			std::any_of(selected.begin(), selected.end(), applicable);
+	}
+
+	wxMenu menu;
+	wxMenuItem *copy = menu.Append(wxID_ANY, _("Copy"));
+	wxMenuItem *insert = menu.Append(wxID_ANY, _("Insert at cursor"));
+	menu.AppendSeparator();
+	// The primary fade action is a regular menu command, so a single click
+	// applies a normal fade. wxMenu submenu parents are not command actions.
+	auto normal = menu.Append(wxID_ANY, kind == SubsReadoutKind::Start ?
+		_("Fade in from here") : _("Fade out from here"));
+	normal->Enable(fade_available);
+	// The root menu owns the child, as with the spell-checker language menu.
+	auto fade_menu = new wxMenu;
+	auto white = fade_menu->Append(wxID_ANY, kind == SubsReadoutKind::Start ?
+		_("From white") : _("To white"));
+	auto black = fade_menu->Append(wxID_ANY, kind == SubsReadoutKind::Start ?
+		_("From black") : _("To black"));
+	auto pick = fade_menu->Append(wxID_ANY, kind == SubsReadoutKind::Start ?
+		_("From custom color...") : _("To custom color..."));
+	auto fade = menu.AppendSubMenu(fade_menu, _("Other fade options"));
+	fade->Enable(fade_available);
+
+	menu.Bind(wxEVT_MENU, [=](wxCommandEvent& command) {
+		if (command.GetId() == copy->GetId()) {
+			if (CopyReadoutToClipboard(normalized)) {
+				if (context && context->subsEditBox)
+					context->subsEditBox->FocusTextCtrl();
+				if (!OPT_GET("Video/Disable Click Popup")->GetBool())
+					ShowToast(context && context->parent ? context->parent : this, _("Copied to clipboard"));
+			}
+		}
+		else if (command.GetId() == insert->GetId()) {
+			if (InsertReadoutIntoEditBox(normalized) && !OPT_GET("Video/Disable Click Popup")->GetBool())
+				ShowToast(context && context->parent ? context->parent : this, _("Inserted into edit box"));
+		}
+		else if (fade_available) {
+			if (command.GetId() == normal->GetId())
+				SetFadeFromHere(kind, video_time, FadeColorChoice::Normal);
+			else if (command.GetId() == white->GetId())
+				SetFadeFromHere(kind, video_time, FadeColorChoice::White);
+			else if (command.GetId() == black->GetId())
+				SetFadeFromHere(kind, video_time, FadeColorChoice::Black);
+			else if (command.GetId() == pick->GetId())
+				SetFadeFromHere(kind, video_time, FadeColorChoice::Pick);
+		}
+	});
+
+	VideoSubsPos->PopupMenu(&menu, position);
+}
+
+bool VideoBox::GetSubsReadoutForPosition(wxPoint const& position, wxString &value, SubsReadoutKind *kind) {
 	if (!VideoSubsPos || subs_offset_readout_.IsEmpty() || subs_remaining_readout_.IsEmpty())
 		return false;
 
@@ -225,10 +340,86 @@ bool VideoBox::GetSubsReadoutForPosition(wxPoint const& position, wxString &valu
 	if (x < 0) x = 0;
 	if (client_width > 0 && x > client_width) x = client_width;
 
-	if (x <= text_width)
+	if (x <= text_width) {
 		value = subs_offset_readout_;
-	else
+		if (kind) *kind = SubsReadoutKind::Start;
+	}
+	else {
 		value = subs_remaining_readout_;
+		if (kind) *kind = SubsReadoutKind::End;
+	}
+	return true;
+}
+
+bool VideoBox::SetFadeFromHere(SubsReadoutKind kind, int video_time, agi::ass::FadeColorChoice choice) {
+	if (!context || !context->ass || !context->selectionController || !context->project->VideoProvider())
+		return false;
+
+	AssDialogue *active = context->selectionController->GetActiveLine();
+	auto const& selected = context->selectionController->GetSelectedSet();
+	if (!active && selected.empty())
+		return false;
+	agi::ass::FadeSide const side = kind == SubsReadoutKind::Start ?
+		agi::ass::FadeSide::In : agi::ass::FadeSide::Out;
+	int raw_selection_start = 0;
+	int raw_selection_end = 0;
+	bool restore_selection = false;
+	bool const active_is_target = selected.empty() || selected.count(active);
+	if (active && active_is_target && context->subsEditBox && context->textSelectionController) {
+		int const display_start = context->textSelectionController->GetSelectionStart();
+		int const display_end = context->textSelectionController->GetSelectionEnd();
+		restore_selection = context->subsEditBox->MapDisplayRangeToRaw(
+			display_start, display_end, active->Text.get(), raw_selection_start, raw_selection_end);
+	}
+
+	auto pick_color = [&](std::string& color) {
+		agi::Color chosen = active ? InitialFadeColor(active->Text.get(), side) : agi::Color();
+		if (!GetColorFromUser(context->parent ? context->parent : this, chosen, false,
+			[&](agi::Color value) { chosen = value; }))
+			return false;
+		color = chosen.GetAssOverrideFormatted();
+		return true;
+	};
+	auto apply_selection = [&](std::string const& color) {
+		bool changed = false;
+		auto edit_line = [&](AssDialogue *line) {
+			auto result = agi::ass::SetFadeFromVideoTime(
+				line->Text.get(), side, video_time, line->Start, line->End, color);
+			if (result.text == line->Text.get())
+				return;
+			if (line == active && restore_selection) {
+				raw_selection_start = agi::ass::MoveTextPositionAfterFadeEdit(raw_selection_start, result);
+				raw_selection_end = agi::ass::MoveTextPositionAfterFadeEdit(raw_selection_end, result);
+			}
+			line->Text = result.text;
+			changed = true;
+		};
+
+		if (selected.empty())
+			edit_line(active);
+		else {
+			for (auto line : selected)
+				edit_line(line);
+		}
+		return changed;
+	};
+	auto commit = [&] {
+		AssDialogue *commit_line = selected.empty() ? active :
+			(selected.size() == 1 ? *selected.begin() : nullptr);
+		context->ass->Commit(_("set fade"), AssFile::COMMIT_DIAG_TEXT, -1, commit_line);
+	};
+	if (!agi::ass::RunFadeOperation(choice, pick_color, apply_selection, commit))
+		return false;
+
+	if (restore_selection) {
+		context->subsEditBox->SetTextSelection(
+			context->subsEditBox->MapRawToDisplay(raw_selection_start, active->Text.get()),
+			context->subsEditBox->MapRawToDisplay(raw_selection_end, active->Text.get()));
+	}
+	if (context->subsEditBox)
+		context->subsEditBox->FocusTextCtrl();
+	if (context->videoDisplay)
+		context->videoDisplay->Render();
 	return true;
 }
 

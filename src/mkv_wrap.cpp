@@ -33,6 +33,7 @@
 ///
 
 #include "mkv_wrap.h"
+#include "mkv_subtitle_packet.h"
 
 #include "ass_file.h"
 #include "ass_parser.h"
@@ -47,8 +48,6 @@
 #include <libaegisub/scoped_ptr.h>
 
 #include <algorithm>
-#include <boost/algorithm/string/replace.hpp>
-#include <boost/lexical_cast.hpp>
 #include <boost/range/irange.hpp>
 #include <boost/tokenizer.hpp>
 #include <iterator>
@@ -158,40 +157,19 @@ static bool read_subtitles(agi::ProgressSink *ps, MatroskaFile *file, MkvStdIO *
 			readBufEnd = readBuf + frameSize;
 		}
 
+		// Matroska text packets may have NUL padding, including after decompression.
+		readBufEnd = matroska::TrimTextPacketEnd(readBuf, readBufEnd);
+		if (readBuf == readBufEnd) continue;
+
 		// Get start and end times
 		int64_t timecodeScaleLow = 1000000;
 		agi::Time subStart = startTime / timecodeScaleLow;
 		agi::Time subEnd = endTime / timecodeScaleLow;
 
-		using str_range = boost::iterator_range<const char *>;
-
-		// Process SSA/ASS
-		if (!srt) {
-			auto first = std::find(readBuf, readBufEnd, ',');
-			if (first == readBufEnd) continue;
-			auto second = std::find(first + 1, readBufEnd, ',');
-			if (second == readBufEnd) continue;
-
-			subList.emplace_back(
-				boost::lexical_cast<int>(str_range(readBuf, first)),
-				agi::format("Dialogue: %d,%s,%s,%s"
-					, boost::lexical_cast<int>(str_range(first + 1, second))
-					, subStart.GetAssFormatted()
-					, subEnd.GetAssFormatted()
-					, str_range(second + 1, readBufEnd)));
-		}
-		// Process SRT
-		else {
-			auto line = agi::format("Dialogue: 0,%s,%s,Default,,0,0,0,,%s"
-				, subStart.GetAssFormatted()
-				, subEnd.GetAssFormatted()
-				, str_range(readBuf, readBufEnd));
-			boost::replace_all(line, "\r\n", "\\N");
-			boost::replace_all(line, "\r", "\\N");
-			boost::replace_all(line, "\n", "\\N");
-
-			subList.emplace_back(subList.size(), std::move(line));
-		}
+		auto packet = matroska::ParseTextPacket(readBuf, readBufEnd, srt,
+			subStart, subEnd, static_cast<int>(subList.size()));
+		if (!packet) continue;
+		subList.push_back(std::move(*packet));
 
 		ps->SetProgress(startTime / timecodeScaleLow, totalTime);
 	}

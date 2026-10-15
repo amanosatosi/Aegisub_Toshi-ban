@@ -124,7 +124,8 @@ end
 -- Modifies the object passed for line
 function karaskel.preproc_line_text(meta, styles, line)
 	-- Assume line is class=dialogue
-	local kara = aegisub.parse_karaoke_data(line)
+	local kara = karaskel.mangetsu_adapter and karaskel.mangetsu_adapter.parse_karaoke_data(line)
+	if not kara then kara = aegisub.parse_karaoke_data(line) end
 	line.kara = { n = 0 }
 	line.furi = { n = 0 }
 	

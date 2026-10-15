@@ -1,0 +1,32 @@
+name: Mangetsu Karaskel Adapter
+
+on:
+  push:
+    branches:
+      - codex/39-mode
+    paths:
+      - 'automation/include/mangetsu-karaskel.lua'
+      - 'automation/include/karaskel-auto4.lua'
+      - 'automation/autoload/kara-templater.lua'
+      - 'tests/lua/mangetsu-karaskel-test.lua'
+      - '.github/workflows/mangetsu-karaskel.yml'
+  pull_request:
+    paths:
+      - 'automation/include/mangetsu-karaskel.lua'
+      - 'automation/include/karaskel-auto4.lua'
+      - 'automation/autoload/kara-templater.lua'
+      - 'tests/lua/mangetsu-karaskel-test.lua'
+      - '.github/workflows/mangetsu-karaskel.yml'
+  workflow_dispatch:
+
+jobs:
+  lua-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+      - name: Verify Mangetsu normal furigana adapter
+        run: lua5.1 tests/lua/mangetsu-karaskel-test.lua

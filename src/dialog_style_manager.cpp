@@ -42,8 +42,11 @@
 #include "libresrc/libresrc.h"
 #include "options.h"
 #include "persist_location.h"
+#include "project.h"
+#include "resolution_resampler.h"
 #include "selection_controller.h"
 #include "subtitle_format.h"
+#include "style_import.h"
 
 #include <libaegisub/fs.h>
 #include <libaegisub/make_unique.h>
@@ -694,21 +697,23 @@ void DialogStyleManager::OnCurrentImport() {
 	}
 
 	// [Satoshi replace-all import] Warn when resolutions differ before showing selection UI
-	int src_res_x = temp.GetScriptInfoAsInt("PlayResX");
-	int src_res_y = temp.GetScriptInfoAsInt("PlayResY");
-	int dst_res_x = c->ass->GetScriptInfoAsInt("PlayResX");
-	int dst_res_y = c->ass->GetScriptInfoAsInt("PlayResY");
-	if (src_res_x && src_res_y && dst_res_x && dst_res_y &&
-		(src_res_x != dst_res_x || src_res_y != dst_res_y)) {
+	int style_res_x, style_res_y;
+	int current_res_x, current_res_y;
+	temp.GetResolution(style_res_x, style_res_y);
+	c->ass->GetResolution(current_res_x, current_res_y);
+	bool match_resolution = false;
+	if (style_res_x != current_res_x || style_res_y != current_res_y) {
 		wxMessageDialog res_dialog(
 			this,
-			_("Selected subtitle has different resolution than the current subtitle. Do you want to continue?"),
+			_("Selected subtitle has a different resolution than the current subtitle. How do you want to continue?"),
 			_("Resolution mismatch"),
-			wxYES_NO | wxICON_EXCLAMATION | wxCENTER);
-		res_dialog.SetYesNoLabels(_("Continue"), _("Cancel"));
-		res_dialog.SetEscapeId(wxID_NO);
-		if (res_dialog.ShowModal() != wxID_YES)
+			wxYES_NO | wxCANCEL | wxICON_EXCLAMATION | wxCENTER);
+		res_dialog.SetYesNoCancelLabels(_("Continue"), _("Match resolution and replace"), _("Cancel"));
+		res_dialog.SetEscapeId(wxID_CANCEL);
+		int resolution_result = res_dialog.ShowModal();
+		if (resolution_result == wxID_CANCEL)
 			return;
+		match_resolution = resolution_result == wxID_NO;
 	}
 
 	// Get styles
@@ -722,7 +727,7 @@ void DialogStyleManager::OnCurrentImport() {
 	wxArrayInt selections;
 	int res = GetSelectedChoices(this, selections, _("Choose styles to import:"), _("Import Styles"), to_wx(styles));
 	if (res == -1 || selections.empty()) return;
-	bool modified = false;
+	bool styles_modified = false;
 
 	// [Satoshi replace-all import] One-time conflict prompt with Replace All option
 	int conflicts = 0;
@@ -748,13 +753,25 @@ void DialogStyleManager::OnCurrentImport() {
 		}
 	}
 
+	// Resample only the current script, before copying any source styles, so
+	// imported styles remain exactly as authored at the destination resolution.
+	if (match_resolution) {
+		ApplyResolutionResample(c->ass.get(), {
+			{0, 0, 0, 0},
+			current_res_x, current_res_y,
+			style_res_x, style_res_y,
+			ResampleARMode::Stretch,
+			YCbCrMatrix::rgb, YCbCrMatrix::rgb
+		});
+	}
+
 	// Loop through selection
 	for (auto const& sel : selections) {
+		auto source_style = temp.GetStyle(styles[sel]);
 		// Check if there is already a style with that name
-		if (AssStyle *existing = c->ass->GetStyle(styles[sel])) {
+		if (c->ass->GetStyle(styles[sel])) {
 			if (replace_all) {
-				modified = true;
-				*existing = *temp.GetStyle(styles[sel]);
+				styles_modified |= ImportStyle(*c->ass, *source_style, true);
 				continue;
 			}
 
@@ -764,21 +781,29 @@ void DialogStyleManager::OnCurrentImport() {
 					_("Style name collision"),
 					wxYES_NO);
 				if (answer == wxYES) {
-					modified = true;
-					*existing = *temp.GetStyle(styles[sel]);
+					styles_modified |= ImportStyle(*c->ass, *source_style, true);
 				}
 			}
 			continue;
 		}
 
 		// Copy
-		modified = true;
-		c->ass->Styles.push_back(*new AssStyle(*temp.GetStyle(styles[sel])));
+		styles_modified |= ImportStyle(*c->ass, *source_style, false);
 	}
 
-	// Update
-	if (modified)
-		c->ass->Commit(_("style import"), AssFile::COMMIT_STYLES);
+	// Keep runtime project state authoritative rather than importing metadata
+	// from the subtitle which supplied the styles.
+	if (match_resolution && c->project->VideoProvider())
+		c->project->UpdateVideoRelativePath();
+
+	// Commit the subtitle transformations together after synchronizing project
+	// metadata, so an immediate save/autosave sees the current runtime paths.
+	if (match_resolution || styles_modified) {
+		int commit_type = styles_modified ? AssFile::COMMIT_STYLES : 0;
+		if (match_resolution)
+			commit_type |= AssFile::COMMIT_SCRIPTINFO | AssFile::COMMIT_STYLES | AssFile::COMMIT_DIAG_FULL;
+		c->ass->Commit(match_resolution ? _("style import and resolution resampling") : _("style import"), commit_type);
+	}
 }
 
 void DialogStyleManager::UpdateButtons() {

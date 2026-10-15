@@ -42,12 +42,21 @@ class AudioWaveformRenderer final : public AudioRendererBitmapProvider {
 
 	/// Pre-allocated buffer for audio fetched from provider
 	std::unique_ptr<char[]> audio_buffer;
+	std::unique_ptr<char[]> review_audio_buffer;
+	size_t audio_buffer_size = 0;
+	size_t review_audio_buffer_size = 0;
 
 	/// Whether to render max+avg or just max
 	bool render_averages;
 
-	void OnSetProvider() override { audio_buffer.reset(); }
-	void OnSetMillisecondsPerPixel() override { audio_buffer.reset(); }
+	void OnSetProvider() override {
+		audio_buffer.reset(); review_audio_buffer.reset();
+		audio_buffer_size = review_audio_buffer_size = 0;
+	}
+	void OnSetMillisecondsPerPixel() override { audio_buffer.reset(); audio_buffer_size = 0; }
+	void RenderAt(wxBitmap &bmp, double start_sample, double pixel_samples,
+		AudioRenderingStyle style, std::unique_ptr<char[]> &buffer, size_t &buffer_size,
+		bool ensure_one_sample);
 
 public:
 	/// @brief Constructor
@@ -62,6 +71,8 @@ public:
 	/// @param start First column of pixel data in display to render
 	/// @param style Style to render audio in
 	void Render(wxBitmap &bmp, int start, AudioRenderingStyle style) override;
+	void RenderReview(wxBitmap &bmp, double start_ms, double review_ms_per_pixel,
+		AudioRenderingStyle style) override;
 
 	/// @brief Render blank area
 	void RenderBlank(wxDC &dc, const wxRect &rect, AudioRenderingStyle style) override;
