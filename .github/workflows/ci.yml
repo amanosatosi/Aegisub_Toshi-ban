@@ -45,6 +45,8 @@ jobs:
         run: python tests/python/test_motion_track_channels.py
       - name: Check 39 Mode icon isolation and embedded theme resources
         run: python tests/python/test_39_mode_controls.py
+      - name: Check deferred dark-mode and language restart wiring
+        run: python tests/python/test_dark_mode_restart.py
 
   custom-compositor:
     name: Custom subtitle compositor regressions

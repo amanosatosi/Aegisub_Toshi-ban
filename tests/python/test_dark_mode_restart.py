@@ -1,6 +1,6 @@
 """Source-level regression contracts for deferred Windows dark-mode restarts.
 
-Interactive window shutdown and relaunch are verified by Windows UI acceptance tests.
+Live Windows relaunch still requires manual or packaged UI acceptance testing.
 """
 from pathlib import Path
 import unittest
