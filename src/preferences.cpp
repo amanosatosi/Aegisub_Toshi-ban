@@ -34,6 +34,7 @@
 #include "libaegisub/io.h"
 #include "libaegisub/json.h"
 #include "libresrc/libresrc.h"
+#include "main.h"
 #include "options.h"
 #include "preferences_base.h"
 #include "theme_preset.h"
@@ -1245,11 +1246,14 @@ void Preferences::PromptForDarkModeRestart() {
 		return;
 
 	bool dark_mode = OPT_GET("App/Dark Mode")->GetBool();
-	if (dark_mode == last_committed_dark_mode)
-		return;
+	if (dark_mode != last_committed_dark_mode) {
+		last_committed_dark_mode = dark_mode;
+		restart_prompt_dismissed = false;
+	}
 
-	last_committed_dark_mode = dark_mode;
-	if (dark_mode == dark_mode_at_open)
+	// The saved preference may differ from the mode used to create wxWidgets'
+	// native controls when an earlier restart was deferred.
+	if (dark_mode == dark_mode_at_startup || restart_prompt_dismissed)
 		return;
 
 	wxMessageDialog dialog(
@@ -1263,6 +1267,9 @@ void Preferences::PromptForDarkModeRestart() {
 		restart_requested = true;
 		EndModal(wxID_OK);
 	}
+	else {
+		restart_prompt_dismissed = true;
+	}
 }
 
 void Preferences::OnOK(wxCommandEvent &event) {
@@ -1272,6 +1279,7 @@ void Preferences::OnOK(wxCommandEvent &event) {
 }
 
 void Preferences::OnApply(wxCommandEvent &) {
+	bool const had_changes = !pending_changes.empty() || !pending_callbacks.empty();
 	for (auto const& change : pending_changes)
 		OPT_SET(change.first)->Set(change.second.get());
 	pending_changes.clear();
@@ -1282,7 +1290,8 @@ void Preferences::OnApply(wxCommandEvent &) {
 
 	applyButton->Enable(false);
 	config::opt->Flush();
-	PromptForDarkModeRestart();
+	if (had_changes)
+		PromptForDarkModeRestart();
 }
 
 void Preferences::OnResetDefault(wxCommandEvent&) {
@@ -1310,8 +1319,8 @@ void Preferences::OnResetDefault(wxCommandEvent&) {
 Preferences::Preferences(wxWindow *parent): wxDialog(parent, -1, _("Preferences"), wxDefaultPosition, wxSize(-1, -1), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER) {
 	SetIcon(GETICON(options_button_16));
 
-	dark_mode_at_open = OPT_GET("App/Dark Mode")->GetBool();
-	last_committed_dark_mode = dark_mode_at_open;
+	dark_mode_at_startup = wxGetApp().IsDarkModeActive();
+	last_committed_dark_mode = OPT_GET("App/Dark Mode")->GetBool();
 
 	book = new wxTreebook(this, -1, wxDefaultPosition, wxDefaultSize);
 	General(book, this);

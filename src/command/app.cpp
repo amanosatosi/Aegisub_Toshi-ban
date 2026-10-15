@@ -163,9 +163,14 @@ struct app_language final : public Command {
 
 		OPT_SET("App/Language")->SetString(new_language);
 
-		// Ask to restart program
-		int result = wxMessageBox("Aegisub needs to be restarted so that the new language can be applied. Restart now?", "Restart Aegisub?", wxYES_NO | wxICON_QUESTION |  wxCENTER);
-		if (result == wxYES)
+		// Match the dark-mode preference restart prompt and use the same
+		// save/close/relaunch path for both kinds of settings changes.
+		wxMessageDialog dialog(c->parent,
+			_("Aegisub needs to restart to apply the new language. Restart now?"),
+			_("Restart Aegisub?"), wxYES_NO | wxICON_QUESTION | wxCENTER);
+		dialog.SetYesNoLabels(_("Restart Now"), _("Later"));
+		dialog.SetEscapeId(wxID_NO);
+		if (dialog.ShowModal() == wxID_YES)
 			wxGetApp().RequestRestart(c);
 	}
 };

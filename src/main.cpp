@@ -232,9 +232,9 @@ bool AegisubApp::OnInit() {
 #endif
 
 #if defined(__WXMSW__) && wxVERSION_NUMBER >= 3300
-	bool dark_mode = OPT_GET("App/Dark Mode")->GetBool();
-	libresrc_set_dark_icons_enabled(dark_mode);
-	if (dark_mode) {
+	dark_mode_at_startup = OPT_GET("App/Dark Mode")->GetBool();
+	libresrc_set_dark_icons_enabled(dark_mode_at_startup);
+	if (dark_mode_at_startup) {
 		MSWEnableDarkMode(wxApp::DarkMode_Always);
 	}
 #endif

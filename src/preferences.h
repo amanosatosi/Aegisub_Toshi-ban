@@ -53,8 +53,9 @@ private:
 	std::string theme_preset_pending_id;
 	bool theme_preset_only_if_default = false;
 	bool theme_preset_callback_added = false;
-	bool dark_mode_at_open = false;
+	bool dark_mode_at_startup = false;
 	bool last_committed_dark_mode = false;
+	bool restart_prompt_dismissed = false;
 	bool restart_requested = false;
 
 	void OnOK(wxCommandEvent &);
