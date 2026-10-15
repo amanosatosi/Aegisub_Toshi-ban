@@ -326,7 +326,6 @@ public:
 	: wxDialog(context->parent, wxID_ANY, _("Mangetsu Chat Style Editor"), wxDefaultPosition, wxDefaultSize,
 		wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER), context(context) {
 		auto line = context->selectionController->GetActiveLine();
-		auto style = context->ass->GetStyle(line->Style);
 		defaults = DefaultChatPalette();
 		state = LoadChatStyle(line->Text.get(), defaults);
 		valid_presets = presets.Load(OPT_GET("Tool/Mangetsu Chat/Presets")->GetString());
