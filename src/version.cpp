@@ -48,11 +48,11 @@
 #endif
 
 const char *GetAegisubLongVersionString() {
-	return BUILD_GIT_VERSION_STRING BUILD_CREDIT_SUFFIX DEBUG_SUFFIX;
+	return "Toshi-ban v3.0" BUILD_CREDIT_SUFFIX DEBUG_SUFFIX;
 }
 
 const char *GetAegisubShortVersionString() {
-	return BUILD_GIT_VERSION_STRING DEBUG_SUFFIX;
+	return "Toshi-ban v3.0" DEBUG_SUFFIX;
 }
 
 #ifdef BUILD_CREDIT
@@ -71,7 +71,7 @@ bool GetIsOfficialRelease() {
 }
 
 const char *GetVersionNumber() {
-	return BUILD_GIT_VERSION_STRING;
+	return "Toshi-ban v3.0";
 }
 
 const char *GetGitHash() {

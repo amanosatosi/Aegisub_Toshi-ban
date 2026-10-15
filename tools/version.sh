@@ -42,12 +42,14 @@ else
   git_branch="${git_branch##refs/heads/}"
   git_hash=$(git rev-parse --short HEAD)
 
-  git_version_str="${git_revision}-${git_branch}-${git_hash}"
+  git_version_str="Toshi-ban v3.0"
   tagged_release=0
 fi
 
 build_date="$(date "+%Y-%m-%d %H:%M %Z")"
 
+installer_version="3.0.0"
+resource_version="3, 0, 0"
 new_version_h="\
 #define BUILD_GIT_VERSION_NUMBER ${git_revision}
 #define BUILD_GIT_HASH \"${git_commit}\"

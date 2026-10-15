@@ -88,9 +88,11 @@ if (-not $version.ContainsKey('INSTALLER_VERSION')) {
 }
 
 
+$version['INSTALLER_VERSION'] = '3.0.0'
+$version['RESOURCE_BASE_VERSION'] = @(3, 0, 0)
 $version['BUILD_GIT_VERSION_NUMBER'] = $gitRevision
 $version['BUILD_GIT_HASH'] = git -C $repositoryRootPath rev-parse HEAD
-$version['BUILD_GIT_VERSION_STRING'] = $gitVersionString
+$version['BUILD_GIT_VERSION_STRING'] = 'Toshi-ban v3.0'
 
 $version.GetEnumerator() | %{
   $type = $_.Value.GetType()

@@ -11,9 +11,9 @@
 #define BUILD_GIT_VERSION_FILENAME StringChange(BUILD_GIT_VERSION_STRING, "/", "-")
 
 [Setup]
-AppName=Aegisub
-AppVerName=Aegisub {#BUILD_GIT_VERSION_STRING}
-AppVersion={#INSTALLER_VERSION}
+AppName=Aegisub Toshi-ban
+AppVerName=Aegisub Toshi-ban v3.0
+AppVersion=3.0.0
 AppPublisher=Aegisub Team
 AppPublisherURL=http://www.aegisub.org/
 AppSupportURL=https://github.com/Aegsiub/Aegisub/issues
@@ -39,8 +39,8 @@ UninstallDisplayIcon={app}\aegisub.exe
 WizardImageFile={#INSTALLER_DIR}\welcome-large.bmp
 WizardSmallImageFile={#INSTALLER_DIR}\aegisub-large.bmp
 
-OutputBaseFilename=Aegisub-{#BUILD_GIT_VERSION_FILENAME}
-VersionInfoDescription=Aegisub {#BUILD_GIT_VERSION_STRING}
+OutputBaseFilename=Aegisub-Toshi-ban-v3.0-{#BUILD_GIT_VERSION_FILENAME}
+VersionInfoDescription=Aegisub Toshi-ban v3.0
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
