@@ -1,4 +1,4 @@
 [wrap-git]
 url = https://github.com/vapoursynth/vapoursynth.git
-revision = R59
+revision = da7d758ff70dc9789ed89969c2d3a307483153bf
 patch_directory = vapoursynth

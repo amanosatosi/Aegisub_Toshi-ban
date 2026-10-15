@@ -1,6 +1,6 @@
 [wrap-git]
 url = https://github.com/AviSynth/AviSynthPlus.git
-revision = v3.7.2
+revision = 7290a6f7f803a06ed31e235785d55dc68ab76d55
 
 [provide]
 avisynth = avisynth_dep

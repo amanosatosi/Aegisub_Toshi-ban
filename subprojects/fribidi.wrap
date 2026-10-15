@@ -1,8 +1,6 @@
 [wrap-git]
 directory = fribidi
 url = https://github.com/fribidi/fribidi.git
-revision = v1.0.16
-depth = 1
-
+revision = 68162babff4f39c4e2dc164a5e825af93bda9983
 [provide]
 fribidi = libfribidi_dep
