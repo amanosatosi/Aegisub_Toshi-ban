@@ -29,6 +29,8 @@ jobs:
           grep ' actionlint_1.7.12_linux_amd64.tar.gz$' actionlint_1.7.12_checksums.txt | sha256sum --strict -c -
           tar -xzf actionlint_1.7.12_linux_amd64.tar.gz actionlint
           ./actionlint -shellcheck="" -pyflakes="" "$GITHUB_WORKSPACE/.github/workflows/ci.yml"
+      - name: Verify immutable V3.0 dependency and version pins
+        run: python tests/python/test_v3_release_pins.py
       - name: Check renderer migration, update source and DependencyControl packaging contracts
         run: python tests/python/test_release_preparation.py
       - name: Check subtitle-relative readout fade menu wiring
