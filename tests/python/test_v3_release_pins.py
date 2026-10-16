@@ -37,6 +37,19 @@ class V3ReleasePins(unittest.TestCase):
         self.assertIn("fetch --no-tags --depth=1 origin $Metadata.commit", source)
         self.assertNotIn("fetch --no-tags --depth=1 origin $Metadata.branch", source)
 
+    def test_posix_version_generator_is_executable_in_git(self):
+        import subprocess
+
+        mode = subprocess.check_output(
+            ["git", "ls-files", "--stage", "--", "tools/version.sh"],
+            cwd=ROOT,
+            text=True,
+        ).split(maxsplit=1)[0]
+        self.assertEqual(
+            "100755", mode,
+            "Meson executes tools/version.sh directly on Linux; preserve its executable bit.",
+        )
+
     def test_release_display_version_preserves_git_hash(self):
         source = (ROOT / "src/version.cpp").read_text(encoding="utf-8")
         self.assertIn('"Toshi-ban v3.0"', source)
