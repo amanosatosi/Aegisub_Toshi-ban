@@ -25,6 +25,28 @@ class V3ReleasePins(unittest.TestCase):
         self.assertIn("fetch --no-tags --depth=1 origin $Metadata.commit", source)
         self.assertIn("$CheckedOutCommit -cne $Metadata.commit", source)
 
+    def test_assdraw_script_has_one_valid_pin_guard_and_build(self):
+        source = (ROOT / "tools/build-assdraw.ps1").read_text()
+        self.assertEqual(1, source.count("$AssDrawSource = Join-Path $BuildRoot 'assdraw-src'"))
+        self.assertEqual(1, source.count("cmake --build $AssDrawBuild"))
+        self.assertEqual(1, source.count("ASSDraw built and staged successfully."))
+        self.assertIn("if ([string]$Metadata.commit -cnotmatch '^[0-9a-f]{40}
+        source = (ROOT / "src/version.cpp").read_text()
+        self.assertIn('"Toshi-ban v3.0"', source)
+        self.assertIn('return BUILD_GIT_HASH;', source)
+        for path in ("tools/version.ps1", "tools/version.sh"):
+            content = (ROOT / path).read_text()
+            self.assertIn("3.0.0", content)
+        setup = (ROOT / "packages/win_installer/fragment_setupbase.iss").read_text()
+        self.assertIn("AppVersion=3.0.0", setup)
+        self.assertIn("AppVerName=Aegisub Toshi-ban v3.0", setup)
+
+if __name__ == "__main__":
+    unittest.main()
+) {", source)
+        self.assertIn("fetch --no-tags --depth=1 origin $Metadata.commit", source)
+        self.assertNotIn("fetch --no-tags --depth=1 origin $Metadata.branch", source)
+
     def test_release_display_version_preserves_git_hash(self):
         source = (ROOT / "src/version.cpp").read_text()
         self.assertIn('"Toshi-ban v3.0"', source)
