@@ -41,6 +41,9 @@ script_version = "2.1.7"
 
 include("karaskel.lua")
 include("kCompatibility.lua")
+-- This adapter only affects native Mangetsu normal furigana inputs.
+-- Legacy/ordinary karaoke continues through the original Karaskel parser.
+karaskel.mangetsu_adapter = include("mangetsu-karaskel.lua")
 
 
 -- Find and parse/prepare all karaoke template lines

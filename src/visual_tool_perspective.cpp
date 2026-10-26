@@ -24,6 +24,7 @@
 #include "compat.h"
 #include "include/aegisub/context.h"
 #include "options.h"
+#include "perspective_geometry.h"
 #include "selection_controller.h"
 #include "vector3d.h"
 #include "ass_file.h"
@@ -37,7 +38,9 @@
 
 #include <libaegisub/log.h>
 
+#include <algorithm>
 #include <cmath>
+#include <utility>
 #include <wx/colour.h>
 
 static const float pi = 3.1415926536f;
@@ -55,83 +58,11 @@ enum VisualToolPerspectiveFeatureType {
 	FEATURE_ORG = 3,
 };
 
-void Solve2x2(float a11, float a12, float a21, float a22, float b1, float b2, float &x1, float &x2) {
-	// Simple pivoting
-	if (abs(a11) < abs(a21)) {
-		std::swap(b1, b2);
-		std::swap(a11, a21);
-		std::swap(a12, a22);
-	}
-	// LU decomposition
-	// i = 1
-	a21 = a21 / a11;
-	// i = 2
-	a22 = a22 - a21 * a12;
-	// forward substitution
-	float z1 = b1;
-	float z2 = b2 - a21 * z1;
-	// backward substitution
-	x2 = z2 / a22;
-	x1 = (z1 - a12 * x2) / a11;
-}
-
-Vector2D QuadMidpoint(std::vector<Vector2D> quad) {
-	Vector2D diag1 = quad[2] - quad[0];
-	Vector2D diag2 = quad[1] - quad[3];
-	Vector2D b = quad[3] - quad[0];
-	float center_la1, center_la2;
-	Solve2x2(diag1.X(), diag2.X(), diag1.Y(), diag2.Y(), b.X(), b.Y(), center_la1, center_la2);
-	return quad[0] + center_la1 * diag1;
-}
-
-void UnwrapQuadRel(std::vector<Vector2D> quad, float &x1, float &x2, float &x3, float &x4, float &y1, float &y2, float &y3, float &y4) {
-	x1 = quad[0].X();
-	x2 = quad[1].X() - x1;
-	x3 = quad[2].X() - x1;
-	x4 = quad[3].X() - x1;
-	y1 = quad[0].Y();
-	y2 = quad[1].Y() - y1;
-	y3 = quad[2].Y() - y1;
-	y4 = quad[3].Y() - y1;
-}
-
-Vector2D XYToUV(std::vector<Vector2D> quad, Vector2D xy) {
-	float x1, x2, x3, x4, y1, y2, y3, y4;
-	UnwrapQuadRel(quad, x1, x2, x3, x4, y1, y2, y3, y4);
-	float x = xy.X() - x1;
-	float y = xy.Y() - y1;
-	// Dumped from Mathematica
-	float u = -(((x3*y2 - x2*y3)*(x4*y - x*y4)*(x4*(-y2 + y3) + x3*(y2 - y4) + x2*(-y3 + y4)))/(x3*x3*(x4*y2*y2*(-y + y4) + y4*(x*y2*(y2 - y4) + x2*(y - y2)*y4)) + x3*(x4*x4*y2*y2*(y - y3) + 2*x4*(x2*y*y3*(y2 - y4) + x*y2*(-y2 + y3)*y4) + x2*y4*(x2*(-y + y3)*y4 + 2*x*y2*(-y3 + y4))) + y3*(x*x4*x4*y2*(y2 - y3) + x2*x4*x4*(y2*y3 + y*(-2*y2 + y3)) - x2*x2*(x4*y*(y3 - 2*y4) + x4*y3*y4 + x*y4*(-y3 + y4)))));
-	float v = ((x2*y - x*y2)*(x4*y3 - x3*y4)*(x4*(y2 - y3) + x2*(y3 - y4) + x3*(-y2 + y4)))/(x3*(x4*x4*y2*y2*(-y + y3) + x2*y4*(2*x*y2*(y3 - y4) + x2*(y - y3)*y4) - 2*x4*(x2*y*y3*(y2 - y4) + x*y2*(-y2 + y3)*y4)) + x3*x3*(x4*y2*y2*(y - y4) + y4*(x2*(-y + y2)*y4 + x*y2*(-y2 + y4))) + y3*(x*x4*x4*y2*(-y2 + y3) + x2*x4*x4*(2*y*y2 - y*y3 - y2*y3) + x2*x2*(x4*y*(y3 - 2*y4) + x4*y3*y4 + x*y4*(-y3 + y4))));
-	return Vector2D(u, v);
-}
-
-Vector2D UVToXY(std::vector<Vector2D> quad, Vector2D uv) {
-	float x1, x2, x3, x4, y1, y2, y3, y4;
-	UnwrapQuadRel(quad, x1, x2, x3, x4, y1, y2, y3, y4);
-	float u = uv.X();
-	float v = uv.Y();
-	// Also dumped from Mathematica
-	float d = (x4*((-1 + u + v)*y2 + y3 - v*y3) + x3*(y2 - u*y2 + (-1 + v)*y4) + x2*((-1 + u)*y3 - (-1 + u + v)*y4));
-	float x = (v*x4*(x3*y2 - x2*y3) + u*x2*(x4*y3 - x3*y4)) / d;
-	float y = (v*y4*(x3*y2 - x2*y3) + u*y2*(x4*y3 - x3*y4)) / d;
-	return Vector2D(x + x1, y + y1);
-}
-
-std::vector<Vector2D> MakeRect(Vector2D a, Vector2D b) {
-	return std::vector<Vector2D>({
-		Vector2D(a.X(), a.Y()),
-		Vector2D(b.X(), a.Y()),
-		Vector2D(b.X(), b.Y()),
-		Vector2D(a.X(), b.Y()),
-	});
-}
-
 inline float VisualToolPerspective::screenZ() const {
 	return default_screen_z * script_res.Y() / layout_res.Y();
 }
 
-void VisualToolPerspective::AddTool(std::string command_name, VisualToolPerspectiveSetting setting) {
+void VisualToolPerspective::AddTool(std::string command_name, int setting) {
 	cmd::Command *command = cmd::get(command_name);
 	int icon_size = OPT_GET("App/Toolbar Icon Size")->GetInt();
 	toolBar->AddTool(BUTTON_ID_BASE + setting, command->StrDisplay(c), command->Icon(icon_size), command->GetTooltip("Video"), wxITEM_CHECK);
@@ -143,6 +74,7 @@ VisualToolPerspective::VisualToolPerspective(VideoDisplay *parent, agi::Context 
 , optOuterLocked(OPT_SET("Tool/Visual/Perspective/Outer Locked"))
 , optGrid(OPT_SET("Tool/Visual/Perspective/Grid"))
 , optOrgMode(OPT_SET("Tool/Visual/Perspective/Org Mode"))
+, optMode(OPT_SET("Tool/Visual/Perspective/Mode"))
 {
 	old_outer.resize(4);
 	old_inner.resize(4);
@@ -152,6 +84,9 @@ VisualToolPerspective::VisualToolPerspective(VideoDisplay *parent, agi::Context 
 	if (optOuterLocked->GetBool()) settings |= PERSP_LOCK_OUTER;
 	if (optGrid->GetBool()) settings |= PERSP_GRID;
 	settings |= optOrgMode->GetInt();
+	int saved_mode = optMode->GetInt();
+	settings |= saved_mode == PERSP_MODE_DISTORT || saved_mode == PERSP_MODE_ARCH1T3CHT ?
+		saved_mode : PERSP_MODE_DISTORT;
 
 	MakeFeatures();
 }
@@ -159,6 +94,10 @@ VisualToolPerspective::VisualToolPerspective(VideoDisplay *parent, agi::Context 
 void VisualToolPerspective::SetToolbar(wxToolBar *toolBar) {
 	this->toolBar = toolBar;
 
+	toolBar->AddSeparator();
+
+	AddTool("video/tool/perspective/distort", PERSP_MODE_DISTORT);
+	AddTool("video/tool/perspective/arch1t3cht", PERSP_MODE_ARCH1T3CHT);
 	toolBar->AddSeparator();
 
 	AddTool("video/tool/perspective/plane", PERSP_OUTER);
@@ -175,7 +114,9 @@ void VisualToolPerspective::SetToolbar(wxToolBar *toolBar) {
 
 void VisualToolPerspective::OnSubTool(wxCommandEvent &e) {
 	int id = e.GetId() - BUTTON_ID_BASE;
-	if (id == PERSP_ORGMODE) {
+	if (id == PERSP_MODE_DISTORT || id == PERSP_MODE_ARCH1T3CHT) {
+		SetSubTool((GetSubTool() & ~PERSP_MODE) | id);
+	} else if (id == PERSP_ORGMODE) {
 		cmd::call("video/tool/perspective/orgmode/cycle", c);
 	} else {
 		SetSubTool(GetSubTool() ^ id);
@@ -184,12 +125,23 @@ void VisualToolPerspective::OnSubTool(wxCommandEvent &e) {
 
 void VisualToolPerspective::SetSubTool(int subtool) {
 	if (toolBar == nullptr) {
-		throw agi::InternalError("Vector clip toolbar hasn't been set yet!");
+		throw agi::InternalError("Perspective toolbar hasn't been set yet!");
 	}
 	for (int i = 1; i < PERSP_LAST; i <<= 1)
 		toolBar->ToggleTool(BUTTON_ID_BASE + i, i & subtool);
+	int mode = subtool & PERSP_MODE;
+	if (mode != PERSP_MODE_DISTORT && mode != PERSP_MODE_ARCH1T3CHT) {
+		mode = PERSP_MODE_DISTORT;
+		subtool = (subtool & ~PERSP_MODE) | mode;
+	}
+	toolBar->ToggleTool(BUTTON_ID_BASE + PERSP_MODE_DISTORT, mode == PERSP_MODE_DISTORT);
+	toolBar->ToggleTool(BUTTON_ID_BASE + PERSP_MODE_ARCH1T3CHT, mode == PERSP_MODE_ARCH1T3CHT);
 
-	toolBar->EnableTool(BUTTON_ID_BASE + PERSP_LOCK_OUTER, subtool & PERSP_OUTER);
+	bool arch1t3cht = mode == PERSP_MODE_ARCH1T3CHT;
+	toolBar->EnableTool(BUTTON_ID_BASE + PERSP_OUTER, arch1t3cht);
+	toolBar->EnableTool(BUTTON_ID_BASE + PERSP_LOCK_OUTER, arch1t3cht && (subtool & PERSP_OUTER));
+	toolBar->EnableTool(BUTTON_ID_BASE + PERSP_GRID, arch1t3cht);
+	toolBar->EnableTool(BUTTON_ID_BASE + PERSP_ORGMODE, arch1t3cht);
 
 	cmd::Command *orgmode;
 	switch (subtool & PERSP_ORGMODE) {
@@ -213,10 +165,13 @@ void VisualToolPerspective::SetSubTool(int subtool) {
 
 	settings = subtool;
 
-	optOuter->SetBool(HasOuter());
-	optOuterLocked->SetBool(OuterLocked());
-	optGrid->SetBool(settings & PERSP_GRID);
-	optOrgMode->SetInt(GetOrgMode());
+	if (arch1t3cht) {
+		optOuter->SetBool(settings & PERSP_OUTER);
+		optOuterLocked->SetBool(settings & PERSP_LOCK_OUTER);
+		optGrid->SetBool(settings & PERSP_GRID);
+		optOrgMode->SetInt(GetOrgMode());
+	}
+	optMode->SetInt(settings & PERSP_MODE);
 
 	MakeFeatures();
 	parent->Render();
@@ -227,11 +182,19 @@ int VisualToolPerspective::GetSubTool() {
 }
 
 bool VisualToolPerspective::HasOuter() {
-	return GetSubTool() & PERSP_OUTER;
+	return (settings & PERSP_MODE) == PERSP_MODE_ARCH1T3CHT && GetSubTool() & PERSP_OUTER;
 }
 
 bool VisualToolPerspective::OuterLocked() {
 	return HasOuter() && (GetSubTool() & PERSP_LOCK_OUTER);
+}
+
+bool VisualToolPerspective::IsDistortMode() const {
+	return (settings & PERSP_MODE) == PERSP_MODE_DISTORT;
+}
+
+bool VisualToolPerspective::IsMangetsuQuadMode() const {
+	return IsDistortMode();
 }
 
 int VisualToolPerspective::GetOrgMode() {
@@ -273,7 +236,21 @@ void VisualToolPerspective::MakeFeatures() {
 
 	inner_corners.clear();
 	outer_corners.clear();
+	centerf = nullptr;
 	orgf = nullptr;
+	if (IsMangetsuQuadMode()) {
+		centerf = new Feature(this, FEATURE_CENTER, 0);
+		centerf->type = DRAG_BIG_TRIANGLE;
+		centerf->layer = 1;
+		features.push_back(*centerf);
+		for (int i = 0; i < 4; ++i) {
+			inner_corners.push_back(new Feature(this, FEATURE_INNER, i));
+			inner_corners.back()->type = i == 0 ? DRAG_SMALL_SQUARE : DRAG_SMALL_CIRCLE;
+			features.push_back(*inner_corners.back());
+		}
+		DoRefresh();
+		return;
+	}
 
 	centerf = new Feature(this, FEATURE_CENTER, 0);
 	centerf->type = DRAG_BIG_TRIANGLE;
@@ -319,7 +296,7 @@ void VisualToolPerspective::Draw() {
 
 	DrawAllFeatures();
 
-	if (GetSubTool() & PERSP_GRID) {
+	if (!IsMangetsuQuadMode() && GetSubTool() & PERSP_GRID) {
 		// Draw Grid - Copied and modified from visual_tool_rotatexy.cpp
 
 		// Number of lines on each side of each axis
@@ -425,6 +402,14 @@ void VisualToolPerspective::OnMouseEvent(wxMouseEvent &event) {
 };
 
 void VisualToolPerspective::UpdateDrag(Feature *feature) {
+	if (IsDistortMode()) {
+		if (feature == centerf)
+			MoveQuadPosition(feature);
+		else
+			DistortToText(feature);
+		return;
+	}
+
 	if (feature == centerf) {
 		Vector2D oldCenter = QuadMidpoint(FeaturePositions(inner_corners));
 		if (HasOuter() && !OuterLocked()) {
@@ -556,7 +541,26 @@ void VisualToolPerspective::UpdateDrag(Feature *feature) {
 
 void VisualToolPerspective::EndDrag(Feature *feature) {
 	SaveFeaturePositions();
-	SaveOuterToLines();
+	if (!IsMangetsuQuadMode())
+		SaveOuterToLines();
+}
+
+bool VisualToolPerspective::InitializeDrag(Feature *feature) {
+	if (!IsMangetsuQuadMode() || feature != centerf)
+		return true;
+
+	quad_position_states.clear();
+	quad_drag_origin = ToScriptCoords(centerf->pos);
+	for (auto line : c->selectionController->GetSelectedSet()) {
+		if (FilterLockedLines() && IsLockedLine(line))
+			continue;
+		QuadPositionState state;
+		state.line = line;
+		state.position = GetLinePosition(line);
+		state.has_move = GetLineMove(line, state.move_start, state.move_end, state.t1, state.t2);
+		quad_position_states.push_back(state);
+	}
+	return true;
 }
 
 void VisualToolPerspective::WrapSetOverride(AssDialogue* line, std::string const& tag, float value, int precision, float defaultval) {
@@ -771,6 +775,11 @@ void VisualToolPerspective::SaveOuterToLines() {
 }
 
 void VisualToolPerspective::SetFeaturePositions() {
+	if (IsDistortMode()) {
+		if (centerf && inner_corners.size() == 4)
+			centerf->pos = QuadMidpoint(FeaturePositions(inner_corners));
+		return;
+	}
 	centerf->pos = QuadMidpoint(FeaturePositions(inner_corners));
 	if (orgf != nullptr)
 		orgf->pos = FromScriptCoords(org);
@@ -792,7 +801,15 @@ void VisualToolPerspective::TextToPersp() {
 
 	align = GetLineAlignment(active_line);
 
-	bbox = GetLineBaseExtents(active_line);
+	if (IsDistortMode()) {
+		// Measure the shared multiline source with the existing extent calculator.
+		// Keep the arch1t3cht geometry path unchanged.
+		AssDialogue measured(*active_line);
+		measured.Text = GetMangetsuDistortMeasurementText(*active_line, c->ass->GetScriptInfoAsInt("WrapStyle"));
+		bbox = GetLineBaseExtents(&measured);
+	}
+	else
+		bbox = GetLineBaseExtents(active_line);
 	float textwidth = std::max(bbox.second.X() - bbox.first.X(), 1.f);
 	float textheight = std::max(bbox.second.Y() - bbox.first.Y(), 1.f);
 	double shiftx = 0., shifty = 0.;
@@ -875,8 +892,89 @@ void VisualToolPerspective::TextToPersp() {
 	UpdateOuter();
 }
 
-void VisualToolPerspective::DoRefresh() {
+void VisualToolPerspective::TextToDistort() {
+	if (!active_line)
+		return;
+
+	// Build the subtitle's undistorted on-video quad using the existing ASS
+	// placement/shear/scale/rotation machinery, then use it as the normalized
+	// coordinate frame for Mangetsu's four distortion pins.
 	TextToPersp();
+	auto event_quad = FeaturePositions(inner_corners);
+	Vector2D move_delta = FromScriptCoords(GetLinePositionAtFrame(active_line)) - FromScriptCoords(pos);
+	for (auto& point : event_quad)
+		point = point + move_delta;
+	auto unit_bbox = GetFirstDistortUnitExtents();
+	Vector2D event_size = bbox.second - bbox.first;
+	if (event_size.X() > 0 && event_size.Y() > 0) {
+		Vector2D unit_begin = (unit_bbox.first - bbox.first) / event_size;
+		Vector2D unit_end = (unit_bbox.second - bbox.first) / event_size;
+		distort_base_quad.clear();
+		for (auto const& point : MakeRect(unit_begin, unit_end))
+			distort_base_quad.push_back(UVToXY(event_quad, point));
+	}
+	else
+		distort_base_quad = std::move(event_quad);
+	distort_state = GetMangetsuDistort(*active_line);
+	auto distorted = DistortQuadToScreen(distort_base_quad, distort_state);
+	for (size_t i = 0; i < inner_corners.size(); ++i)
+		inner_corners[i]->pos = distorted[i];
+}
+
+std::pair<Vector2D, Vector2D> VisualToolPerspective::GetFirstDistortUnitExtents() {
+	AssDialogue unit(*active_line);
+	unit.Text = GetMangetsuDistortUnitText(*active_line);
+	unit.Text = GetMangetsuDistortMeasurementText(unit, c->ass->GetScriptInfoAsInt("WrapStyle"));
+	return GetLineBaseExtents(&unit);
+}
+
+bool VisualToolPerspective::DistortToText(Feature* feature) {
+	if (!feature || feature->group != FEATURE_INNER || distort_base_quad.size() != 4)
+		return false;
+
+	Vector2D normalized = XYToUV(distort_base_quad, feature->pos);
+	if (!SetMangetsuDistortCorner(distort_state, static_cast<size_t>(feature->index), normalized)) {
+		TextToDistort();
+		return false;
+	}
+
+	for (auto line : c->selectionController->GetSelectedSet()) {
+		if (FilterLockedLines() && IsLockedLine(line))
+			continue;
+		// Legacy upgrades must retain each line's own unedited corner pairs.
+		auto state = GetMangetsuDistort(*line);
+		if (SetMangetsuDistortCorner(state, static_cast<size_t>(feature->index), normalized))
+			SetMangetsuDistort(*line, state, feature->index);
+	}
+	return true;
+}
+
+bool VisualToolPerspective::MoveQuadPosition(Feature* feature) {
+	if (!feature || feature != centerf)
+		return false;
+	Vector2D delta = ToScriptCoords(feature->pos) - quad_drag_origin;
+	for (auto const& state : quad_position_states) {
+		if (state.has_move) {
+			if (state.t1 > 0 || state.t2 > 0)
+				SetOverride(state.line, "\\move", agi::format("(%s,%s,%d,%d)",
+					(state.move_start + delta).Str(), (state.move_end + delta).Str(), state.t1, state.t2));
+			else
+				SetOverride(state.line, "\\move", agi::format("(%s,%s)",
+					(state.move_start + delta).Str(), (state.move_end + delta).Str()));
+		}
+		else
+			SetOverride(state.line, "\\pos", (state.position + delta).PStr());
+	}
+	TextToDistort();
+	SetFeaturePositions();
+	return true;
+}
+
+void VisualToolPerspective::DoRefresh() {
+	if (IsDistortMode())
+		TextToDistort();
+	else
+		TextToPersp();
 	SetFeaturePositions();
 	SaveFeaturePositions();
 }
@@ -884,6 +982,11 @@ void VisualToolPerspective::DoRefresh() {
 VisualToolPerspectiveDraggableFeature::VisualToolPerspectiveDraggableFeature(VisualToolPerspective *tool, int group, int index) : tool(tool), group(group), index(index) {}
 
 void VisualToolPerspectiveDraggableFeature::UpdateDrag(Vector2D d, bool single_axis) {
+	if (tool->IsMangetsuQuadMode()) {
+		VisualDraggableFeature::UpdateDrag(d, single_axis);
+		return;
+	}
+
 	if (tool->ctrl_down && tool->alt_down)
 		single_axis = false;   // This is handled manually later on
 

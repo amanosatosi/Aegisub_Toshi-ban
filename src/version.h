@@ -44,5 +44,7 @@ const char *GetAegisubBuildCredit();
 bool GetIsOfficialRelease();
 /// Version number
 const char *GetVersionNumber();
+/// Full source commit, used to compare application releases.
+const char *GetGitHash();
 /// Get SVN revision
 int GetSVNRevision();

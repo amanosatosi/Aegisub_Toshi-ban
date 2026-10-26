@@ -86,6 +86,14 @@ void VideoController::OnSubtitlesCommit(int type, const AssDialogue *changed) {
 		provider->UpdateSubtitles(context->ass.get(), changed);
 }
 
+void VideoController::PreviewSubtitleText(AssDialogue const *line, std::string const& text) {
+	if (!provider || !line) return;
+	AssDialogue preview(*line);
+	preview.Text = text;
+	provider->UpdateSubtitles(context->ass.get(), &preview);
+	RequestFrame();
+}
+
 void VideoController::OnActiveLineChanged(AssDialogue *line) {
 	if (line && provider && OPT_GET("Video/Subtitle Sync")->GetBool()) {
 		Stop();
@@ -190,6 +198,20 @@ void VideoController::PlayLine() {
 
 	JumpToFrame(startFrame);
 
+	playback_start_time = std::chrono::steady_clock::now();
+	playback.Start(10);
+}
+
+void VideoController::PlayRange(int begin_ms, int finish_ms) {
+	if (!provider || finish_ms <= begin_ms) return;
+	Stop();
+	JumpToTime(begin_ms);
+	start_ms = begin_ms;
+	end_frame = std::min(FrameAtTime(finish_ms, agi::vfr::END) + 1, provider->GetFrameCount());
+	audio_playback_mode = AudioPlaybackMode::Range;
+	audio_playback_end_ms = finish_ms;
+	context->audioController->PlayRange(TimeRange(begin_ms, finish_ms), playback_speed);
+	if (!context->audioController->IsPlaying()) return;
 	playback_start_time = std::chrono::steady_clock::now();
 	playback.Start(10);
 }

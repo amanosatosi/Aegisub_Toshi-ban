@@ -11,9 +11,102 @@ on:
   workflow_dispatch:
 
 jobs:
+  release-preparation:
+    name: Release preparation contracts
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate CI workflow expressions and cache helper contracts
+        run: |
+          set -euo pipefail
+          python tests/python/test_ci_cache.py
+          cd "$RUNNER_TEMP"
+          curl -fsSLO https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          curl -fsSLO https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_checksums.txt
+          grep ' actionlint_1.7.12_linux_amd64.tar.gz$' actionlint_1.7.12_checksums.txt | sha256sum --strict -c -
+          tar -xzf actionlint_1.7.12_linux_amd64.tar.gz actionlint
+          ./actionlint -shellcheck="" -pyflakes="" "$GITHUB_WORKSPACE/.github/workflows/ci.yml"
+      - name: Check renderer migration, update source and DependencyControl packaging contracts
+        run: python tests/python/test_release_preparation.py
+      - name: Check subtitle-relative readout fade menu wiring
+        run: python tests/python/test_fade_controls.py
+      - name: Check Shift-drag audio boundary wiring
+        run: python tests/python/test_audio_dialog_time_changer.py
+      - name: Check Mangetsu chat style toolbar wiring
+        run: python tests/python/test_chat_style_controls.py
+      - name: Check Perspective and Distort mode wiring
+        run: python tests/python/test_perspective_controls.py
+      - name: Check native motion Apply reference and session wiring
+        run: python tests/python/test_motion_apply_controls.py
+      - name: Exercise native channel switching with headless UI doubles
+        run: python tests/python/test_motion_track_channels.py
+      - name: Check 39 Mode icon isolation and embedded theme resources
+        run: python tests/python/test_39_mode_controls.py
+      - name: Check deferred dark-mode and language restart wiring
+        run: python tests/python/test_dark_mode_restart.py
+
+  custom-compositor:
+    name: Custom subtitle compositor regressions
+    needs: release-preparation
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install provider test dependencies
+        run: |
+          python -m pip install meson==1.7.2
+          sudo apt-get update
+          sudo apt-get install ninja-build build-essential libx11-dev libwxgtk3.0-gtk3-dev libfreetype6-dev pkg-config libfontconfig1-dev libass-dev libasound2-dev libffms2-dev intltool libboost-all-dev libhunspell-dev libuchardet-dev libpulse-dev libopenal-dev libxxhash-dev nasm libsoundtouch-dev libcurl4-openssl-dev fonts-dejavu-core
+      - name: Compile provider tests and both real custom backends
+        run: |
+          meson setup build -Dbuildtype=debugoptimized -Dopencv=disabled -Dwith_mangetsu=true
+          meson compile -C build gtest-main libassmod_copy mangetsu_copy
+      - name: Check pixel correctness, ownership and 600-event stress paths
+        run: meson test -C build --no-rebuild --verbose "gtest main" --test-args=--gtest_filter=CustomSubtitle*:BundledRenderers/*
+      - name: Check Matroska text packet import and libass serialization
+        run: meson test -C build --no-rebuild --verbose "gtest main" --test-args=--gtest_filter=Matroska*
+
+  motion-apply:
+    name: Native motion Apply regressions
+    needs: release-preparation
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: |
+          python -m pip install meson==1.7.2
+          sudo apt-get update
+          sudo apt-get install ninja-build build-essential libx11-dev libwxgtk3.0-gtk3-dev libfreetype6-dev pkg-config libfontconfig1-dev libass-dev libasound2-dev libffms2-dev intltool libboost-all-dev libhunspell-dev libuchardet-dev libpulse-dev libopenal-dev libxxhash-dev nasm libsoundtouch-dev libcurl4-openssl-dev
+      - name: Compile existing native test runner
+        run: |
+          meson setup build -Dbuildtype=debugoptimized -Dopencv=disabled
+          meson compile -C build gtest-main
+      - name: Run Apply, optimizer, session and acquisition regressions
+        run: meson test -C build --no-rebuild --verbose "gtest main" --test-args=--gtest_filter=Motion*:motion_track_*
+
   build:
+    needs: release-preparation
     name: ${{ matrix.config.name }}
-    runs-on: ${{ matrix.config.os }}
+    runs-on: ${{ matrix.config.runner || matrix.config.os }}
+    env:
+      # 39 Mode tests intentionally print Japanese lyrics/readings.
+      # Force Python/Meson stdout/stderr to UTF-8 instead of Windows cp1252.
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+      SCCACHE_GHA_ENABLED: ${{ matrix.config.msvc && 'true' || 'false' }}
+      SCCACHE_GHA_VERSION: toshiban-msvc-v1
+      # One uploader; both configurations read the same compiler-input namespace.
+      SCCACHE_GHA_RW_MODE: ${{ matrix.config.sccache_mode || 'READ_ONLY' }}
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_LOG: info
 
     strategy:
       fail-fast: false
@@ -21,9 +114,13 @@ jobs:
         config:
           - name: Windows MSVC Release
             os: windows-latest
+            runner: windows-2022
             msvc: true
+            sccache_mode: READ_WRITE
+            vcpkg_mode: readwrite
             buildtype: release
             args: >-
+              --native-file=.github/meson/msvc-sccache.ini
               -Ddefault_library=static 
               --force-fallback-for=zlib,harfbuzz,freetype2,fribidi,libpng 
               -Dfreetype2:harfbuzz=disabled 
@@ -46,9 +143,13 @@ jobs:
               -Dwith_mangetsu=true
           - name: Windows MSVC Release (wx master)
             os: windows-latest
+            runner: windows-2022
             msvc: true
+            sccache_mode: READ_ONLY
+            vcpkg_mode: read
             buildtype: release
             args: >-
+              --native-file=.github/meson/msvc-sccache.ini
               -Ddefault_library=static 
               --force-fallback-for=zlib,harfbuzz,freetype2,fribidi,libpng 
               -Dfreetype2:harfbuzz=disabled 
@@ -67,7 +168,7 @@ jobs:
               -Dbestsource=enabled
               -Dvapoursynth=enabled
               -Dpaddleocr=enabled
-              -Dwx_version='3.3.1'
+              -Dwx_version='3.3.3'
               -Dopencv=enabled
               -Dwith_mangetsu=true
           #- {
@@ -111,6 +212,10 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Test VapourSynth scene detector migration
+        if: matrix.config.name == 'Windows MSVC Release'
+        run: python tests/python/test_vapoursynth_scene_detector.py
+
       - name: Setup Meson
         run: |
           python -m pip install --upgrade pip setuptools
@@ -119,27 +224,51 @@ jobs:
       - name: Setup MSVC
         if: matrix.config.os == 'windows-latest' && matrix.config.msvc == true
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Prepare pinned vcpkg and binary cache inputs
+        if: matrix.config.os == 'windows-latest'
+        id: vcpkg-inputs
+        shell: pwsh
+        run: ./tools/ci/windows-vcpkg.ps1 -Mode prepare -Access ${{ matrix.config.vcpkg_mode }}
+
+      # Persist only vcpkg's ABI-addressed archives, never C:\vcpkg or installed/.
+      - name: Restore OpenCV vcpkg binary archives
+        if: matrix.config.os == 'windows-latest'
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.vcpkg-inputs.outputs.archives }}
+          key: ${{ steps.vcpkg-inputs.outputs.key }}
+          restore-keys: ${{ steps.vcpkg-inputs.outputs.prefix }}
+
+      - name: Install OpenCV (vcpkg binary cache)
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        run: ./tools/ci/windows-vcpkg.ps1 -Mode install -Access ${{ matrix.config.vcpkg_mode }}
+
+      # Publish early so later jobs/runs can restore even if application CI fails.
+      # wx-master remains independent and never duplicates this archive upload.
+      - name: Save OpenCV vcpkg binary archives
+        if: matrix.config.vcpkg_mode == 'readwrite' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.vcpkg-inputs.outputs.archives }}
+          key: ${{ steps.vcpkg-inputs.outputs.key }}
+
+      - name: Setup sccache (Windows MSVC)
+        if: matrix.config.os == 'windows-latest' && matrix.config.msvc == true
+        id: sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: v0.18.0
+          disable_annotations: 'true'
 
       - name: Install dependencies (Windows)
         if: matrix.config.os == 'windows-latest'
         run: |
           choco install ninja innosetup
-
-          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
-          if (-not $vcpkgRoot) {
-            $vcpkgRoot = "C:\vcpkg"
-          }
-          vcpkg install "opencv4[core,calib3d]:x64-windows"
-          $opencvPrefix = Join-Path $vcpkgRoot "installed\x64-windows"
-          "OpenCV_DIR=$opencvPrefix\share\opencv4" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "OPENCV_BIN_DIR=$opencvPrefix\bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          if ($env:CMAKE_PREFIX_PATH) {
-            "CMAKE_PREFIX_PATH=$opencvPrefix;$env:CMAKE_PREFIX_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          } else {
-            "CMAKE_PREFIX_PATH=$opencvPrefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          }
-          $opencvBin = Join-Path $opencvPrefix "bin"
-          $opencvBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
           $moonscripturl = "https://github.com/leafo/moonscript/releases/download/win32-v0.5.0/moonscript-187bac54ee5a7450013e9c38e005a0e671b76f45.zip"
           mkdir moonscript
@@ -171,17 +300,81 @@ jobs:
         if: startsWith(matrix.config.os, 'ubuntu-')
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build build-essential libx11-dev libwxgtk3.0-gtk3-dev libfreetype6-dev pkg-config libfontconfig1-dev libass-dev libasound2-dev libffms2-dev intltool libboost-all-dev libhunspell-dev libuchardet-dev libpulse-dev libopenal-dev libxxhash-dev nasm desktop-file-utils
+          sudo apt-get install ninja-build build-essential libx11-dev libwxgtk3.0-gtk3-dev libfreetype6-dev pkg-config libfontconfig1-dev libass-dev libasound2-dev libffms2-dev intltool libboost-all-dev libhunspell-dev libuchardet-dev libpulse-dev libopenal-dev libxxhash-dev nasm desktop-file-utils libsoundtouch-dev libcurl4-openssl-dev
+
+      # Share sources across Windows wx variants; no build/configuration outputs.
+      # Distro-only Ubuntu jobs do not use these expensive fallbacks.
+      - name: Resolve Meson source cache inputs
+        if: matrix.config.os == 'windows-latest' || matrix.config.appimage
+        id: meson-source-inputs
+        run: python tools/ci/meson_source_cache.py prepare
+
+      - name: Cache stable Meson dependency sources
+        if: matrix.config.os == 'windows-latest' || matrix.config.appimage
+        id: meson-deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            subprojects/packagecache
+            subprojects/ffmpeg
+            subprojects/ffms2
+            subprojects/soundtouch
+            subprojects/dav1d
+          key: toshiban-meson-deps-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.meson-source-inputs.outputs.fingerprint }}
+          restore-keys: |
+            toshiban-meson-deps-v2-${{ runner.os }}-${{ runner.arch }}-
+            toshiban-meson-deps-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Refresh restored dependency revisions and overlays
+        if: (matrix.config.os == 'windows-latest' || matrix.config.appimage) && steps.meson-deps.outputs.cache-hit != 'true'
+        run: python tools/ci/meson_source_cache.py refresh
+
+      - name: Start sccache and reset per-job statistics
+        if: matrix.config.os == 'windows-latest' && matrix.config.msvc == true
+        run: |
+          sccache --start-server
+          sccache --zero-stats
 
       - name: Configure
         run: |
           meson setup build ${{ matrix.config.args }} -Dbuildtype=${{ matrix.config.buildtype }}
           meson configure build
 
+      - name: Verify Meson compiler caching including stable fallbacks
+        if: matrix.config.os == 'windows-latest' && matrix.config.msvc == true
+        run: python tools/ci/verify_msvc_cache.py
+
+      - name: Verify resolved Meson dependency source commits
+        if: matrix.config.os == 'windows-latest' || matrix.config.appimage
+        run: python tools/ci/meson_source_cache.py validate
+
+      - name: Build current ASSDraw master from source
+        if: matrix.config.os == 'windows-latest'
+        id: assdraw
+        shell: pwsh
+        run: >-
+          .\tools\build-assdraw.ps1
+          -BuildRoot "${{ github.workspace }}\build"
+          -SourceRoot "${{ github.workspace }}"
+
       - name: Build
         run: meson compile -C build
       
-      - name: Run test
+      - name: Run test (Windows)
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          # Meson's test runner is Python. On Windows GitHub Actions its
+          # console stream may otherwise resolve to cp1252 and crash when
+          # forwarding Japanese test output.
+          chcp 65001
+          [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+          meson test -C build --verbose "gtest main"
+
+      - name: Run test (non-Windows)
+        if: matrix.config.os != 'windows-latest'
         run: meson test -C build --verbose "gtest main"
 
       # Windows artifacts
@@ -195,6 +388,48 @@ jobs:
       - name: Generate Windows portable installer
         if: matrix.config.os == 'windows-latest'
         run: cd build && ninja win-portable
+
+      - name: Verify DependencyControl installer migration and portable payload
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        run: >-
+          .\tools\verify-dependencycontrol-package.ps1
+          -BuildRoot "${{ github.workspace }}\build"
+          -SourceRoot "${{ github.workspace }}"
+
+      - name: Load packaged DependencyControl with Aegisub Automation runtime
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $env:AEGISUB_DEPCTRL_INCLUDE_DIR = "${{ github.workspace }}\build\aegisub-portable\automation\include"
+          $env:DEPCTRL_USER_DIR = "${{ github.workspace }}\build\depctrl-runtime-profile"
+          .\build\tests\gtest-main.exe --gtest_filter=DependencyControlRuntime.PackagedModuleLoadsWithBundledFallbacks
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged DependencyControl failed to load in Aegisub runtime.' }
+
+      - name: Verify packaged Mangetsu Karaoke Templater include
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $module = "automation\include\mangetsu-karaskel.lua"
+          $portable = Join-Path "build\aegisub-portable" $module
+          $installed = Join-Path "build\install\share\aegisub" $module
+          foreach ($path in @($portable, $installed)) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Packaged Karaoke Templater include missing: $path"
+            }
+          }
+          $zipList = 7z l "build\aegisub-portable-64.zip"
+          if ($LASTEXITCODE -ne 0 -or -not ($zipList -match 'mangetsu-karaskel\.lua')) {
+            throw 'Portable zip is missing the Mangetsu Karaoke Templater include.'
+          }
+
+      - name: Verify bundled ASSDraw packages
+        if: matrix.config.os == 'windows-latest'
+        shell: pwsh
+        run: >-
+          .\tools\verify-assdraw-package.ps1
+          -BuildRoot "${{ github.workspace }}\build"
+          -SourceRoot "${{ github.workspace }}"
 
       - name: Verify Windows provider DLL packaging
         if: matrix.config.os == 'windows-latest'
@@ -218,6 +453,12 @@ jobs:
           if (Test-Path "build\aegisub-portable\libass.dll") {
             throw "Portable staging must not contain stale libass.dll"
           }
+          if (-not (Test-Path "build\aegisub-portable\vapoursynth\libscxvid.dll")) {
+            throw "Portable staging is missing the SCXVid VapourSynth plugin"
+          }
+          if (Test-Path "build\aegisub-portable\vapoursynth\libwwxd64.dll") {
+            throw "Portable staging must not contain the retired WWXD VapourSynth plugin"
+          }
           $zipList = 7z l "build\aegisub-portable-64.zip"
           if (-not ($zipList -match 'libassmod\.dll')) {
             throw "Portable zip is missing libassmod.dll"
@@ -227,6 +468,12 @@ jobs:
           }
           if ($zipList -match 'libass\.dll') {
             throw "Portable zip must not contain stale libass.dll"
+          }
+          if (-not ($zipList -match 'libscxvid\.dll')) {
+            throw "Portable zip is missing the SCXVid VapourSynth plugin"
+          }
+          if ($zipList -match 'libwwxd64\.dll') {
+            throw "Portable zip must not contain the retired WWXD VapourSynth plugin"
           }
           if ("${{ matrix.config.args }}" -match '-Dwith_mangetsu=true') {
             if (-not (Test-Path "build\mangetsu.dll")) {
@@ -280,3 +527,7 @@ jobs:
           name: ${{ matrix.config.name }}
           path: appimage/*.AppImage
           if-no-files-found: error
+
+      - name: Report sccache statistics (Windows)
+        if: always() && steps.sccache.outcome == 'success'
+        run: python tools/ci/sccache_stats.py

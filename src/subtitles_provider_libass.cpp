@@ -208,22 +208,23 @@ void LibassSubtitlesProvider::DrawSubtitles(VideoFrame &frame,double time) {
 
 namespace libass {
 std::unique_ptr<SubtitlesProvider> Create(std::string const&, agi::BackgroundRunner *br) {
+	// A renderer is created only when actually selected. Initialize its library
+	// and work queue here, rather than starting font scans for every backend on
+	// application launch.
+	CacheFonts();
 	return agi::make_unique<LibassSubtitlesProvider>(br);
 }
 
 void CacheFonts() {
-	// Initialize the cache worker thread
-	cache_queue = agi::dispatch::Create();
-
-	// Initialize libass
-	library = ass_library_init();
-	ass_set_message_cb(library, msg_callback, nullptr);
-
-	// Initialize a renderer to force fontconfig to update its cache
-	cache_queue->Async([] {
-		auto ass_renderer = ass_renderer_init(library);
-		ass_set_fonts(ass_renderer, nullptr, "Sans", 1, nullptr, true);
-		ass_renderer_done(ass_renderer);
+	static std::once_flag once;
+	std::call_once(once, [] {
+		library = ass_library_init();
+		if (!library)
+			throw agi::InternalError("libass failed to initialize.");
+		ass_set_message_cb(library, msg_callback, nullptr);
+		cache_queue = agi::dispatch::Create();
 	});
+	// The first actual provider queues ass_set_fonts() on its renderer.
+	// Do not create a throwaway renderer merely to scan the same fonts again.
 }
 }

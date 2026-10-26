@@ -107,6 +107,15 @@ MotionTrackMotionState SegmentStateAtSample(MotionTrackSegment const& segment, M
 }
 }
 
+MotionTrackSegmentSample ConfirmTrackingSource(MotionTrackSegment const& segment,
+	int frame, MotionTrackMarker const& marker) {
+	for (auto const& sample : segment.tracked_center_by_frame) {
+		if (sample.frame == frame && IsUsableMotionTrackState(sample.state))
+			return {frame,marker,sample.confidence,sample.state};
+	}
+	return {frame,marker,1.0,MotionTrackState::Tracked};
+}
+
 void UpsertSegmentSample(MotionTrackSegment& segment, MotionTrackSegmentSample sample) {
 	if (segment.anchor_frame < 0) {
 		segment.anchor_frame = sample.frame;

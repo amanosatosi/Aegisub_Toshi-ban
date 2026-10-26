@@ -49,7 +49,7 @@ $gitHash = git -C $repositoryRootPath rev-parse --short HEAD 2>$null
 $gitVersionString = $gitRevision, $gitBranch, $gitHash -join '-'
 $exactGitTag = git -C $repositoryRootPath describe --exact-match --tags 2>$null
 
-if ($gitVersionString -eq $version['BUILD_GIT_VERSION_STRING']) {
+if ($gitVersionString -eq $version['BUILD_GIT_VERSION_STRING'] -and $version.ContainsKey('BUILD_GIT_HASH')) {
   exit 0
 }
 
@@ -89,6 +89,7 @@ if (-not $version.ContainsKey('INSTALLER_VERSION')) {
 
 
 $version['BUILD_GIT_VERSION_NUMBER'] = $gitRevision
+$version['BUILD_GIT_HASH'] = git -C $repositoryRootPath rev-parse HEAD
 $version['BUILD_GIT_VERSION_STRING'] = $gitVersionString
 
 $version.GetEnumerator() | %{

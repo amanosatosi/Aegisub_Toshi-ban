@@ -2,6 +2,10 @@
 
 Tracking fixes and behavior changes made after `Toshi-ban V1.1`.
 
+## 2026-09-20
+
+- Windows packages now use SCXVid as the supported VapourSynth scene-change detector and no longer ship WWXD. Existing VapourSynth scripts which pass `use_scxvid=False` continue to work and are handled as SCXVid. Because the detectors are not algorithmically identical, automatically generated keyframes may differ slightly from earlier releases.
+
 ## 2026-02-10
 
 - Fast naming actor commit fix: empty actor input no longer falls back to the last-used MRU actor.

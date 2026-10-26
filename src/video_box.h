@@ -28,6 +28,7 @@
 // Aegisub Project http://www.aegisub.org/
 
 #include <libaegisub/signal.h>
+#include "ass_tag_edit.h"
 
 #include <vector>
 #include <wx/gdicmn.h>
@@ -36,12 +37,18 @@
 
 namespace agi { struct Context; }
 class wxChoice;
+class wxContextMenuEvent;
 class wxTextCtrl;
 class wxMouseEvent;
 
 /// @class VideoBox
 /// @brief The box containing the video display and associated controls
 class VideoBox final : public wxPanel {
+	enum class SubsReadoutKind {
+		Start,
+		End
+	};
+
 	std::vector<agi::signal::Connection> connections;
 	agi::Context *context;     ///< Project context
 	wxTextCtrl *VideoPosition; ///< Current frame/time
@@ -53,10 +60,13 @@ class VideoBox final : public wxPanel {
 	/// Update VideoPosition and VideoSubsPos
 	void UpdateTimeBoxes();
 	void OnSubsReadoutClick(wxMouseEvent &event);
+	void OnSubsReadoutContextMenu(wxContextMenuEvent &event);
 	bool HandleReadoutClick(wxString const& value);
 	bool CopyReadoutToClipboard(wxString const& value);
 	bool InsertReadoutIntoEditBox(wxString const& value);
-	bool GetSubsReadoutForPosition(wxPoint const& position, wxString &value);
+	bool GetSubsReadoutForPosition(wxPoint const& position, wxString &value, SubsReadoutKind *kind = nullptr);
+	bool SetFadeFromHere(SubsReadoutKind kind, int video_time,
+		agi::ass::FadeColorChoice choice = agi::ass::FadeColorChoice::Normal);
 	wxString NormalizeReadout(wxString const& value) const;
 
 public:

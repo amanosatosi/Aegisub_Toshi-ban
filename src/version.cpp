@@ -66,6 +66,14 @@ const char *GetVersionNumber() {
 	return kCustomVersionString;
 }
 
+const char *GetGitHash() {
+#ifdef BUILD_GIT_HASH
+	return BUILD_GIT_HASH;
+#else
+	return "";
+#endif
+}
+
 int GetSVNRevision() {
 #ifdef BUILD_GIT_VERSION_NUMBER
 	return BUILD_GIT_VERSION_NUMBER;

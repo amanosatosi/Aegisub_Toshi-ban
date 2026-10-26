@@ -26,6 +26,7 @@
 #include "../video_display.h"
 #include "../visual_tool_clip.h"
 #include "../visual_tool_cross.h"
+#include "../visual_tool_curved_text.h"
 #include "../visual_tool_drag.h"
 #include "../visual_tool_perspective.h"
 #include "../visual_tool_rotatexy.h"
@@ -81,7 +82,8 @@ namespace {
 		CMD_TYPE(COMMAND_VALIDATE | COMMAND_TOGGLE)
 
 		bool Validate(const agi::Context *c) override {
-			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective));
+			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)) &&
+				(c->videoDisplay->GetSubTool() & PERSP_MODE) == PERSP_MODE_ARCH1T3CHT;
 		}
 
 		virtual const bool CheckActive(int subtool) {
@@ -100,6 +102,44 @@ namespace {
 			if (!c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)))
 				c->videoDisplay->SetTool(agi::make_unique<VisualToolPerspective>(c->videoDisplay, c));
 			c->videoDisplay->SetSubTool(UpdateSubTool(c->videoDisplay->GetSubTool()));
+		}
+	};
+
+	template<VisualToolCurvedTextMode M>
+	struct visual_tool_curved_text_command : public Command {
+		CMD_TYPE(COMMAND_VALIDATE | COMMAND_RADIO)
+
+		bool Validate(const agi::Context *c) override {
+			return !!c->project->VideoProvider();
+		}
+
+		bool IsActive(const agi::Context *c) override {
+			return c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)) && c->videoDisplay->GetSubTool() == M;
+		}
+
+		void operator()(agi::Context *c) override {
+			if (!c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)))
+				c->videoDisplay->SetTool(agi::make_unique<VisualToolCurvedText>(c->videoDisplay, c));
+			c->videoDisplay->SetSubTool(M);
+		}
+	};
+
+	template<VisualToolPerspectiveSetting M>
+	struct visual_tool_persp_mode : public Command {
+		CMD_TYPE(COMMAND_VALIDATE | COMMAND_RADIO)
+
+		bool Validate(const agi::Context *c) override {
+			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective));
+		}
+
+		bool IsActive(const agi::Context *c) override {
+			return Validate(c) && (c->videoDisplay->GetSubTool() & PERSP_MODE) == M;
+		}
+
+		void operator()(agi::Context *c) override {
+			if (!c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)))
+				c->videoDisplay->SetTool(agi::make_unique<VisualToolPerspective>(c->videoDisplay, c));
+			c->videoDisplay->SetSubTool((c->videoDisplay->GetSubTool() & ~PERSP_MODE) | M);
 		}
 	};
 
@@ -138,9 +178,17 @@ namespace {
 	struct visual_mode_perspective final : public visual_tool_command<VisualToolPerspective> {
 		CMD_NAME("video/tool/perspective")
 		CMD_ICON(visual_perspective)
-		STR_MENU("Apply 3D Perspective")
-		STR_DISP("Apply 3D Perspective")
-		STR_HELP("Rotate and shear subtitles to make them fit a given quad's perspective")
+		STR_MENU("Perspective / Distort")
+		STR_DISP("Perspective / Distort")
+		STR_HELP("Edit Mangetsu eight-value distortion or use arch1t3cht's ASS-compatible perspective tool")
+	};
+
+	struct visual_mode_curved_text final : public visual_tool_command<VisualToolCurvedText> {
+		CMD_NAME("video/tool/curved_text")
+		CMD_ICON(visual_curved_text)
+		STR_MENU("Curved Text")
+		STR_DISP("Curved Text")
+		STR_HELP("Create and edit Mangetsu \\ct text-on-path visually")
 	};
 
 	struct visual_mode_scale final : public visual_tool_command<VisualToolScale> {
@@ -172,7 +220,7 @@ namespace {
 		CMD_ICON(button_motion_track)
 		STR_MENU("Motion Track")
 		STR_DISP("Motion Track")
-		STR_HELP("Track an object and export After Effects keyframe data")
+		STR_HELP("Track motion or a clip and apply it natively to selected subtitles")
 		CMD_TYPE(COMMAND_VALIDATE)
 
 		bool Validate(const agi::Context *c) override {
@@ -187,6 +235,164 @@ namespace {
 				return;
 			}
 			c->dialog->Show<DialogMotionTrack>(c);
+		}
+	};
+
+	struct visual_mode_perspective_distort final : public visual_tool_persp_mode<PERSP_MODE_DISTORT> {
+		CMD_NAME("video/tool/perspective/distort")
+		CMD_ICON(visual_distort)
+		STR_MENU("Mangetsu Distort")
+		STR_DISP("Mangetsu Distort")
+		STR_HELP("Edit Mangetsu eight-value \\distort with four corner handles")
+	};
+
+	struct visual_mode_perspective_arch1t3cht final : public visual_tool_persp_mode<PERSP_MODE_ARCH1T3CHT> {
+		CMD_NAME("video/tool/perspective/arch1t3cht")
+		CMD_ICON(visual_perspective_plane)
+		STR_MENU("arch1t3cht Perspective")
+		STR_DISP("arch1t3cht Perspective")
+		STR_HELP("ASS-compatible perspective approximation")
+	};
+
+	// Compatibility with toolbars/hotkeys saved while Distort was standalone.
+	// This activates the Distort mode of the established perspective tool.
+	struct visual_mode_distort final : public visual_tool_persp_mode<PERSP_MODE_DISTORT> {
+		CMD_NAME("video/tool/distort")
+		CMD_ICON(visual_distort)
+		STR_MENU("Mangetsu Distort")
+		STR_DISP("Mangetsu Distort")
+		STR_HELP("Edit Mangetsu eight-value \\distort with four corner handles")
+
+		bool Validate(const agi::Context *c) override {
+			return !!c->project->VideoProvider();
+		}
+
+		bool IsActive(const agi::Context *c) override {
+			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)) &&
+				(c->videoDisplay->GetSubTool() & PERSP_MODE) == PERSP_MODE_DISTORT;
+		}
+	};
+
+	struct visual_mode_curved_text_arc final : public visual_tool_curved_text_command<CT_ARC> {
+		CMD_NAME("video/tool/curved_text/arc")
+		CMD_ICON(visual_curved_text)
+		STR_MENU("Arc")
+		STR_DISP("Arc")
+		STR_HELP("Edit the curved baseline with start, bend and end handles")
+	};
+
+	struct visual_mode_curved_text_edit final : public visual_tool_curved_text_command<CT_EDIT_PATH> {
+		CMD_NAME("video/tool/curved_text/edit")
+		CMD_ICON(visual_curved_text_edit)
+		STR_MENU("Path")
+		STR_DISP("Path")
+		STR_HELP("Edit Mangetsu \\ct path nodes and Bezier controls")
+	};
+
+	struct visual_mode_curved_text_insert final : public visual_tool_curved_text_command<CT_INSERT_PATH_POINT> {
+		CMD_NAME("video/tool/curved_text/insert")
+		CMD_ICON(visual_vector_clip_insert)
+		STR_MENU("Insert Path Point")
+		STR_DISP("Insert Path Point")
+		STR_HELP("Split the nearest curved-text line or Bezier segment")
+	};
+
+	struct visual_mode_curved_text_remove_point final : public visual_tool_curved_text_command<CT_REMOVE_PATH_POINT> {
+		CMD_NAME("video/tool/curved_text/remove_point")
+		CMD_ICON(visual_vector_clip_remove)
+		STR_MENU("Remove Path Point")
+		STR_DISP("Remove Path Point")
+		STR_HELP("Remove a curved-text node or convert a Bezier by removing a control")
+	};
+
+	struct visual_mode_curved_text_move final : public visual_tool_curved_text_command<CT_MOVE_PATH> {
+		CMD_NAME("video/tool/curved_text/move")
+		CMD_ICON(visual_curved_text_move)
+		STR_MENU("Move Whole Path")
+		STR_DISP("Move Whole Path")
+		STR_HELP("Move the local \\ct path without changing subtitle position")
+	};
+
+	struct visual_mode_curved_text_ctx final : public visual_tool_curved_text_command<CT_ALONG_OFFSET> {
+		CMD_NAME("video/tool/curved_text/ctx")
+		CMD_ICON(visual_curved_text_ctx)
+		STR_MENU("Along-Path Offset")
+		STR_DISP("Along-Path Offset")
+		STR_HELP("Drag text along the path by editing \\ctx")
+	};
+
+	struct visual_mode_curved_text_cty final : public visual_tool_curved_text_command<CT_NORMAL_OFFSET> {
+		CMD_NAME("video/tool/curved_text/cty")
+		CMD_ICON(visual_curved_text_cty)
+		STR_MENU("Normal Offset")
+		STR_DISP("Normal Offset")
+		STR_HELP("Drag text perpendicular to the path by editing \\cty")
+	};
+
+	struct visual_mode_curved_text_ctan final : public Command {
+		CMD_NAME("video/tool/curved_text/ctan")
+		CMD_ICON(visual_curved_text_ctan)
+		CMD_TYPE(COMMAND_VALIDATE)
+		STR_MENU("Choose Curved Text Anchor")
+		STR_DISP("Curved Text Alignment")
+		STR_HELP("Choose a nine-way \\ctan curve anchor or the legacy baseline")
+
+		bool Validate(const agi::Context *c) override {
+			return !!c->project->VideoProvider();
+		}
+
+		void operator()(agi::Context *c) override {
+			if (!c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)))
+				c->videoDisplay->SetTool(agi::make_unique<VisualToolCurvedText>(c->videoDisplay, c));
+			c->videoDisplay->SetSubTool(CT_CHOOSE_ALIGNMENT);
+		}
+	};
+
+	struct visual_mode_curved_text_reset final : public Command {
+		CMD_NAME("video/tool/curved_text/reset")
+		CMD_ICON(visual_vector_clip_line)
+		CMD_TYPE(COMMAND_VALIDATE)
+		STR_MENU("Reset Straight")
+		STR_DISP("Reset Straight")
+		STR_HELP("Keep the curved-text endpoints and remove all curvature")
+
+		bool Validate(const agi::Context *c) override { return !!c->project->VideoProvider(); }
+		void operator()(agi::Context *c) override {
+			if (!c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)))
+				c->videoDisplay->SetTool(agi::make_unique<VisualToolCurvedText>(c->videoDisplay, c));
+			c->videoDisplay->SetSubTool(CT_RESET_STRAIGHT);
+		}
+	};
+
+	struct visual_mode_curved_text_reverse final : public Command {
+		CMD_NAME("video/tool/curved_text/reverse")
+		CMD_ICON(arrow_sort)
+		CMD_TYPE(COMMAND_VALIDATE)
+		STR_MENU("Reverse Path")
+		STR_DISP("Reverse Path")
+		STR_HELP("Reverse the curved-text baseline direction without changing its shape")
+
+		bool Validate(const agi::Context *c) override { return !!c->project->VideoProvider(); }
+		void operator()(agi::Context *c) override {
+			if (!c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)))
+				c->videoDisplay->SetTool(agi::make_unique<VisualToolCurvedText>(c->videoDisplay, c));
+			c->videoDisplay->SetSubTool(CT_REVERSE_PATH);
+		}
+	};
+
+	struct visual_mode_curved_text_remove final : public Command {
+		CMD_NAME("video/tool/curved_text/remove")
+		CMD_ICON(visual_vector_clip_remove)
+		CMD_TYPE(COMMAND_VALIDATE)
+		STR_MENU("Remove Curve")
+		STR_DISP("Remove Curve")
+		STR_HELP("Remove static \\ct paths without changing any unrelated tags or text")
+
+		bool Validate(const agi::Context *c) override { return !!c->project->VideoProvider(); }
+		void operator()(agi::Context *c) override {
+			if (!c->videoDisplay->ToolIsType(typeid(VisualToolCurvedText)))
+				c->videoDisplay->SetTool(agi::make_unique<VisualToolCurvedText>(c->videoDisplay, c));
+			c->videoDisplay->SetSubTool(CT_REMOVE_CURVE);
 		}
 	};
 
@@ -208,7 +414,9 @@ namespace {
 		STR_HELP("When the surrounding plane is also visible, switches which quad is locked. If inactive, the inner quad can only be resized without changing the perspective plane. If active, this holds for the outer quad instead.")
 
 		bool Validate(const agi::Context *c) override {
-			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)) && c->videoDisplay->GetSubTool() & PERSP_OUTER;
+			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)) &&
+				(c->videoDisplay->GetSubTool() & PERSP_MODE) == PERSP_MODE_ARCH1T3CHT &&
+				(c->videoDisplay->GetSubTool() & PERSP_OUTER);
 		}
 	};
 
@@ -364,12 +572,16 @@ namespace cmd {
 		reg(agi::make_unique<visual_mode_drag>());
 		reg(agi::make_unique<visual_mode_rotate_z>());
 		reg(agi::make_unique<visual_mode_rotate_xy>());
+		reg(agi::make_unique<visual_mode_curved_text>());
 		reg(agi::make_unique<visual_mode_perspective>());
 		reg(agi::make_unique<visual_mode_scale>());
 		reg(agi::make_unique<visual_mode_clip>());
 		reg(agi::make_unique<visual_mode_vector_clip>());
 		reg(agi::make_unique<visual_motion_track>());
 
+		reg(agi::make_unique<visual_mode_distort>());
+		reg(agi::make_unique<visual_mode_perspective_distort>());
+		reg(agi::make_unique<visual_mode_perspective_arch1t3cht>());
 		reg(agi::make_unique<visual_mode_perspective_plane>());
 		reg(agi::make_unique<visual_mode_perspective_lock_inner>());
 		reg(agi::make_unique<visual_mode_perspective_grid>());
@@ -377,6 +589,18 @@ namespace cmd {
 		reg(agi::make_unique<visual_mode_perspective_orgmode_nofax>());
 		reg(agi::make_unique<visual_mode_perspective_orgmode_keep>());
 		reg(agi::make_unique<visual_mode_perspective_orgmode_cycle>());
+
+		reg(agi::make_unique<visual_mode_curved_text_arc>());
+		reg(agi::make_unique<visual_mode_curved_text_edit>());
+		reg(agi::make_unique<visual_mode_curved_text_insert>());
+		reg(agi::make_unique<visual_mode_curved_text_remove_point>());
+		reg(agi::make_unique<visual_mode_curved_text_move>());
+		reg(agi::make_unique<visual_mode_curved_text_ctx>());
+		reg(agi::make_unique<visual_mode_curved_text_cty>());
+		reg(agi::make_unique<visual_mode_curved_text_ctan>());
+		reg(agi::make_unique<visual_mode_curved_text_reset>());
+		reg(agi::make_unique<visual_mode_curved_text_reverse>());
+		reg(agi::make_unique<visual_mode_curved_text_remove>());
 
 		reg(agi::make_unique<visual_mode_vclip_drag>());
 		reg(agi::make_unique<visual_mode_vclip_line>());

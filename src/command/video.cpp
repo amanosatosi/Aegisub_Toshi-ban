@@ -32,6 +32,8 @@
 #include "command.h"
 
 #include "../ass_dialogue.h"
+#include "../audio_controller.h"
+#include "../audio_timing.h"
 #include "../async_video_provider.h"
 #include "../compat.h"
 #include "../dialog_detached_video.h"
@@ -754,6 +756,12 @@ struct video_play final : public validator_video_loaded {
 	STR_HELP("Play video starting on this position")
 
 	void operator()(agi::Context *c) override {
+		auto timing = c->audioController->GetTimingController();
+		if (timing && timing->Is39SessionActive()) {
+			c->audioController->Stop();
+			c->videoController->Stop();
+			return;
+		}
 		c->videoController->Play();
 	}
 };

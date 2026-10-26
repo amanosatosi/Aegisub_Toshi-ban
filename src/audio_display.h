@@ -33,11 +33,15 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <utility>
 
 #include <wx/gdicmn.h>
+#include <wx/bitmap.h>
 #include <wx/string.h>
 #include <wx/timer.h>
 #include <wx/window.h>
+
+#include "audio_timing.h"
 
 namespace agi { class AudioProvider; }
 namespace agi { struct Context; }
@@ -75,6 +79,7 @@ class AudioDisplay: public wxWindow {
 
 	/// The current audio renderer
 	std::unique_ptr<AudioRendererBitmapProvider> audio_renderer_provider;
+	bool spectrum_display = false;
 
 	/// The controller managing us
 	AudioController *controller = nullptr;
@@ -123,6 +128,9 @@ class AudioDisplay: public wxWindow {
 
 	/// Amplitude scaling ("vertical zoom") as a factor, 1.0 is neutral
 	float scale_amplitude = 1.f;
+	uint64_t review_generation = 0;
+	agi::signal::Signal<> AnnounceReviewAudioChanged;
+	void InvalidateReviewAudio() { ++review_generation; AnnounceReviewAudioChanged(); }
 
 	/// Top of the main audio area in pixels
 	int audio_top = 0;
@@ -172,6 +180,14 @@ class AudioDisplay: public wxWindow {
 	/// Paint provisional Toshiki K-Timing slot ranges, when supplied by the
 	/// active timing controller.
 	void PaintToshikiKTimingPreview(wxDC &dc, TimeRange updtime);
+	void Paint39Overlay(wxDC &dc, TimeRange const& visible);
+	struct Timing39Particle { float x, y, vx, vy; int age; };
+	std::vector<Timing39Particle> timing39_particles;
+	std::vector<AudioTimingController::Timing39Overlay> timing39_overlay_scratch;
+	wxTimer timing39_effect_timer;
+	unsigned timing39_seen_serial = 0;
+	bool timing39_overlay_dirty = false;
+	void On39Effects(wxTimerEvent&);
 
 	/// Paint the markers in a time range
 	/// @param dc DC to paint to
@@ -217,6 +233,7 @@ class AudioDisplay: public wxWindow {
 	void OnFocus(wxFocusEvent &event);
 	/// wxWidgets keypress event
 	void OnKeyDown(wxKeyEvent& event);
+	void OnKeyUp(wxKeyEvent& event);
 	void OnScrollTimer(wxTimerEvent &event);
 	void OnLoadTimer(wxTimerEvent &);
 	void OnMouseEnter(wxMouseEvent&);
@@ -232,6 +249,13 @@ class AudioDisplay: public wxWindow {
 	void OnMarkerMoved();
 
 public:
+	// Render Results at its own time-per-output-pixel scale while sharing the
+	// decoded provider and spectrum analysis cache with the main audio view.
+	wxBitmap RenderReviewAudio(int start_ms, int end_ms, wxSize size);
+	int ReviewAudioSliceCount(int start_ms, int end_ms, int output_width) const;
+	std::pair<int, wxBitmap> RenderReviewAudioSlice(int start_ms, int end_ms, wxSize size, int slice);
+	uint64_t ReviewGeneration() const { return review_generation; }
+	DEFINE_SIGNAL_ADDERS(AnnounceReviewAudioChanged, AddReviewAudioChangedListener)
 	AudioDisplay(wxWindow *parent, AudioController *controller, agi::Context *context);
 	~AudioDisplay();
 

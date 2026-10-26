@@ -130,6 +130,7 @@ class AudioController final : public wxEvtHandler {
 	/// Get the duration of the currently open audio in milliseconds, or 0 if none
 	/// @return Duration in milliseconds
 	int GetDuration() const;
+	int paused_position = 0;
 
 public:
 	AudioController(agi::Context *context);
@@ -176,8 +177,11 @@ public:
 	/// @brief Get the current playback position
 	/// @return Approximate current time in milliseconds being heard by the user
 	///
-	/// Returns 0 if playback is stopped. The return value is only approximate.
+	/// Returns the explicit paused seek position, or 0 after stop.
+	/// The return value during playback is only approximate.
 	int GetPlaybackPosition();
+	/// Position the cursor without starting the audio device (e.g. countdown).
+	void SeekWhileStopped(int ms);
 
 	/// @brief Get the primary playback range
 	/// @return An immutable TimeRange object

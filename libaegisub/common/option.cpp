@@ -33,6 +33,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/interprocess/streams/bufferstream.hpp>
 #include <cassert>
+#include <algorithm>
 #include <memory>
 
 namespace {
@@ -226,6 +227,14 @@ void Options::LoadConfig(std::istream& stream, bool ignore_errors) {
 
 	sort(begin(new_values), end(new_values), option_name_cmp());
 
+	// Only explicitly registered runtime options may exist without defaults.
+	for (auto& value : new_values) {
+		if (optional_names.count(value->GetName()) && !Has(value->GetName().c_str()))
+			Add(std::move(value));
+	}
+	new_values.erase(std::remove_if(begin(new_values), end(new_values),
+		[](std::unique_ptr<OptionValue> const& value) { return !value; }), end(new_values));
+
 	if (values.empty()) {
 		values = std::move(new_values);
 		return;
@@ -256,6 +265,18 @@ void Options::LoadConfig(std::istream& stream, bool ignore_errors) {
 			++dst_it;
 		}
 	}
+}
+
+bool Options::Has(const char *name) const {
+	auto index = lower_bound(begin(values), end(values), name, option_name_cmp());
+	return index != end(values) && (*index)->GetName() == name;
+}
+
+void Options::Add(std::unique_ptr<OptionValue> value) {
+	auto index = lower_bound(begin(values), end(values), value->GetName(), option_name_cmp());
+	if (index != end(values) && (*index)->GetName() == value->GetName())
+		throw agi::InternalError("Option already exists: " + value->GetName());
+	values.insert(index, std::move(value));
 }
 
 OptionValue *Options::Get(const char *name) {
