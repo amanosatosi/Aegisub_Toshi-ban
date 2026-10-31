@@ -21,8 +21,9 @@ are driven by actual completions. After two seconds, completed progress collapse
 the warning link remains if needed. It opens Automation Manager; failed scripts and
 Show Info retain error descriptions, including directory and publication failures.
 
-Cancellation uses Lua line/count hooks during initialization. Line hooks prevent
-new JIT traces during that phase without changing scripts' JIT preferences. Clipboard, translation and non-Windows text measurements
+Cancellation uses a Lua count hook with the JIT engine disabled during
+initialization. Global JIT mode requests are deferred until publication;
+function-specific requests, reported preferences and saved aliases are preserved. Clipboard, translation and non-Windows text measurements
 are marshalled to the main thread using cancellable requests. Queued requests own
 their payloads and never capture the manager or frame. Cancellation is cooperative:
 Lua cannot interrupt arbitrary blocking native code, filesystem drivers or FFI

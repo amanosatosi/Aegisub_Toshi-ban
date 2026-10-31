@@ -16,9 +16,9 @@ TEST(AutomationInitialization, CancellationInterruptsAnInfiniteLuaLoop) {
 	int result = 0;
 	std::thread worker([&] {
 		std::unique_ptr<lua_State, decltype(&lua_close)> state(luaL_newstate(), lua_close);
+		luaL_openlibs(state.get());
 		Automation4::SetInitCancellation(state.get(), &cancelled);
 		started = true;
-		luaL_openlibs(state.get());
 		result = luaL_dostring(state.get(), "jit.on(); while true do end");
 	});
 	while (!started) std::this_thread::yield();
@@ -55,7 +55,7 @@ TEST(AutomationInitialization, ExplicitJitPreferenceSurvivesPublication) {
 	auto L = state.get();
 	luaL_openlibs(L);
 	Automation4::SetInitCancellation(L, &cancelled);
-	ASSERT_EQ(luaL_dostring(L, "jit.off()"), 0);
+	ASSERT_EQ(luaL_dostring(L, "assert(jit.status()); saved_off = jit.off; jit.off(); assert(not jit.status()); saved_jit = jit; jit = nil"), 0);
 	Automation4::ClearInitCancellation(L);
-	ASSERT_EQ(luaL_dostring(L, "assert(not jit.status())"), 0);
+	ASSERT_EQ(luaL_dostring(L, "assert(jit == nil); assert(not saved_jit.status()); saved_jit.on(); assert(saved_jit.status()); saved_off(); assert(not saved_jit.status())"), 0);
 }
