@@ -410,23 +410,30 @@ void FrameMain::InitContents() {
 	MainSizer->Add(new wxStaticLine(Panel),0,wxEXPAND | wxALL,0);
 	MainSizer->Add(TopSizer,0,wxEXPAND | wxALL,0);
 	MainSizer->Add(context->subsGrid,1,wxEXPAND | wxALL,0);
+	auto dip = [this](int value) {
+#if wxCHECK_VERSION(3, 1, 0)
+		return FromDIP(value);
+#else
+		return value;
+#endif
+	};
 	automation_panel = new wxPanel(Panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
 	auto progress_sizer = new wxBoxSizer(wxVERTICAL);
 	automation_title = new wxStaticText(automation_panel, wxID_ANY, _("Loading Automation scripts"));
-	automation_file = new wxStaticText(automation_panel, wxID_ANY, "", wxDefaultPosition, FromDIP(wxSize(320, -1)), wxST_ELLIPSIZE_MIDDLE | wxST_NO_AUTORESIZE);
+	automation_file = new wxStaticText(automation_panel, wxID_ANY, "", wxDefaultPosition, wxSize(dip(320), -1), wxST_ELLIPSIZE_MIDDLE | wxST_NO_AUTORESIZE);
 	automation_count = new wxStaticText(automation_panel, wxID_ANY, "0 / 0");
-	automation_gauge = new wxGauge(automation_panel, wxID_ANY, 1, wxDefaultPosition, FromDIP(wxSize(240, 12)));
+	automation_gauge = new wxGauge(automation_panel, wxID_ANY, 1, wxDefaultPosition, wxSize(dip(240), dip(12)));
 	automation_warning = new wxHyperlinkCtrl(automation_panel, wxID_ANY, _("Some scripts failed — Show details"), "automation");
 	automation_warning->Bind(wxEVT_HYPERLINK, [this](wxHyperlinkEvent&) { ShowAutomationDialog(context.get()); });
 	auto gauge_row = new wxBoxSizer(wxHORIZONTAL);
-	gauge_row->Add(automation_gauge, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+	gauge_row->Add(automation_gauge, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, dip(8));
 	gauge_row->Add(automation_count, 0, wxALIGN_CENTER_VERTICAL);
-	progress_sizer->Add(automation_title, 0, wxBOTTOM, FromDIP(3));
+	progress_sizer->Add(automation_title, 0, wxBOTTOM, dip(3));
 	progress_sizer->Add(gauge_row, 0, wxEXPAND);
-	progress_sizer->Add(automation_file, 0, wxEXPAND | wxTOP, FromDIP(3));
-	progress_sizer->Add(automation_warning, 0, wxTOP, FromDIP(3));
+	progress_sizer->Add(automation_file, 0, wxEXPAND | wxTOP, dip(3));
+	progress_sizer->Add(automation_warning, 0, wxTOP, dip(3));
 	automation_panel->SetSizer(progress_sizer);
-	MainSizer->Add(automation_panel, 0, wxALIGN_RIGHT | wxALL, FromDIP(6));
+	MainSizer->Add(automation_panel, 0, wxALIGN_RIGHT | wxALL, dip(6));
 	MainSizer->Hide(automation_panel);
 	automation_hide_timer.SetOwner(this);
 	Bind(wxEVT_TIMER, [this](wxTimerEvent&) {

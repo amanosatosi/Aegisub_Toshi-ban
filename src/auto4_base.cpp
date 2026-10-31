@@ -49,6 +49,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/scope_exit.hpp>
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <future>
@@ -376,6 +377,7 @@ namespace Automation4 {
 	// Workers own unpublished scripts; only the UI thread touches live registries.
 	struct AutoloadScriptManager::Batch {
 		std::shared_ptr<ScriptLoadContext> context;
+		std::optional<agi::fs::path> target;
 		std::thread worker;
 		std::mutex mutex;
 		AutoloadProgress progress;
@@ -384,15 +386,17 @@ namespace Automation4 {
 		std::atomic<bool> done{false};
 		std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
 
-		Batch(std::vector<agi::fs::path> directories, std::shared_ptr<ScriptLoadContext> context)
-		: context(std::move(context)) {
+		Batch(std::vector<agi::fs::path> directories, std::shared_ptr<ScriptLoadContext> context, std::optional<agi::fs::path> target)
+		: context(std::move(context)), target(std::move(target)) {
 			worker = std::thread([this, directories = std::move(directories)] {
 				load_context = this->context;
 				BOOST_SCOPE_EXIT_ALL(&) { load_context.reset(); done = true; };
 				try {
 					std::vector<agi::fs::path> files;
+					if (this->target) files.push_back(*this->target);
 					std::set<agi::fs::path> seen;
 					for (auto const& directory : directories) {
+						if (this->target) break;
 						if (this->context->cancelled) return;
 						try {
 							if (!agi::fs::DirectoryExists(directory)) continue;
@@ -431,6 +435,7 @@ namespace Automation4 {
 						catch (...) { error = "Unknown error"; }
 						LOG_I("startup/automation/script") << file.string() << ": "
 							<< std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() << " ms";
+						if (!script && error.empty()) error = "No Automation engine accepted this script";
 						if (!error.empty()) errors.push_back(file.string() + ": " + error);
 						if (!script) script = agi::make_unique<UnknownScript>(file, error);
 						scripts.push_back(std::move(script));
@@ -462,6 +467,7 @@ namespace Automation4 {
 	}
 
 	void AutoloadScriptManager::Reload() {
+		reload_target.reset();
 		if (batch) {
 			batch->context->cancelled = true;
 			reload_pending = true; // Coalesce rescans; never create unbounded workers.
@@ -470,9 +476,14 @@ namespace Automation4 {
 		StartReload();
 	}
 
-	void AutoloadScriptManager::Reload(Script *) {
-		// Global Reload uses the same staged path as Rescan Autoload Dir.
-		Reload();
+	void AutoloadScriptManager::Reload(Script *script) {
+		reload_target = script->GetFilename();
+		if (batch) {
+			batch->context->cancelled = true;
+			reload_pending = true;
+			return;
+		}
+		StartReload();
 	}
 
 	void AutoloadScriptManager::StartReload() {
@@ -486,14 +497,26 @@ namespace Automation4 {
 		for (auto tok : agi::Split(path, '|')) directories.push_back(context->paths->Decode(agi::str(tok)));
 		progress = {};
 		ProgressChanged(progress);
-		batch = agi::make_unique<Batch>(std::move(directories), std::move(context));
+		batch = agi::make_unique<Batch>(std::move(directories), std::move(context), reload_target);
 		timer.Start(100); // At most ten real progress updates per second.
 	}
 
 	void AutoloadScriptManager::OnTimer(wxTimerEvent&) {
 		if (!batch) return;
 		if (batch->done) {
-			if (!reload_pending && script_execution_count) return;
+			if (!reload_pending && script_execution_count) {
+				AutoloadProgress waiting;
+				{
+					std::lock_guard<std::mutex> lock(batch->mutex);
+					waiting = batch->progress;
+				}
+				waiting.filename = from_wx(_("Waiting for running Automation or export dialog"));
+				if (waiting.completed != progress.completed || waiting.filename != progress.filename) {
+					progress = std::move(waiting);
+					ProgressChanged(progress);
+				}
+				return;
+			}
 			timer.Stop();
 			if (reload_pending) {
 				batch.reset(); // Discard every result of the cancelled generation.
@@ -508,12 +531,17 @@ namespace Automation4 {
 			progress.loading = false;
 			progress.failed = batch->errors.size();
 			// Delete old features before publishing replacements with the same names.
-			scripts.clear();
-			scripts = std::move(batch->scripts);
-			for (auto& script : scripts) {
+			if (batch->target) {
+				scripts.erase(std::remove_if(scripts.begin(), scripts.end(), [&](std::unique_ptr<Script> const& script) {
+					return script->GetFilename() == *batch->target;
+				}), scripts.end());
+			}
+			else scripts.clear();
+			for (auto& script : batch->scripts) {
 				bool loaded = script->GetLoadedState();
 				script->Publish();
 				if (loaded && !script->GetLoadedState()) batch->errors.push_back(script->GetFilename().string() + ": " + script->GetDescription());
+				scripts.push_back(std::move(script));
 			}
 			errors = batch->errors;
 			progress.failed = errors.size();

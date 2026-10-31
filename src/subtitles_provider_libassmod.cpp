@@ -20,6 +20,7 @@
 ///
 
 #include "subtitles_provider_libassmod.h"
+#include "startup_timing.h"
 #include "subtitles_provider_libassmod_render.h"
 
 #include "ass_attachment.h"
@@ -963,6 +964,7 @@ LibassModSubtitlesProvider::LibassModSubtitlesProvider(AssCompatBackend &backend
 	auto state = shared;
 	state->backend = &backend;
 	backend.cache_queue->Async([state, &backend] {
+		auto started = std::chrono::steady_clock::now();
 		auto &api = backend.api;
 		auto ass_renderer = api.ass_renderer_init(backend.library);
 		if (ass_renderer) {
@@ -971,6 +973,7 @@ LibassModSubtitlesProvider::LibassModSubtitlesProvider(AssCompatBackend &backend
 		}
 		state->renderer = ass_renderer;
 		state->ready = true;
+		LOG_I("startup/renderer") << backend.config.display_name << " renderer/font initialization: " << StartupMilliseconds(started) << " ms";
 	});
 }
 

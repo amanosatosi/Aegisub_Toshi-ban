@@ -120,6 +120,16 @@ aegisub.register_macro('Smoke Lua', '', function()
     local f = assert(io.open(os.getenv('AEGISUB_STARTUP_SMOKE_DIR') .. '/lua-ran', 'w'))
     f:write('ok'); f:close()
 end)
+aegisub.register_macro('Smoke Held', '', function()
+    local function mark(name)
+        local f = assert(io.open(os.getenv('AEGISUB_STARTUP_SMOKE_DIR') .. '/' .. name, 'w'))
+        f:write('ok'); f:close()
+    end
+    mark('held-started')
+    local deadline = os.clock() + 6
+    while os.clock() < deadline do end
+    mark('held-finished')
+end)
 """, encoding="utf-8")
             (autoload / "b.moon").write_text("""
 aegisub.register_macro 'Smoke Moon', '', ->
@@ -146,7 +156,7 @@ aegisub.register_macro 'Smoke Moon', '', ->
             if scenario == "scripts":
                 wait(lambda: any(text(h) == "Loading Automation scripts" and user.IsWindowVisible(h) for h in windows(process.pid, frame)), "progress before completion")
                 # Editing works during initialization, without moving keyboard focus.
-                edit = wait(lambda: next((h for h in windows(process.pid, frame) if text(h, True) == "Scintilla" and user.IsWindowVisible(h)), None), "subtitle editor")
+                edit = wait(lambda: next((h for h in windows(process.pid, frame) if "scintilla" in text(h, True).lower() and user.IsWindowVisible(h)), None), "subtitle editor")
                 length = send(edit, 2183)  # SCI_GETTEXTLENGTH
                 send(edit, 0x102, ord("x"))  # WM_CHAR; no cross-process pointer.
                 assert send(edit, 2183) == length + 1
@@ -166,6 +176,16 @@ aegisub.register_macro 'Smoke Moon', '', ->
                     time.sleep(0.05)
                 wait(lambda: any(text(h) == "Loading Automation scripts" and user.IsWindowVisible(h) for h in windows(process.pid, frame)), "manual progress")
                 wait(lambda: logs().count('"section" : "startup/automation"') >= 2 or len(re.findall(r'"section"\s*:\s*"startup/automation"', logs())) >= 2, "rescan completion")
+                # A completed replacement must not destroy a Lua state still running
+                # a macro in DialogProgress's nested event loop.
+                user.PostMessageW(rescan, 0xF5, 0, 0)
+                invoke(frame, "Smoke Held")
+                wait(lambda: (profile / "held-started").exists(), "held macro started")
+                wait(lambda: any("Waiting for running Automation" in text(h) for h in windows(process.pid, frame)), "publication waits for the running macro")
+                assert not (profile / "held-finished").exists()
+                send(frame, 0)
+                wait(lambda: (profile / "held-finished").exists(), "held macro finished")
+                wait(lambda: len(re.findall(r'"section"\s*:\s*"startup/automation"', logs())) >= 3, "publication after macro completion")
                 user.PostMessageW(manager, 0x10, 0, 0)
                 for label in ("Smoke Lua", "Smoke Moon"):
                     assert sum(name == label for name, _ in entries(user.GetMenu(frame))) == 1
@@ -192,6 +212,13 @@ aegisub.register_macro 'Smoke Moon', '', ->
                     assert "Mangetsu loaded from" in logs() and "libassmod loaded from" not in logs()
                 else:
                     assert "libassmod loaded from" in logs() and "Mangetsu loaded from" not in logs()
+                if scenario in ("empty", "missing"):
+                    if scenario == "missing":
+                        shutil.copy2(portable / "mangetsu.dll", profile / "mangetsu.dll")
+                    invoke(frame, "Options...")
+                    preferences = wait(lambda: next((h for h in windows(process.pid) if text(h) == "Preferences"), None), "renderer selection UI")
+                    wait(lambda: "Mangetsu loaded from" in logs() and "libassmod loaded from" in logs(), "UI discovery retries failed availability")
+                    user.PostMessageW(preferences, 0x10, 0, 0)
 
             user.PostMessageW(frame, 0x10, 0, 0)
             # An edit/save prompt, if a platform's Scintilla undo semantics differ.

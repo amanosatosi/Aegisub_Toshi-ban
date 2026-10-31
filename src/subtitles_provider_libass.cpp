@@ -33,6 +33,7 @@
 ///
 
 #include "subtitles_provider_libass.h"
+#include "startup_timing.h"
 
 #include "compat.h"
 #include "include/aegisub/subtitles_provider.h"
@@ -146,6 +147,7 @@ LibassSubtitlesProvider::LibassSubtitlesProvider(agi::BackgroundRunner *br)
 {
 	auto state = shared;
 	cache_queue->Async([state] {
+		auto started = std::chrono::steady_clock::now();
 		auto ass_renderer = ass_renderer_init(library);
 		if (ass_renderer) {
 			ass_set_font_scale(ass_renderer, 1.);
@@ -153,6 +155,7 @@ LibassSubtitlesProvider::LibassSubtitlesProvider(agi::BackgroundRunner *br)
 		}
 		state->renderer = ass_renderer;
 		state->ready = true;
+		LOG_I("startup/renderer") << "libass renderer/font initialization: " << StartupMilliseconds(started) << " ms";
 	});
 }
 

@@ -89,6 +89,10 @@ wxIMPLEMENT_APP(AegisubApp);
 
 static const char *LastStartupState = nullptr;
 
+void LogStartupTiming(char const *stage) {
+	LOG_I("startup/timing") << stage << ": " << StartupMilliseconds(StartupStarted()) << " ms since OnInit";
+}
+
 #ifdef WITH_STARTUPLOG
 #define StartupLog(a) MessageBox(0, L ## a, L"Aegisub startup log", 0)
 #else

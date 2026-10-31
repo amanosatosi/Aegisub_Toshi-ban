@@ -744,16 +744,7 @@ namespace {
 
 	void LuaScript::Publish() {
 		if (!L || published) return;
-		// Reject name collisions before transferring any command ownership.
-		for (auto const& command : pending_commands) {
-			try {
-				cmd::get(command->name());
-				description = agi::format("Automation command already registered: %s", command->name());
-				Destroy();
-				return;
-			}
-			catch (cmd::CommandNotFound const&) { }
-		}
+		// Keep the existing command replacement semantics for scripts sharing a name.
 		published = true;
 		for (auto& command : pending_commands) cmd::reg(std::move(command));
 		pending_commands.clear();

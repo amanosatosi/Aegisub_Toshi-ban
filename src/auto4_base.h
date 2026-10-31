@@ -45,6 +45,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 #include <wx/timer.h>
 
@@ -258,6 +259,7 @@ namespace Automation4 {
 		std::unique_ptr<Batch> batch;
 		wxTimer timer;
 		bool reload_pending = false;
+		std::optional<agi::fs::path> reload_target;
 		AutoloadProgress progress;
 		std::vector<std::string> errors;
 		agi::signal::Signal<AutoloadProgress const&> ProgressChanged;
