@@ -55,6 +55,7 @@
 #include <future>
 #include <mutex>
 #include <set>
+#include <system_error>
 #include <thread>
 #include <utility>
 
@@ -382,7 +383,12 @@ namespace Automation4 {
 
 	// Workers own private states; results are consumed in directory/file order.
 	struct AutoloadScriptManager::Batch {
-		struct Result { std::unique_ptr<Script> script; std::string error; bool ready = false; };
+		struct Result {
+			std::unique_ptr<Script> script;
+			std::string error;
+			bool ready = false;
+			std::chrono::steady_clock::time_point finished;
+		};
 		std::shared_ptr<ScriptLoadContext> context;
 		std::optional<agi::fs::path> target;
 		bool progressive;
@@ -429,6 +435,7 @@ namespace Automation4 {
 				std::lock_guard<std::mutex> lock(mutex);
 				if (!result.error.empty()) ++progress.failed;
 				result.ready = true;
+				result.finished = std::chrono::steady_clock::now();
 				results[index] = std::move(result);
 				active[id].clear();
 				++progress.completed;
@@ -553,14 +560,19 @@ namespace Automation4 {
 			return;
 		}
 		AutoloadProgress next;
+		bool early_macro = false;
 		{
 			std::lock_guard<std::mutex> lock(batch->mutex);
 			next = batch->progress;
 			for (auto const& name : batch->active) if (!name.empty()) next.filename += (next.filename.empty() ? "" : "\n") + name;
+			if (!batch->first_macro) {
+				for (auto index = batch->published; index < batch->results.size() && batch->results[index].ready; ++index)
+					if (!batch->results[index].script->GetMacros().empty()) { early_macro = true; break; }
+			}
 		}
 		bool busy = script_execution_count != 0;
 		bool publish = !reload_pending && !busy && (done || batch->progressive)
-			&& (done || !batch->first_macro || std::chrono::steady_clock::now() - batch->last_publication >= std::chrono::milliseconds(500));
+			&& (done || early_macro || std::chrono::steady_clock::now() - batch->last_publication >= std::chrono::milliseconds(500));
 		if (publish) {
 			auto start = std::chrono::steady_clock::now();
 			std::vector<std::unique_ptr<Script>> ready;
@@ -568,6 +580,8 @@ namespace Automation4 {
 				std::lock_guard<std::mutex> lock(batch->mutex);
 				while (batch->published < batch->results.size() && batch->results[batch->published].ready) {
 					auto& result = batch->results[batch->published];
+					LOG_I("startup/automation/script") << batch->files[batch->published].string() << "; publication_wait_ms="
+						<< std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - result.finished).count();
 					if (!result.error.empty()) batch->errors.push_back(batch->files[batch->published].string() + ": " + result.error);
 					ready.push_back(std::move(result.script));
 					++batch->published;
@@ -581,15 +595,22 @@ namespace Automation4 {
 			}
 			bool first = false;
 			for (auto& script : ready) {
+				bool loaded = script->GetLoadedState();
 				script->Publish();
+				if (loaded && !script->GetLoadedState()) {
+					std::lock_guard<std::mutex> lock(batch->mutex);
+					batch->errors.push_back(script->GetFilename().string() + ": " + script->GetDescription());
+				}
 				if (!batch->first_macro && !script->GetMacros().empty()) { batch->first_macro = true; first = true; }
 				scripts.push_back(std::move(script));
 			}
 			if (!ready.empty() || done) {
+				auto registered = std::chrono::steady_clock::now();
 				ScriptsChanged();
 				batch->last_publication = std::chrono::steady_clock::now();
-				LOG_I("startup/automation/publication") << ready.size() << " scripts, "
-					<< std::chrono::duration<double, std::milli>(batch->last_publication - start).count() << " ms";
+				LOG_I("startup/automation/publication") << ready.size() << " scripts; registration_ms="
+					<< std::chrono::duration<double, std::milli>(registered - start).count() << "; notifications_ms="
+					<< std::chrono::duration<double, std::milli>(batch->last_publication - registered).count();
 				if (first) LOG_I("startup/automation/first_macro")
 					<< std::chrono::duration<double, std::milli>(batch->last_publication - batch->started).count() << " ms";
 			}
@@ -608,7 +629,7 @@ namespace Automation4 {
 				<< std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - batch->started).count() << " ms";
 			batch.reset();
 		}
-		if (next.completed != progress.completed || next.total != progress.total || next.filename != progress.filename || next.loading != progress.loading) {
+		if (next.completed != progress.completed || next.total != progress.total || next.failed != progress.failed || next.filename != progress.filename || next.loading != progress.loading) {
 			progress = std::move(next);
 			ProgressChanged(progress);
 		}

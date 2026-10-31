@@ -86,6 +86,7 @@ def sample(executable, collection, include, folder, workers, profiling=False):
             peak_kib = 0
             cpu_ms = 0
             visible_ms = None
+            captured = False
             while time.monotonic() - started < 120:
                 assert process.poll() is None, f"Application exited: {folder}; see console/log artifacts"
                 stat = Path(f"/proc/{process.pid}/stat").read_text().rsplit(")", 1)[1].split()
@@ -99,6 +100,9 @@ def sample(executable, collection, include, folder, workers, profiling=False):
                                               "--name", "Untitled.*Aegisub"], capture_output=True)
                     if visible.returncode == 0:
                         visible_ms = (time.monotonic() - started) * 1000
+                if profiling and not captured and not completed and any(r["section"] == "startup/automation/first_macro" for r in log):
+                    subprocess.run(["scrot", "-o", str(folder / "loading.png")], check=True)
+                    captured = True
                 if completed:
                     break
                 time.sleep(0.025)
@@ -119,6 +123,11 @@ def sample(executable, collection, include, folder, workers, profiling=False):
                     match = re.match(r"(.*): ([\d.eE+-]+) ms$", record["message"])
                     if match:
                         scripts.append({"file": Path(match[1]).name, "ms": float(match[2])})
+            if profiling:
+                # Screenshots belong to separate diagnostic runs; their delay
+                # and screen capture overhead never enter the timing samples.
+                time.sleep(2.3)
+                subprocess.run(["scrot", "-o", str(folder / "completed.png")], check=True)
             return {"responsive_ms": round(max(visible_ms or 0, stamp(idle)), 3),
                     "first_macro_ms": round(stamp(first), 3) if expected else None,
                     "all_ms": round(stamp(completed), 3), "autoload_ms": float(totals[4]),
@@ -157,13 +166,13 @@ def main(args):
         result = sample(args.candidate.resolve(), output / "fixtures" / scenario, source / "automation/include",
                         output / f"profile-{scenario}", 2, profiling=True)
         (output / f"phases-{scenario}.json").write_text(json.dumps(result, indent=2))
-    lines = ["|Collection|Version|Workers|Responsive ms|First macro ms|All ms|CPU ms|Peak RSS MiB|Slowest ms|",
-             "|---|---|---:|---:|---:|---:|---:|---:|---:|"]
+    lines = ["|Collection|Version|Workers|Responsive ms|First macro ms|All ms|Autoload ms|CPU ms|Peak RSS MiB|Slowest ms|",
+             "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for scenario in ("empty", "small", "large", "cpu", "broken"):
         for version, _, workers in variants:
             group = [r for r in observations if (r["scenario"], r["version"], r["workers"]) == (scenario, version, workers)]
             values = []
-            for key in ("responsive_ms", "first_macro_ms", "all_ms", "cpu_ms", "peak_rss_mib"):
+            for key in ("responsive_ms", "first_macro_ms", "all_ms", "autoload_ms", "cpu_ms", "peak_rss_mib"):
                 values.append(f"{statistics.median(r[key] for r in group):.1f}" if group[0][key] is not None else "—")
             values.append(f"{statistics.median(r['slowest'][0]['ms'] for r in group):.1f}" if group[0]["slowest"] else "—")
             lines.append(f"|{scenario}|{version}|{workers}|" + "|".join(values) + "|")

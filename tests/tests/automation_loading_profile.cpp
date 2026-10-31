@@ -14,13 +14,14 @@ TEST(AutomationLoadingProfile, FiniteInterpretedAndJitInitializers) {
 	if (!std::getenv("AEGISUB_LOAD_BENCH")) return;
 	auto include = std::getenv("AEGISUB_AUTOMATION_INCLUDE_DIR");
 	ASSERT_NE(include, nullptr);
-	for (bool moon : {false, true}) for (bool interpreted : {true, false}) for (int sample = 0; sample < 4; ++sample) {
+	for (bool moon : {false, true}) for (int mode : {0, 1, 2}) for (int sample = 0; sample < 4; ++sample) {
 		auto start = std::chrono::steady_clock::now();
 		std::atomic<bool> cancelled{false};
 		std::unique_ptr<lua_State, decltype(&lua_close)> state(luaL_newstate(), lua_close);
 		auto L = state.get();
 		agi::lua::preload_modules(L);
-		if (interpreted) Automation4::SetInitCancellation(L, &cancelled);
+		if (mode == 0) Automation4::SetInitCancellation(L, &cancelled);
+		if (mode == 1) luaJIT_setmode(L, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_OFF);
 		ASSERT_TRUE(agi::lua::Install(L, {include})) << lua_tostring(L, -1);
 		auto setup = std::chrono::steady_clock::now();
 		char const *lua = "local n=0; for i=1,4000000 do n=n+i%97 end; return n";
@@ -30,14 +31,14 @@ TEST(AutomationLoadingProfile, FiniteInterpretedAndJitInitializers) {
 			lua_pushstring(L, "n = 0\nfor i = 1, 4000000\n  n += i % 97\nreturn n");
 			ASSERT_EQ(lua_pcall(L, 1, 1, 0), 0) << lua_tostring(L, -1);
 		}
-		else ASSERT_EQ(luaL_loadstring(L, lua), 0);
+		else { ASSERT_EQ(luaL_loadstring(L, lua), 0); }
 		auto parsed = std::chrono::steady_clock::now();
 		ASSERT_EQ(lua_pcall(L, 0, 1, 0), 0) << lua_tostring(L, -1);
 		EXPECT_GT(lua_tonumber(L, -1), 0);
 		auto finished = std::chrono::steady_clock::now();
-		if (interpreted) Automation4::ClearInitCancellation(L);
+		if (mode == 0) Automation4::ClearInitCancellation(L);
 		if (sample) std::cout << "AUTOMATION_JIT_SAMPLE," << (moon ? "moon" : "lua") << ','
-			<< (interpreted ? "interpreted" : "jit_control") << ','
+			<< (mode == 0 ? "interpreted" : mode == 1 ? "interpreted_control" : "jit_control") << ','
 			<< std::chrono::duration<double, std::milli>(setup-start).count() << ','
 			<< std::chrono::duration<double, std::milli>(parsed-setup).count() << ','
 			<< std::chrono::duration<double, std::milli>(finished-parsed).count() << '\n';

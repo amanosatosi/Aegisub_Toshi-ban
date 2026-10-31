@@ -70,6 +70,7 @@
 
 #include <wx/dnd.h>
 #include <wx/gauge.h>
+#include <wx/image.h>
 #include <wx/statbmp.h>
 #include <wx/statusbr.h>
 #include <wx/stattext.h>
@@ -386,7 +387,12 @@ void FrameMain::InitContents() {
 	mainPanel = Panel;
 	Panel->Bind(wxEVT_SIZE, [this](wxSizeEvent& event) { Position39Countdown(); event.Skip(); });
 #if defined(__WXMSW__) && wxCHECK_VERSION(3, 1, 3)
-	Bind(wxEVT_DPI_CHANGED, [this](wxDPIChangedEvent& event) { Position39Countdown(); event.Skip(); });
+	Bind(wxEVT_DPI_CHANGED, [this](wxDPIChangedEvent& event) {
+		ScaleAutomationProgress();
+		PositionAutomationProgress();
+		Position39Countdown();
+		event.Skip();
+	});
 #endif
 
 	StartupLog("Create subtitles grid");
@@ -450,9 +456,6 @@ void FrameMain::InitAutomationProgress() {
 		child->SetCursor(wxCursor(wxCURSOR_HAND));
 	}
 	status->Bind(wxEVT_SIZE, [this](wxSizeEvent& event) { PositionAutomationProgress(); event.Skip(); });
-#if defined(__WXMSW__) && wxCHECK_VERSION(3, 1, 3)
-	status->Bind(wxEVT_DPI_CHANGED, [this](wxDPIChangedEvent& event) { ScaleAutomationProgress(); PositionAutomationProgress(); event.Skip(); });
-#endif
 	automation_hide_timer.SetOwner(this);
 	Bind(wxEVT_TIMER, [this](wxTimerEvent&) { automation_panel->Hide(); PositionAutomationProgress(); }, automation_hide_timer.GetId());
 	automation_progress_connection = config::global_scripts->AddProgressListener(&FrameMain::UpdateAutomationProgress, this);
@@ -461,7 +464,9 @@ void FrameMain::InitAutomationProgress() {
 
 void FrameMain::ScaleAutomationProgress() {
 #if wxCHECK_VERSION(3, 1, 0)
-	automation_icon->SetBitmap(GETIMAGEDIR(automation_toolbutton_16, double(FromDIP(16)) / 16, 0));
+	auto image = GETIMAGE(automation_toolbutton_16).ConvertToImage();
+	image.Rescale(FromDIP(16), FromDIP(16), wxIMAGE_QUALITY_HIGH);
+	automation_icon->SetBitmap(wxBitmap(image));
 	automation_gauge->SetMinSize(FromDIP(wxSize(72, 6)));
 	auto row = automation_panel->GetSizer();
 	row->GetItem(size_t(0))->SetBorder(FromDIP(4));
@@ -498,7 +503,7 @@ void FrameMain::UpdateAutomationProgress(Automation4::AutoloadProgress const& pr
 		PositionAutomationProgress();
 		return;
 	}
-	automation_title->SetLabelText(progress.failed && !progress.loading ? _("Automation (!)") : _("Automation"));
+	automation_title->SetLabelText(progress.failed ? _("Automation (!)") : _("Automation"));
 	automation_count->SetLabelText(wxString::Format("%zu / %zu", progress.completed, progress.total));
 	automation_gauge->SetRange(static_cast<int>(std::max<size_t>(1, progress.total)));
 	automation_gauge->SetValue(static_cast<int>(progress.completed));

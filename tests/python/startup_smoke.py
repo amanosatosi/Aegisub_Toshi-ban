@@ -114,7 +114,7 @@ def run(portable, output):
                      if text(h, True).lower() == "msctls_progress32" and user.IsWindowVisible(h)), None)
 
     measurements = []
-    for scenario in ("empty", "success", "scripts", "cancel", "Mangetsu", "libassmod", "missing"):
+    for scenario in ("empty", "success", "scripts", "conflicts", "cancel", "Mangetsu", "libassmod", "missing"):
         profile = output / scenario
         profile.mkdir(parents=True, exist_ok=True)
         for path in portable.iterdir():
@@ -171,6 +171,21 @@ aegisub.register_macro 'Smoke Moon', '', ->
         elif scenario == "cancel":
             for index in range(4):
                 (autoload / f"infinite-{index}.lua").write_text("while true do end", encoding="utf-8")
+        elif scenario == "conflicts":
+            second = profile / "second-autoload"
+            second.mkdir(exist_ok=True)
+            config["Path"]["Automation"]["Autoload"] = str(autoload) + "|" + str(second) + "|" + str(autoload)
+            (profile / "config.json").write_text(json.dumps(config), encoding="utf-8")
+            def conflicting_script(marker, slow=False):
+                return ("local deadline=os.clock()+2; while os.clock()<deadline do end; " if slow else "") + f"""
+aegisub.register_macro('Duplicate', '', function()
+    local f = assert(io.open(os.getenv('AEGISUB_STARTUP_SMOKE_DIR') .. '/winner', 'w'))
+    f:write('{marker}'); f:close()
+end)
+aegisub.register_filter('Duplicate filter', 'staged export filter', 100, function() end)
+"""
+            (autoload / "shared.lua").write_text(conflicting_script("first", slow=True), encoding="utf-8")
+            (second / "shared.lua").write_text(conflicting_script("second"), encoding="utf-8")
         env = dict(os.environ, CI="true", AEGISUB_STARTUP_SMOKE_DIR=str(profile), AEGISUB_AUTOMATION_WORKERS="4")
         started = time.monotonic()
         process = subprocess.Popen([str(profile / "aegisub.exe")], cwd=profile, env=env)
@@ -235,6 +250,24 @@ aegisub.register_macro 'Smoke Moon', '', ->
                     assert sum(name == label for name, _ in entries(user.GetMenu(frame))) == 1
                 # Avoid a save prompt after the intentional edit; undo via SCI_UNDO.
                 send(edit, 2176)
+            elif scenario == "conflicts":
+                wait(lambda: "2 / 2" in logs(), "duplicate-name scripts completed")
+                assert sum(name == "Duplicate" for name, _ in entries(user.GetMenu(frame))) == 1
+                invoke(frame, "Duplicate")
+                wait(lambda: (profile / "winner").exists(), "duplicate macro execution")
+                assert (profile / "winner").read_text() == "second", "Configured directory order wins, not worker finish order"
+                (second / "shared.lua").write_text(conflicting_script("newest"), encoding="utf-8")
+                invoke(frame, "Automation...")
+                manager = wait(lambda: next((h for h in windows(process.pid) if text(h) == "Automation Manager"), None), "Automation Manager")
+                rescan = wait(lambda: next((h for h in windows(process.pid, manager) if "scan Autoload Dir" in text(h)), None), "Rescan button")
+                for _ in range(3):
+                    user.PostMessageW(rescan, 0xF5, 0, 0)
+                    time.sleep(0.05)
+                wait(lambda: len(re.findall(r'"section"\s*:\s*"startup/automation"', logs())) >= 2, "newest conflict rescan completed")
+                user.PostMessageW(manager, 0x10, 0, 0)
+                assert sum(name == "Duplicate" for name, _ in entries(user.GetMenu(frame))) == 1
+                invoke(frame, "Duplicate")
+                wait(lambda: (profile / "winner").read_text() == "newest", "newest generation replaces old macros")
             elif scenario == "cancel":
                 wait(lambda: progress_control(frame), "four infinite initializers started")
                 send(frame, 0)

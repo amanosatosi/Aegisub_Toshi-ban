@@ -6,7 +6,6 @@ on:
       - '**'
   pull_request:
     branches:
-      - main
       - master
       - feature
   workflow_dispatch:
@@ -29,7 +28,7 @@ jobs:
           curl -fsSLO https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_checksums.txt
           grep ' actionlint_1.7.12_linux_amd64.tar.gz$' actionlint_1.7.12_checksums.txt | sha256sum --strict -c -
           tar -xzf actionlint_1.7.12_linux_amd64.tar.gz actionlint
-          ./actionlint -shellcheck="" -pyflakes="" "$GITHUB_WORKSPACE/.github/workflows/ci.yml"
+          ./actionlint -shellcheck="" -pyflakes="" "$GITHUB_WORKSPACE/.github/workflows/ci.yml" "$GITHUB_WORKSPACE/.github/workflows/automation-loading.yml"
       - name: Check renderer migration, update source and DependencyControl packaging contracts
         run: python tests/python/test_release_preparation.py
       - name: Check asynchronous startup contracts
