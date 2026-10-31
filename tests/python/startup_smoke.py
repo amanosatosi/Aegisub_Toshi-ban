@@ -147,9 +147,9 @@ aegisub.register_macro 'Smoke Moon', '', ->
                 wait(lambda: any(text(h) == "Loading Automation scripts" and user.IsWindowVisible(h) for h in windows(process.pid, frame)), "progress before completion")
                 # Editing works during initialization, without moving keyboard focus.
                 edit = wait(lambda: next((h for h in windows(process.pid, frame) if text(h, True) == "Scintilla" and user.IsWindowVisible(h)), None), "subtitle editor")
-                value = C.create_string_buffer(b"editing while scripts load")
-                send(edit, 2181, 0, C.addressof(value))  # SCI_SETTEXT
-                assert send(edit, 2183) == len(value.value)  # SCI_GETTEXTLENGTH
+                length = send(edit, 2183)  # SCI_GETTEXTLENGTH
+                send(edit, 0x102, ord("x"))  # WM_CHAR; no cross-process pointer.
+                assert send(edit, 2183) == length + 1
                 send(frame, 0)
                 wait(lambda: "3 / 3" in logs(), "three scripts completed, including the invalid script")
                 assert "failures: 1" in logs()

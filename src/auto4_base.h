@@ -252,7 +252,7 @@ namespace Automation4 {
 		bool loading = false;
 	};
 
-	class AutoloadScriptManager final : public ScriptManager, private wxEvtHandler {
+	class AutoloadScriptManager final : public ScriptManager, public wxEvtHandler {
 		std::string path;
 		struct Batch;
 		std::unique_ptr<Batch> batch;

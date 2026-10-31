@@ -3,27 +3,29 @@
 
 #include <atomic>
 #include <lua.hpp>
-#include <luajit.h>
 
 namespace Automation4 {
-// LuaJIT traces can bypass instruction hooks. Disable tracing only during
-// initialization, then remove the hook before handing the state to the UI.
+// LuaJIT aborts trace recording when it calls a line hook. Install this before
+// any Lua modules run in the fresh state, so no compiled traces can bypass the
+// cancellation count hook. This preserves scripts' explicit jit.on/off choices.
+// See LuaJIT/src/lj_dispatch.c: callhook() and lj_dispatch_ins().
+inline void InitCancellationHook(lua_State *state, lua_Debug *event) {
+	if (event->event != LUA_HOOKCOUNT) return;
+	lua_getfield(state, LUA_REGISTRYINDEX, "aegisub_init_cancelled");
+	auto cancel = static_cast<std::atomic<bool> *>(lua_touserdata(state, -1));
+	lua_pop(state, 1);
+	if (cancel && cancel->load()) luaL_error(state, "Automation loading cancelled");
+}
+
 inline void SetInitCancellation(lua_State *L, std::atomic<bool> *cancelled) {
 	lua_pushlightuserdata(L, cancelled);
 	lua_setfield(L, LUA_REGISTRYINDEX, "aegisub_init_cancelled");
-	luaJIT_setmode(L, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_OFF);
-	lua_sethook(L, [](lua_State *state, lua_Debug *) {
-		lua_getfield(state, LUA_REGISTRYINDEX, "aegisub_init_cancelled");
-		auto cancel = static_cast<std::atomic<bool> *>(lua_touserdata(state, -1));
-		lua_pop(state, 1);
-		if (cancel && cancel->load()) luaL_error(state, "Automation loading cancelled");
-	}, LUA_MASKCOUNT, 10000);
+	lua_sethook(L, InitCancellationHook, LUA_MASKLINE | LUA_MASKCOUNT, 10000);
 }
 
 inline void ClearInitCancellation(lua_State *L) {
-	lua_sethook(L, nullptr, 0, 0);
+	if (lua_gethook(L) == InitCancellationHook) lua_sethook(L, nullptr, 0, 0);
 	lua_pushnil(L);
 	lua_setfield(L, LUA_REGISTRYINDEX, "aegisub_init_cancelled");
-	luaJIT_setmode(L, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_ON);
 }
 }

@@ -459,11 +459,16 @@ void FrameMain::UpdateAutomationProgress(Automation4::AutoloadProgress const& pr
 	automation_gauge->SetValue(static_cast<int>(progress.completed));
 	automation_file->SetLabelText(to_wx(progress.filename));
 	automation_file->SetToolTip(to_wx(progress.filename));
-	bool warning_changed = automation_warning->IsShown() != (progress.failed != 0);
-	automation_warning->Show(progress.failed != 0);
+	bool show_warning = progress.failed != 0 && !progress.loading;
+	bool warning_changed = automation_warning->IsShown() != show_warning;
+	automation_warning->Show(show_warning);
 	if (!was_shown || warning_changed || !progress.loading) MainSizer->Layout();
 	else automation_panel->Layout();
-	if (!progress.loading) automation_hide_timer.StartOnce(2000);
+	if (!progress.total) {
+		automation_title->Hide(); automation_gauge->Hide(); automation_count->Hide(); automation_file->Hide();
+		MainSizer->Layout();
+	}
+	else if (!progress.loading) automation_hide_timer.StartOnce(2000);
 }
 
 void FrameMain::SetDisplayMode(int video, int audio) {

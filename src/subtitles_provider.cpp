@@ -88,6 +88,8 @@ std::unique_ptr<SubtitlesProvider> SubtitlesProviderFactory::GetProvider(agi::Ba
 	auto create = [&](factory const& entry) -> std::unique_ptr<SubtitlesProvider> {
 		auto started = std::chrono::steady_clock::now();
 		try {
+			std::string issue;
+			if (entry.available && !entry.available(&issue, true)) throw agi::InternalError(issue);
 			auto provider = entry.create(entry.subtype, br);
 			LOG_I("startup/renderer") << entry.name << ": " << StartupMilliseconds(started) << " ms (provider initialization)";
 			return provider;
