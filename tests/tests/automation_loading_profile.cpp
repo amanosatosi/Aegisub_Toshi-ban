@@ -1,5 +1,5 @@
-// Finite, trusted fixtures only: JIT-enabled samples are a performance control,
-// never an option for loading arbitrary application scripts without cancellation.
+// JIT-enabled fixtures are finite, trusted performance controls. Arbitrary
+// application scripts never initialize without cancellation protection.
 #include "auto4_lua_init.h"
 #include <libaegisub/fs.h>
 #include <libaegisub/lua/modules.h>

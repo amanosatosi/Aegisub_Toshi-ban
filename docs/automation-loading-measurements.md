@@ -52,7 +52,7 @@ a speedup for arbitrary third-party collections or cold storage.
 | Candidate, three | 604.7 | 1810 | 1007.3 | 2900 |
 | Candidate, four | 504.8 | 2040 | 905.5 | 3420 |
 
-One worker confirms the serialization regression. Four workers are fastest on
+One versus two workers confirms serialization is a bottleneck. Four workers are fastest on
 this runner, but use 38% more CPU than two for large and 47% more for CPU, for
 100–200 ms less wall time. Two workers are the default to retain most of the gain
 with less contention. The diagnostic override remains bounded to 1–4.
@@ -80,6 +80,14 @@ No persistent compiler/module cache or serialization is introduced. These
 measurements support bounded parallel state initialization; directory scanning,
 registry publication and menu reconstruction do not justify extra infrastructure.
 
+The [repeat measurement run](https://github.com/amanosatosi/Aegisub_Toshi-ban/actions/runs/41232254701)
+tested `e2a3d6ef1`, including the two-worker default and corrected status-bar grip
+spacing. It reproduced large autoload at 1106.6 → 605.7 ms and CPU autoload at
+1910.8 → 1106.2 ms. First macros were available at 534.9 and 531.4 ms from launch,
+versus 1542.4 and 2343.2 ms; all scripts at 1038.4 and 1537.2 ms. Empty/small/broken
+results again fit the existing 100 ms poll and showed no meaningful speedup.
+Screenshots confirm the single-row indicator and collapsed success state.
+
 ## JIT and publication limits
 
 The finite 4-million-iteration controls measured median execution of 41.23 ms
@@ -89,6 +97,21 @@ The finite 4-million-iteration controls measured median execution of 41.23 ms
 measurable cost. JIT-enabled controls execute only trusted finite literals in the
 test runner; no unsafe production JIT switch is added. Production retains JIT
 preferences and safe cancellation through initialization.
+
+The repeat run additionally tested larger hook intervals using the same finite
+initializers and separately timed cancellation of a guarded infinite loop:
+
+| Hook interval | Lua execution ms | MoonScript execution ms | Cancellation latency ms |
+|---:|---:|---:|---:|
+| 10,000 | 37.73 | 37.72 | 0.079 |
+| 100,000 | 37.66 | 37.51 | 0.128 |
+| 1,000,000 | 37.66 | 37.50 | 1.819 |
+
+These are medians of three measurements. Larger intervals changed execution time
+by less than 0.6% while increasing cancellation latency. There is no demonstrated
+loading benefit to justify changing the production interval. Keep the original
+10,000-instruction hook and interpreted initialization; restore each script's JIT
+preference after successful initialization. No cancellation guarantee is weakened.
 
 Initial progressive publication consumes a deterministic ready prefix. An earlier
 slow script can delay later macros; this preserves replacement and export-filter

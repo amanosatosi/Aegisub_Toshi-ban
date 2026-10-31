@@ -103,3 +103,6 @@ The native finite JIT control measures Lua and MoonScript setup/parse/execution
 separately. It is deliberately unavailable to arbitrary autoload scripts: compiled
 LuaJIT traces ignore count hooks. Production initialization retains interpreted
 execution, the 10,000-instruction cancellation hook and deferred JIT preferences.
+
+See [the measured comparison](automation-loading-measurements.md) for the worker
+count decision, before/after results, phase attribution and limitations.
