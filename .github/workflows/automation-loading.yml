@@ -15,10 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           submodules: recursive
       - uses: actions/checkout@v4
         with:
           ref: c7c51a6edf9589f15fd2580141111ee75e8f76e4
+          fetch-depth: 0
           path: baseline
           submodules: recursive
       - uses: actions/setup-python@v5
