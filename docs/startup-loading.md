@@ -3,7 +3,8 @@
 Automation autoload starts on the first application idle event, after main-window
 construction. A coordinator scans each canonical autoload directory once and
 filters using registered engine patterns. Private worker states initialize scripts
-independently; the diagnostic `AEGISUB_AUTOMATION_WORKERS` override accepts 1–4.
+independently, with two workers by default; the diagnostic
+`AEGISUB_AUTOMATION_WORKERS` override accepts 1–4.
 Configured directory order and sorted filenames determine publication order,
 independently of which worker finishes first.
 Lua and MoonScript use the same loader. Include paths and application path tokens

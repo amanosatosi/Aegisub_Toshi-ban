@@ -481,7 +481,11 @@ void FrameMain::PositionAutomationProgress() {
 #if wxCHECK_VERSION(3, 1, 0)
 	padding = FromDIP(padding);
 #endif
-	int width = automation_panel->IsShown() ? std::min(status->GetClientSize().GetWidth() / 2, automation_panel->GetSizer()->GetMinSize().GetWidth() + 2 * padding) : 0;
+	// Some native/generic status bars include the resize grip in their last
+	// field rectangle. Keep the count clear of it on both ports.
+	int grip = !IsMaximized() && (status->GetWindowStyleFlag() & wxSTB_SIZEGRIP)
+		? std::max(0, wxSystemSettings::GetMetric(wxSYS_VSCROLL_X, status)) : 0;
+	int width = automation_panel->IsShown() ? std::min(status->GetClientSize().GetWidth() / 2, automation_panel->GetSizer()->GetMinSize().GetWidth() + 2 * padding + grip) : 0;
 	if (width != automation_status_width) {
 		automation_status_width = width;
 		int widths[] = {-1, -1, width};
@@ -490,6 +494,7 @@ void FrameMain::PositionAutomationProgress() {
 	if (!width) return;
 	wxRect rect;
 	if (status->GetFieldRect(2, rect)) {
+		rect.width = std::max(0, rect.width - grip);
 		rect.Deflate(3, 2);
 		automation_panel->SetSize(rect);
 		automation_panel->Layout();
@@ -505,8 +510,10 @@ void FrameMain::UpdateAutomationProgress(Automation4::AutoloadProgress const& pr
 	}
 	automation_title->SetLabelText(progress.failed ? _("Automation (!)") : _("Automation"));
 	automation_count->SetLabelText(wxString::Format("%zu / %zu", progress.completed, progress.total));
-	automation_gauge->SetRange(static_cast<int>(std::max<size_t>(1, progress.total)));
-	automation_gauge->SetValue(static_cast<int>(progress.completed));
+	auto range = static_cast<int>(std::max<size_t>(1, progress.total));
+	auto value = static_cast<int>(progress.completed);
+	if (automation_gauge->GetRange() != range) automation_gauge->SetRange(range);
+	if (automation_gauge->GetValue() != value) automation_gauge->SetValue(value);
 	automation_gauge->Show(progress.total != 0);
 	wxString details = wxString::Format(_("Automation: %zu / %zu completed, %zu failed"), progress.completed, progress.total, progress.failed);
 	if (!progress.filename.empty()) details += "\n" + to_wx(progress.filename);

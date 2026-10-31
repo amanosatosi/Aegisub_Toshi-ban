@@ -204,12 +204,14 @@ aegisub.register_filter('Duplicate filter', 'staged export filter', 100, functio
                 assert "statusbar" in text(status, True).lower(), "Progress must belong to the status bar"
                 assert rect(gauge)[1] >= rect(status)[1] and rect(gauge)[3] <= rect(status)[3]
                 assert rect(gauge)[3] - rect(gauge)[1] < rect(status)[3] - rect(status)[1], "Thin single-row gauge"
+                assert send(gauge, 0x407) == (2 if scenario == "success" else 4)  # PBM_GETRANGE, upper bound
                 wait(lambda: any(name == "Smoke First" for name, _ in entries(user.GetMenu(frame))), "first macro before slow initialization completes")
                 assert not re.search(r'"section"\s*:\s*"startup/automation"', logs()), "First macro must be usable before the batch completes"
             if scenario == "success":
                 excluded = set(windows(process.pid, status)) | {status}
                 geometry = {h: rect(h) for h in windows(process.pid, frame) if h not in excluded and user.IsWindowVisible(h)}
                 wait(lambda: "2 / 2" in logs(), "successful completion")
+                wait(lambda: send(gauge, 0x408) == 2, "native gauge reaches 2 / 2, including all completions")
                 wait(lambda: not progress_control(frame), "successful progress automatically collapses", seconds=8)
                 assert geometry == {h: rect(h) for h in geometry}, "Progress must not resize the grid or editor"
             elif scenario == "scripts":
@@ -220,6 +222,8 @@ aegisub.register_filter('Duplicate filter', 'staged export filter', 100, functio
                 assert send(edit, 2183) == length + 1
                 send(frame, 0)
                 wait(lambda: "4 / 4" in logs(), "four scripts completed, including the invalid script")
+                wait(lambda: send(gauge, 0x408) == 4, "native gauge includes failed initialization")
+                assert any(text(h) == "Automation (!)" and user.IsWindowVisible(h) for h in windows(process.pid, frame)), "Subtle failure indicator stays visible"
                 assert "failures: 1" in logs()
                 assert "unsupported extension" not in logs()
                 assert not any(name == "Must not publish" for name, _ in entries(user.GetMenu(frame)))

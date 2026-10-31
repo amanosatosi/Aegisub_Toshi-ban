@@ -101,6 +101,7 @@ def sample(executable, collection, include, folder, workers, profiling=False):
                     if visible.returncode == 0:
                         visible_ms = (time.monotonic() - started) * 1000
                 if profiling and not captured and not completed and any(r["section"] == "startup/automation/first_macro" for r in log):
+                    time.sleep(0.15)  # Let GTK paint the just-published status controls.
                     subprocess.run(["scrot", "-o", str(folder / "loading.png")], check=True)
                     captured = True
                 if completed:

@@ -541,7 +541,7 @@ namespace Automation4 {
 		progress = {};
 		ProgressChanged(progress);
 		// The diagnostic override is bounded as well; benchmark 1..4 on the same fixtures.
-		unsigned workers = 1;
+		unsigned workers = 2;
 		wxString setting;
 		long requested;
 		if (wxGetEnv("AEGISUB_AUTOMATION_WORKERS", &setting) && setting.ToLong(&requested))
