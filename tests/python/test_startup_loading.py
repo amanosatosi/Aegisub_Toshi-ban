@@ -27,7 +27,7 @@ class StartupLoading(unittest.TestCase):
         self.assertNotIn("AssExportFilterChain::Register", filters)
         self.assertIn("StageCommand", command)
         base = read("src/auto4_base.cpp")
-        self.assertLess(base.index("script_execution_count) return"), base.index("script->Publish();"))
+        self.assertLess(base.index("if (!reload_pending && script_execution_count)"), base.index("script->Publish();"))
         self.assertIn("batch->context->cancelled = true", base)
         self.assertIn("worker.join()", base)
         self.assertNotIn(".detach()", base)
