@@ -21,6 +21,14 @@ def visible_main_frame(handles, get_menu, is_visible):
     return next((h for h in handles if get_menu(h) and is_visible(h)), None)
 
 
+def visible_warning_dialog(handles, get_title, get_class, is_visible):
+    # GetWindowText can read a foreign caption, but not foreign control text.
+    # Native TaskDialog bodies also need not expose text through child HWNDs.
+    # The caller verifies the full warning reason independently in the log.
+    return next((h for h in handles if is_visible(h) and get_class(h) == "#32770"
+                 and get_title(h) == "Aegisub Warning"), None)
+
+
 def run(portable, output):
     user = C.WinDLL("user32", use_last_error=True)
     callback = C.WINFUNCTYPE(W.BOOL, W.HWND, W.LPARAM)
@@ -208,8 +216,13 @@ aegisub.register_macro 'Smoke Moon', '', ->
                 ok = wait(lambda: next((h for h in windows(process.pid, dialog) if text(h).replace("&", "") == "OK"), None), "dummy video OK")
                 user.PostMessageW(ok, 0xF5, 0, 0)
                 if scenario == "missing":
-                    warning = wait(lambda: next((h for h in windows(process.pid) if h != frame and "fallback" in " ".join(text(c) for c in windows(process.pid, h)).lower()), None), "missing renderer warning")
+                    wait(lambda: "Mangetsu unavailable. Trying fallback subtitle renderers." in logs(), "missing renderer warning reason")
+                    warning = wait(lambda: visible_warning_dialog(windows(process.pid), text,
+                                                                  lambda h: text(h, True), user.IsWindowVisible),
+                                   "visible missing renderer warning")
                     user.PostMessageW(warning, 0x10, 0, 0)
+                    wait(lambda: not user.IsWindowVisible(warning), "missing renderer warning dismissed")
+                    wait(lambda: re.search(r"libass: [0-9.eE+-]+ ms \(provider initialization\)", logs()), "libass fallback initialized")
                 wait(lambda: "startup/renderer" in logs(), "selected renderer creation")
                 if scenario in ("empty", "missing"):
                     assert "libassmod loaded from" not in logs()
@@ -237,6 +250,7 @@ aegisub.register_macro 'Smoke Moon', '', ->
                 time.sleep(0.05)
             assert process.poll() == 0, "Shutdown crashed or hung"
             measurements.append({"scenario": scenario, "observed_visible_and_responsive_ms": visible_ms})
+            (output / "measurements.json").write_text(json.dumps(measurements, indent=2), encoding="utf-8")
             assert "First responsive idle event" in logs()
             if scenario == "missing":
                 assert json.loads((profile / "config.json").read_text(encoding="utf-8-sig"))["Subtitle"]["Provider"] == "Mangetsu"
@@ -251,7 +265,6 @@ aegisub.register_macro 'Smoke Moon', '', ->
             if process.poll() is None:
                 process.kill()
                 process.wait()
-    (output / "measurements.json").write_text(json.dumps(measurements, indent=2), encoding="utf-8")
     print(json.dumps(measurements, indent=2))
 
 

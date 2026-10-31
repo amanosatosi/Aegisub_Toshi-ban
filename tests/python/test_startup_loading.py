@@ -1,7 +1,7 @@
 """Contracts complementing the packaged Windows GUI and native Lua tests."""
 from pathlib import Path
 import unittest
-from startup_smoke import visible_main_frame
+from startup_smoke import visible_main_frame, visible_warning_dialog
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -11,6 +11,17 @@ def read(path):
 
 
 class StartupLoading(unittest.TestCase):
+    def test_warning_detection_uses_visible_native_caption_without_child_text(self):
+        # A modern TaskDialog can display its body without any child HWND
+        # returning that text to GetWindowText in this external test process.
+        handles = [1, 2, 3, 4]
+        titles = {1: "Aegisub Warning", 2: "Untitled - Aegisub",
+                  3: "Aegisub Warning", 4: "Aegisub Warning"}
+        classes = {1: "#32770", 2: "wxWindowNR", 3: "wxWindowNR", 4: "#32770"}
+        visible = {1: False, 2: True, 3: True, 4: True}
+        self.assertIsNone(visible_warning_dialog(handles[:3], titles.get, classes.get, visible.get))
+        self.assertEqual(4, visible_warning_dialog(handles, titles.get, classes.get, visible.get))
+
     def test_main_frame_is_not_ready_until_shown(self):
         handles = [1, 2]
         menus = {1: True, 2: False}
