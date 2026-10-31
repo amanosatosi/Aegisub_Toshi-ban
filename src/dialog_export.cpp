@@ -28,6 +28,7 @@
 // Aegisub Project http://www.aegisub.org/
 
 #include "ass_exporter.h"
+#include "auto4_base.h"
 #include "ass_file.h"
 #include "compat.h"
 #include "include/aegisub/context.h"
@@ -52,6 +53,7 @@
 
 namespace {
 class DialogExport {
+	Automation4::ScriptExecutionGuard script_execution_guard;
 	wxDialog d;
 	agi::Context *c;
 

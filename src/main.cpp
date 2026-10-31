@@ -33,6 +33,7 @@
 ///
 
 #include "main.h"
+#include "startup_timing.h"
 
 #include "ass_file.h"
 #include "command/command.h"
@@ -114,6 +115,7 @@ static wxString exception_message = "Oops, Aegisub has crashed!\n\nAn attempt ha
 /// @brief Gets called when application starts.
 /// @return bool
 bool AegisubApp::OnInit() {
+	StartupStarted() = std::chrono::steady_clock::now();
 	// App name (yeah, this is a little weird to get rid of an odd warning)
 #if defined(__WXMSW__) || defined(__WXMAC__)
 	SetAppName("Aegisub");
@@ -295,22 +297,6 @@ bool AegisubApp::OnInit() {
 		// Font discovery happens when the selected subtitle provider is opened.
 		// Do not warm three separate font indexes for two unused renderers.
 
-		// Enumerating providers registers the available renderers. Handle the
-		// migration before creating any project/video renderer for this session.
-		StartupLog("Offer Mangetsu renderer");
-		if (HandleMangetsuRendererOffer(*config::opt, SubtitlesProviderFactory::GetClasses(), []() -> std::optional<bool> {
-			// CI GUI smoke runs must not block on an unattended migration dialog.
-			wxString ci;
-			if (wxGetEnv("CI", &ci) && ci == "true") return std::nullopt;
-			return wxMessageBox(_("New renderer \"Mangetsu\" added. Would you like to use it?"),
-				_("Subtitle renderer"), wxYES_NO | wxCENTER) == wxYES;
-		})) {
-			try { config::opt->Flush(); }
-			catch (agi::fs::FileSystemError const& e) {
-				wxMessageBox(to_wx(e.GetMessage()), "Error saving config file", wxOK | wxICON_ERROR | wxCENTER);
-			}
-		}
-
 		// Load Automation scripts
 		StartupLog("Load global Automation scripts");
 		config::global_scripts = new Automation4::AutoloadScriptManager(OPT_GET("Path/Automation/Autoload")->GetString());
@@ -326,6 +312,31 @@ bool AegisubApp::OnInit() {
 		// Open main frame
 		StartupLog("Create main window");
 		NewProjectContext();
+		// Start only after the event loop has had an opportunity to paint and
+		// service the frame. The manager constructor performs no file or Lua work.
+		Bind(wxEVT_IDLE, [this, pending = true](wxIdleEvent& event) mutable {
+			if (pending && !frames.empty()) {
+				pending = false;
+				config::global_scripts->Reload();
+				CallAfter([this] {
+					if (frames.empty() || config::opt->Has(MangetsuRendererOfferKey)) return;
+					wxString ci;
+					if (wxGetEnv("CI", &ci) && ci == "true") return;
+					// This one-time offer needs only Mangetsu, never a provider enumeration.
+					std::vector<std::string> providers;
+					if (OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu" || mangetsu::IsAvailable())
+						providers.push_back("Mangetsu");
+					if (HandleMangetsuRendererOffer(*config::opt, providers, [this]() -> std::optional<bool> {
+						return wxMessageBox(_("New renderer \"Mangetsu\" added. Would you like to use it?"),
+							_("Subtitle renderer"), wxYES_NO | wxCENTER, frames.front()) == wxYES;
+					})) {
+						try { config::opt->Flush(); }
+						catch (agi::fs::FileSystemError const& e) { LOG_E("startup/migration") << e.GetMessage(); }
+					}
+				});
+			}
+			event.Skip();
+		});
 
 		// Version checker
 		StartupLog("Possibly perform automatic updates check");
@@ -372,6 +383,7 @@ bool AegisubApp::OnInit() {
 	CleanCache(config::path->Decode(OPT_GET("Path/Auto/Save")->GetString()), "*.AUTOSAVE.ass", 100, 1000);
 
 	StartupLog("Initialization complete");
+	LogStartupTiming("Application initialization");
 	return true;
 }
 
@@ -388,12 +400,13 @@ int AegisubApp::OnExit() {
 		wxTheClipboard->Close();
 	}
 
+	delete config::global_scripts;
+	config::global_scripts = nullptr;
+
 	delete config::opt;
 	delete config::mru;
 	hotkey::clear();
 	cmd::clear();
-
-	delete config::global_scripts;
 
 	AssExportFilterChain::Clear();
 

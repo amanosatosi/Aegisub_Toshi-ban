@@ -316,6 +316,8 @@ void DialogAutomation::OnInfo(wxCommandEvent &)
 		});
 	}
 
+	for (auto const& error : config::global_scripts->GetErrors()) info.push_back(to_wx(error));
+
 	wxMessageBox(wxJoin(info, '\n', 0), _("Automation Script Info"));
 }
 

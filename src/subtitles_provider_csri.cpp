@@ -110,6 +110,7 @@ void CSRISubtitlesProvider::DrawSubtitles(VideoFrame &dst, double time) {
 
 namespace csri {
 std::vector<std::string> List() {
+	std::lock_guard<std::mutex> lock(csri_mutex);
 	std::vector<std::string> final;
 	for (csri_rend *cur = csri_renderer_default(); cur; cur = csri_renderer_next(cur)) {
 		std::string name(csri_renderer_info(cur)->name);

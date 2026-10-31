@@ -31,6 +31,8 @@ jobs:
           ./actionlint -shellcheck="" -pyflakes="" "$GITHUB_WORKSPACE/.github/workflows/ci.yml"
       - name: Check renderer migration, update source and DependencyControl packaging contracts
         run: python tests/python/test_release_preparation.py
+      - name: Check asynchronous startup contracts
+        run: python tests/python/test_startup_loading.py
       - name: Check subtitle-relative readout fade menu wiring
         run: python tests/python/test_fade_controls.py
       - name: Check Shift-drag audio boundary wiring
@@ -388,6 +390,22 @@ jobs:
       - name: Generate Windows portable installer
         if: matrix.config.os == 'windows-latest'
         run: cd build && ninja win-portable
+
+      - name: Exercise responsive startup, rescans, cancellation and lazy renderers
+        if: matrix.config.os == 'windows-latest'
+        timeout-minutes: 5
+        shell: pwsh
+        run: python tests/python/startup_smoke.py --portable build/aegisub-portable --output build/startup-smoke
+
+      - name: Upload startup timing and GUI regression logs
+        uses: actions/upload-artifact@v4
+        if: always() && matrix.config.os == 'windows-latest'
+        with:
+          name: ${{ matrix.config.name }} - startup-diagnostics
+          path: |
+            build/startup-smoke/measurements.json
+            build/startup-smoke/*/log/*.json
+          if-no-files-found: warn
 
       - name: Verify DependencyControl installer migration and portable payload
         if: matrix.config.os == 'windows-latest'

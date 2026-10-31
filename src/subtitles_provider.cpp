@@ -18,6 +18,7 @@
 
 #include "compat.h"
 #include "factory_manager.h"
+#include "startup_timing.h"
 #include "options.h"
 #include "subtitles_provider_csri.h"
 #include "subtitles_provider_libass.h"
@@ -26,6 +27,7 @@
 #include <libaegisub/log.h>
 
 #include <mutex>
+#include <set>
 
 #include <wx/log.h>
 
@@ -34,98 +36,93 @@ namespace {
 		std::string name;
 		std::string subtype;
 		std::unique_ptr<SubtitlesProvider> (*create)(std::string const& subtype, agi::BackgroundRunner *br);
-		bool hidden;
+		bool (*available)(std::string *, bool) = nullptr;
 	};
 
-	void WarnFallbackOnce(std::string const& provider, std::string const& primary_library, std::string const& error) {
-		static std::once_flag libassmod_warned_once;
-		static std::once_flag mangetsu_warned_once;
-		auto &warned_once = provider == "Mangetsu" ? mangetsu_warned_once : libassmod_warned_once;
-		std::call_once(warned_once, [&] {
-			std::string message;
-			if (error.find("Could not load") != std::string::npos) {
-				message = primary_library + " not found. Falling back to libass.";
-			}
-			else {
-				message = provider + " unavailable. Falling back to libass.";
-			}
-			if (!error.empty())
-				message += " (" + error + ")";
-
-			LOG_W("subtitle/provider") << message;
-			wxLogWarning("%s", to_wx(message));
-		});
+	void WarnFallbackOnce(std::string const& provider, std::string const& error) {
+		static std::mutex mutex;
+		static std::set<std::string> warned;
+		std::lock_guard<std::mutex> lock(mutex);
+		if (!warned.insert(provider).second) return;
+		auto message = provider + " unavailable. Trying fallback subtitle renderers. (" + error + ")";
+		LOG_W("subtitle/provider") << message;
+		wxLogWarning("%s", to_wx(message));
 	}
 
+	// Metadata is inert. Discovery is reserved for renderer selection UI.
 	std::vector<factory> const& factories() {
-		static std::vector<factory> factories;
-		if (factories.size()) return factories;
-#ifdef WITH_CSRI
-		for (auto const& subtype : csri::List())
-			factories.push_back(factory{"CSRI/" + subtype, subtype, csri::Create, false});
-#endif
-		factories.push_back(factory{"libass", "", libass::Create, false});
-		LOG_I("subtitle/provider") << "Subtitle renderer libass: available (built-in)";
-		std::string libassmod_error;
-		if (libassmod::IsAvailable(&libassmod_error))
-			factories.push_back(factory{"libassmod", "", libassmod::Create, false});
-		else
-			LOG_D("subtitle/provider") << "libassmod provider hidden: " << libassmod_error;
-		std::string mangetsu_error;
-		if (mangetsu::IsAvailable(&mangetsu_error))
-			factories.push_back(factory{"Mangetsu", "", mangetsu::Create, false});
-		else
-			LOG_D("subtitle/provider") << "Mangetsu provider hidden: " << mangetsu_error;
-		return factories;
+		static const std::vector<factory> list = {
+			{"libass", "", libass::Create},
+			{"libassmod", "", libassmod::Create, libassmod::IsAvailable},
+			{"Mangetsu", "", mangetsu::Create, mangetsu::IsAvailable},
+		};
+		return list;
 	}
+
 }
 
 std::vector<std::string> SubtitlesProviderFactory::GetClasses() {
-	return ::GetClasses(factories());
+	std::vector<std::string> names;
+#ifdef WITH_CSRI
+	for (auto const& subtype : csri::List()) names.push_back("CSRI/" + subtype);
+#endif
+	// Successful backend validation is cached for the process lifetime. Retry
+	// failed validation when the user reopens selection UI (e.g. after installing a DLL).
+	for (auto const& entry : factories())
+		if (!entry.available || entry.available(nullptr, true)) names.push_back(entry.name);
+	return names;
 }
 
 std::vector<std::string> SubtitlesProviderFactory::GetUnavailableClasses() {
 	std::vector<std::string> unavailable;
-
-	std::string libassmod_error;
-	if (!libassmod::IsAvailable(&libassmod_error))
-		unavailable.push_back("libassmod unavailable: missing " + libassmod::PrimaryLibraryName());
-
-	std::string mangetsu_error;
-	if (!mangetsu::IsAvailable(&mangetsu_error))
-		unavailable.push_back("Mangetsu unavailable: missing " + mangetsu::PrimaryLibraryName());
-
+	for (auto const& entry : factories()) {
+		std::string error;
+		if (entry.available && !entry.available(&error, false)) unavailable.push_back(entry.name + " unavailable: " + error);
+	}
 	return unavailable;
 }
 
 std::unique_ptr<SubtitlesProvider> SubtitlesProviderFactory::GetProvider(agi::BackgroundRunner *br) {
 	auto preferred = OPT_GET("Subtitle/Provider")->GetString();
-	if (preferred == "libassmod") {
-		std::string libassmod_error;
-		if (!libassmod::IsAvailable(&libassmod_error)) {
-			WarnFallbackOnce("libassmod", libassmod::PrimaryLibraryName(), libassmod_error);
-			preferred = "libass";
-		}
-	}
-	else if (preferred == "Mangetsu") {
-		std::string mangetsu_error;
-		if (!mangetsu::IsAvailable(&mangetsu_error)) {
-			WarnFallbackOnce("Mangetsu", mangetsu::PrimaryLibraryName(), mangetsu_error);
-			preferred = "libass";
-		}
-	}
-	auto sorted = GetSorted(factories(), preferred);
-
 	std::string error;
-	for (auto factory : sorted) {
+	auto create = [&](factory const& entry) -> std::unique_ptr<SubtitlesProvider> {
+		auto started = std::chrono::steady_clock::now();
 		try {
-			auto provider = factory->create(factory->subtype, br);
-			if (provider) return provider;
+			auto provider = entry.create(entry.subtype, br);
+			LOG_I("startup/renderer") << entry.name << ": " << StartupMilliseconds(started) << " ms (provider initialization)";
+			return provider;
 		}
 		catch (agi::UserCancelException const&) { throw; }
-		catch (agi::Exception const& err) { error += factory->name + ": " + err.GetMessage() + "\n"; }
-		catch (...) { error += factory->name + ": Unknown error\n"; }
+		catch (agi::Exception const& e) { error += entry.name + ": " + e.GetMessage() + "\n"; }
+		catch (std::exception const& e) { error += entry.name + ": " + e.what() + "\n"; }
+		catch (...) { error += entry.name + ": Unknown error\n"; }
+		return nullptr;
+	};
+	// The selected factory is tried directly. No availability probes of other
+	// renderers, DLL loads or CSRI enumeration are needed on the success path.
+	for (auto const& entry : factories())
+		if (entry.name == preferred)
+			if (auto provider = create(entry)) return provider;
+#ifdef WITH_CSRI
+	if (preferred.compare(0, 5, "CSRI/") == 0)
+		if (auto provider = create(factory{preferred, preferred.substr(5), csri::Create})) return provider;
+#endif
+	if (error.empty()) error = preferred + ": renderer is not registered in this build.\n";
+	WarnFallbackOnce(preferred, error);
+	// Custom backends have always fallen back to built-in libass. Preserve
+	// the configured preference so an unavailable installation is visible.
+	if (preferred == "libassmod" || preferred == "Mangetsu")
+		if (auto provider = create(factories().front())) return provider;
+	// Only a failed selection reaches fallback discovery, in its original order.
+#ifdef WITH_CSRI
+	for (auto const& subtype : csri::List()) {
+		if ("CSRI/" + subtype == preferred) continue;
+		if (auto provider = create(factory{"CSRI/" + subtype, subtype, csri::Create})) return provider;
 	}
-
+#endif
+	for (auto const& entry : factories()) {
+		if (entry.name == preferred || ((preferred == "libassmod" || preferred == "Mangetsu") && entry.name == "libass")) continue;
+		if (auto provider = create(entry)) return provider;
+	}
 	throw error;
 }

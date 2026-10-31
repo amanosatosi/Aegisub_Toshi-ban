@@ -455,6 +455,7 @@ class AutomationMenu final : public wxMenu {
 	void Regenerate() {
 		for (auto item : all_items)
 			cm->Remove(item);
+		all_items.clear();
 
 		wxMenuItemList &items = GetMenuItems();
 		// Remove everything but automation manager and the separator

@@ -23,13 +23,13 @@ namespace agi { class BackgroundRunner; }
 namespace libassmod {
 	std::unique_ptr<SubtitlesProvider> Create(std::string const&, agi::BackgroundRunner *br);
 	void CacheFonts();
-	bool IsAvailable(std::string *error = nullptr);
+	bool IsAvailable(std::string *error = nullptr, bool refresh = false);
 	std::string PrimaryLibraryName();
 }
 
 namespace mangetsu {
 	std::unique_ptr<SubtitlesProvider> Create(std::string const&, agi::BackgroundRunner *br);
 	void CacheFonts();
-	bool IsAvailable(std::string *error = nullptr);
+	bool IsAvailable(std::string *error = nullptr, bool refresh = false);
 	std::string PrimaryLibraryName();
 }

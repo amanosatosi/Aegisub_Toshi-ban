@@ -42,18 +42,26 @@
 #include <libaegisub/format.h>
 #include <libaegisub/fs.h>
 #include <libaegisub/path.h>
+#include <libaegisub/log.h>
 #include <libaegisub/make_unique.h>
 #include <libaegisub/split.h>
 
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <boost/scope_exit.hpp>
+#include <chrono>
 #include <exception>
 #include <future>
+#include <mutex>
+#include <set>
+#include <thread>
 #include <utility>
 
 #include <wx/dcmemory.h>
+#include <wx/filefn.h>
 #include <wx/log.h>
 #include <wx/sizer.h>
+#include <wx/thread.h>
 
 #ifdef __WINDOWS__
 #define WIN32_LEAN_AND_MEAN
@@ -63,8 +71,53 @@
 #endif
 
 namespace Automation4 {
+	namespace {
+		thread_local std::shared_ptr<ScriptLoadContext> load_context;
+		std::atomic<unsigned> script_execution_count{0};
+	}
+
+	ScriptExecutionGuard::ScriptExecutionGuard() { ++script_execution_count; }
+	ScriptExecutionGuard::~ScriptExecutionGuard() { --script_execution_count; }
+
+	std::shared_ptr<ScriptLoadContext> GetScriptLoadContext() { return load_context; }
+
+	bool ScriptLoadOnMain(std::function<void()> task) {
+		if (wxIsMainThread()) { task(); return true; }
+		auto context = load_context;
+		if (!context) {
+			agi::dispatch::Main().Sync(std::move(task));
+			return true;
+		}
+		if (context->cancelled) return false;
+		auto finished = std::make_shared<std::promise<void>>();
+		auto future = finished->get_future();
+		agi::dispatch::Main().Async([context, finished, task = std::move(task)] {
+			try {
+				if (!context->cancelled) task();
+				finished->set_value();
+			}
+			catch (...) { finished->set_exception(std::current_exception()); }
+		});
+		while (future.wait_for(std::chrono::milliseconds(20)) != std::future_status::ready)
+			if (context->cancelled) return false;
+		future.get();
+		return !context->cancelled;
+	}
+
 	bool CalculateTextExtents(AssStyle *style, std::string const& text, double &width, double &height, double &descent, double &extlead)
 	{
+#ifndef WIN32
+		if (GetScriptLoadContext()) {
+			struct Metrics { double w = 0, h = 0, d = 0, e = 0; bool ok = false; };
+			auto metrics = std::make_shared<Metrics>();
+			auto copy = std::make_shared<AssStyle>(*style);
+			if (!ScriptLoadOnMain([copy, text, metrics] {
+				metrics->ok = CalculateTextExtents(copy.get(), text, metrics->w, metrics->h, metrics->d, metrics->e);
+			})) return false;
+			width = metrics->w; height = metrics->h; descent = metrics->d; extlead = metrics->e;
+			return metrics->ok;
+		}
+#endif
 		width = height = descent = extlead = 0;
 
 		double fontsize = style->fontsize * 64;
@@ -256,6 +309,10 @@ namespace Automation4 {
 	: filename(filename)
 	{
 		include_path.emplace_back(filename.parent_path());
+		if (auto context = GetScriptLoadContext()) {
+			include_path.insert(include_path.end(), context->include_paths.begin(), context->include_paths.end());
+			return;
+		}
 
 		std::string include_paths = OPT_GET("Path/Automation/Include")->GetString();
 		for (auto tok : agi::Split(include_paths, '|')) {
@@ -316,84 +373,168 @@ namespace Automation4 {
 		return macros;
 	}
 
-	// AutoloadScriptManager
+	// Workers own unpublished scripts; only the UI thread touches live registries.
+	struct AutoloadScriptManager::Batch {
+		std::shared_ptr<ScriptLoadContext> context;
+		std::thread worker;
+		std::mutex mutex;
+		AutoloadProgress progress;
+		std::vector<std::unique_ptr<Script>> scripts;
+		std::vector<std::string> errors;
+		std::atomic<bool> done{false};
+		std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+
+		Batch(std::vector<agi::fs::path> directories, std::shared_ptr<ScriptLoadContext> context)
+		: context(std::move(context)) {
+			worker = std::thread([this, directories = std::move(directories)] {
+				load_context = this->context;
+				BOOST_SCOPE_EXIT_ALL(&) { load_context.reset(); done = true; };
+				try {
+					std::vector<agi::fs::path> files;
+					std::set<agi::fs::path> seen;
+					for (auto const& directory : directories) {
+						if (this->context->cancelled) return;
+						try {
+							if (!agi::fs::DirectoryExists(directory)) continue;
+							auto dir = agi::fs::Canonicalize(directory);
+							if (!seen.insert(dir).second) continue;
+							for (auto const& filename : agi::fs::DirectoryIterator(dir, "*.*")) {
+								auto file = dir / filename;
+								if (ScriptFactory::Supports(file) && agi::fs::FileExists(file)) files.push_back(file);
+							}
+						}
+						catch (agi::Exception const& e) { errors.push_back(directory.string() + ": " + e.GetMessage()); }
+						catch (std::exception const& e) { errors.push_back(directory.string() + ": " + e.what()); }
+					}
+					{
+						std::lock_guard<std::mutex> lock(mutex);
+						progress.total = files.size();
+						progress.failed = errors.size();
+						progress.loading = !files.empty();
+					}
+					// One worker bounds resource usage and preserves directory order.
+					for (auto const& file : files) {
+						if (this->context->cancelled) return;
+						{
+							std::lock_guard<std::mutex> lock(mutex);
+							progress.filename = file.filename().string();
+						}
+						auto start = std::chrono::steady_clock::now();
+						std::unique_ptr<Script> script;
+						std::string error;
+						try {
+							script = ScriptFactory::CreateFromFile(file, false, false);
+							if (script && !script->GetLoadedState()) error = script->GetDescription();
+						}
+						catch (agi::Exception const& e) { error = e.GetMessage(); }
+						catch (std::exception const& e) { error = e.what(); }
+						catch (...) { error = "Unknown error"; }
+						LOG_I("startup/automation/script") << file.string() << ": "
+							<< std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() << " ms";
+						if (!error.empty()) errors.push_back(file.string() + ": " + error);
+						if (!script) script = agi::make_unique<UnknownScript>(file, error);
+						scripts.push_back(std::move(script));
+						std::lock_guard<std::mutex> lock(mutex);
+						++progress.completed;
+						progress.failed = errors.size();
+					}
+				}
+				catch (agi::Exception const& e) { errors.push_back(e.GetMessage()); }
+				catch (std::exception const& e) { errors.push_back(e.what()); }
+				catch (...) { errors.push_back("Unknown error scanning Automation scripts"); }
+			});
+		}
+
+		~Batch() {
+			context->cancelled = true;
+			if (worker.joinable()) worker.join();
+		}
+	};
+
 	AutoloadScriptManager::AutoloadScriptManager(std::string path)
-	: path(std::move(path))
-	{
+	: path(std::move(path)), timer(this) {
+		Bind(wxEVT_TIMER, &AutoloadScriptManager::OnTimer, this);
+	}
+
+	AutoloadScriptManager::~AutoloadScriptManager() {
+		timer.Stop();
+		batch.reset(); // Cancel and join before application globals are destroyed.
+	}
+
+	void AutoloadScriptManager::Reload() {
+		if (batch) {
+			batch->context->cancelled = true;
+			reload_pending = true; // Coalesce rescans; never create unbounded workers.
+			return;
+		}
+		StartReload();
+	}
+
+	void AutoloadScriptManager::Reload(Script *) {
+		// Global Reload uses the same staged path as Rescan Autoload Dir.
 		Reload();
 	}
 
-	void AutoloadScriptManager::Reload()
-	{
-		scripts.clear();
-
-		std::vector<std::pair<agi::fs::path, std::future<std::unique_ptr<Script>>>> script_futures;
-		int error_count = 0;
-
-		std::set<agi::fs::path> dirnames;
-		for (auto tok : agi::Split(path, '|')) {
-			agi::fs::path dirname;
-			try {
-				dirname = config::path->Decode(agi::str(tok));
-				if (!agi::fs::DirectoryExists(dirname)) continue;
-
-				if (dirnames.count(dirname)) continue;
-				dirnames.insert(dirname);
-
-				for (auto filename : agi::fs::DirectoryIterator(dirname, "*.*")) {
-					auto script_path = dirname/filename;
-					script_futures.emplace_back(script_path, std::async(std::launch::async, [=] {
-						return ScriptFactory::CreateFromFile(script_path, false, false);
-					}));
-				}
-			}
-			catch (agi::Exception const& e) {
-				++error_count;
-				wxLogError(_("Failed to scan Automation autoload path '%s':\n%s"), to_wx(agi::str(tok)), to_wx(e.GetMessage()));
-			}
-			catch (std::exception const& e) {
-				++error_count;
-				wxLogError(_("Failed to scan Automation autoload path '%s':\n%s"), to_wx(agi::str(tok)), to_wx(e.what()));
-			}
-			catch (...) {
-				++error_count;
-				wxLogError(_("Failed to scan Automation autoload path '%s':\nUnknown error"), to_wx(agi::str(tok)));
-			}
+	void AutoloadScriptManager::StartReload() {
+		auto context = std::make_shared<ScriptLoadContext>();
+		context->paths = std::make_shared<agi::Path>(*config::path);
+		for (auto tok : agi::Split(OPT_GET("Path/Automation/Include")->GetString(), '|')) {
+			auto include = context->paths->Decode(agi::str(tok));
+			if (include.is_absolute()) context->include_paths.push_back(std::move(include));
 		}
+		std::vector<agi::fs::path> directories;
+		for (auto tok : agi::Split(path, '|')) directories.push_back(context->paths->Decode(agi::str(tok)));
+		progress = {};
+		ProgressChanged(progress);
+		batch = agi::make_unique<Batch>(std::move(directories), std::move(context));
+		timer.Start(100); // At most ten real progress updates per second.
+	}
 
-		for (auto& script_future : script_futures) {
-			try {
-				auto s = script_future.second.get();
-				if (s) {
-					if (!s->GetLoadedState()) {
-						++error_count;
-						wxLogError(_("Failed to load Automation script '%s':\n%s"), s->GetFilename().wstring(), to_wx(s->GetDescription()));
-					}
-					scripts.emplace_back(std::move(s));
-				}
+	void AutoloadScriptManager::OnTimer(wxTimerEvent&) {
+		if (!batch) return;
+		if (batch->done) {
+			if (!reload_pending && script_execution_count) return;
+			timer.Stop();
+			if (reload_pending) {
+				batch.reset(); // Discard every result of the cancelled generation.
+				reload_pending = false;
+				StartReload();
+				return;
 			}
-			catch (agi::Exception const& e) {
-				++error_count;
-				wxLogError(_("Failed to load Automation script '%s':\n%s"), script_future.first.wstring(), to_wx(e.GetMessage()));
+			{
+				std::lock_guard<std::mutex> lock(batch->mutex);
+				progress = batch->progress;
 			}
-			catch (std::exception const& e) {
-				++error_count;
-				wxLogError(_("Failed to load Automation script '%s':\n%s"), script_future.first.wstring(), to_wx(e.what()));
+			progress.loading = false;
+			progress.failed = batch->errors.size();
+			// Delete old features before publishing replacements with the same names.
+			scripts.clear();
+			scripts = std::move(batch->scripts);
+			for (auto& script : scripts) {
+				bool loaded = script->GetLoadedState();
+				script->Publish();
+				if (loaded && !script->GetLoadedState()) batch->errors.push_back(script->GetFilename().string() + ": " + script->GetDescription());
 			}
-			catch (...) {
-				++error_count;
-				wxLogError(_("Failed to load Automation script '%s':\nUnknown error"), script_future.first.wstring());
-			}
+			errors = batch->errors;
+			progress.failed = errors.size();
+			for (auto const& error : errors) LOG_E("automation/autoload") << error;
+			LOG_I("startup/automation") << progress.completed << " / " << progress.total
+				<< ", failures: " << progress.failed << ", "
+				<< std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - batch->started).count() << " ms";
+			batch.reset();
+			ScriptsChanged();
+			ProgressChanged(progress);
+			return;
 		}
-
-		if (error_count == 1) {
-			wxLogWarning("A script in the Automation autoload directory failed to load.\nPlease review the errors, fix them and use the Rescan Autoload Dir button in Automation Manager to load the scripts again.");
+		AutoloadProgress next;
+		{
+			std::lock_guard<std::mutex> lock(batch->mutex);
+			next = batch->progress;
 		}
-		else if (error_count > 1) {
-			wxLogWarning("Multiple scripts in the Automation autoload directory failed to load.\nPlease review the errors, fix them and use the Rescan Autoload Dir button in Automation Manager to load the scripts again.");
+		if (next.completed != progress.completed || next.total != progress.total || next.filename != progress.filename) {
+			progress = std::move(next);
+			ProgressChanged(progress);
 		}
-
-		ScriptsChanged();
 	}
 
 	LocalScriptManager::LocalScriptManager(agi::Context *c)
@@ -511,6 +652,7 @@ namespace Automation4 {
 		for (auto& factory : Factories()) {
 			auto s = factory->Produce(filename);
 			if (s) {
+				if (!GetScriptLoadContext()) s->Publish();
 				if (!s->GetLoadedState() && complain_about_unrecognised) {
 					wxLogError(_("Failed to load Automation script '%s':\n%s"), filename.wstring(), s->GetDescription());
 				}
@@ -534,6 +676,13 @@ namespace Automation4 {
 	const std::vector<std::unique_ptr<ScriptFactory>>& ScriptFactory::GetFactories()
 	{
 		return Factories();
+	}
+
+	bool ScriptFactory::Supports(agi::fs::path const& filename) {
+		for (auto const& factory : Factories())
+			for (auto pattern : agi::Split(factory->GetFilenamePattern(), ','))
+				if (wxMatchWild(to_wx(agi::str(pattern)).Lower(), to_wx(filename.filename().string()).Lower())) return true;
+		return false;
 	}
 
 	std::string ScriptFactory::GetWildcardStr()
@@ -560,6 +709,6 @@ namespace Automation4 {
 	}
 
 	std::string UnknownScript::GetDescription() const {
-		return from_wx(_("File was not recognized as a script"));
+		return error.empty() ? from_wx(_("File was not recognized as a script")) : error;
 	}
 }

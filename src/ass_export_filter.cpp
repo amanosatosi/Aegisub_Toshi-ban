@@ -49,6 +49,11 @@ AssExportFilter::AssExportFilter(std::string name, std::string description, int 
 }
 
 void AssExportFilterChain::Register(std::unique_ptr<AssExportFilter> filter) {
+	Register(filter.get());
+	filter.release();
+}
+
+void AssExportFilterChain::Register(AssExportFilter *filter) {
 	int filter_copy = 1;
 	std::string name = filter->name;
 	// Find a unique name
@@ -60,7 +65,7 @@ void AssExportFilterChain::Register(std::unique_ptr<AssExportFilter> filter) {
 	// Look for place to insert
 	auto begin(filters().begin()), end(filters().end());
 	while (begin != end && begin->priority >= filter->priority) ++begin;
-	filters().insert(begin, *filter.release());
+	filters().insert(begin, *filter);
 }
 
 FilterList *AssExportFilterChain::GetFilterList() {

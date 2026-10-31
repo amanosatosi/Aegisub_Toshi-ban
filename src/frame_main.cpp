@@ -39,6 +39,9 @@
 #include "include/aegisub/hotkey.h"
 
 #include "ass_file.h"
+#include "auto4_base.h"
+#include "dialogs.h"
+#include "startup_timing.h"
 #include "async_video_provider.h"
 #include "audio_controller.h"
 #include "audio_timing.h"
@@ -66,6 +69,9 @@
 #include <libaegisub/make_unique.h>
 
 #include <wx/dnd.h>
+#include <wx/gauge.h>
+#include <wx/hyperlink.h>
+#include <wx/stattext.h>
 #include <wx/dcbuffer.h>
 #include <wx/msgdlg.h>
 #include <wx/popupwin.h>
@@ -275,6 +281,7 @@ FrameMain::FrameMain()
 : wxFrame(nullptr, -1, "", wxDefaultPosition, wxSize(920,700), wxDEFAULT_FRAME_STYLE | wxCLIP_CHILDREN)
 , context(agi::make_unique<agi::Context>())
 {
+	auto construction_start = std::chrono::steady_clock::now();
 	StartupLog("Entering FrameMain constructor");
 	AlignmentPickerTimer.SetOwner(this, ID_ALIGNMENT_PICKER_TIMER);
 
@@ -334,12 +341,20 @@ FrameMain::FrameMain()
 	StartupLog("Display main window");
 	AddFullScreenButton(this);
 	Show();
+	LogStartupTiming("First visible frame");
 	SetDisplayMode(1, 1);
 
+	LOG_I("startup/timing") << "Main-window construction: " << StartupMilliseconds(construction_start) << " ms";
+	Bind(wxEVT_IDLE, [first_idle = true](wxIdleEvent& event) mutable {
+		if (first_idle) { first_idle = false; LogStartupTiming("First responsive idle event"); }
+		event.Skip();
+	});
 	StartupLog("Leaving FrameMain constructor");
 }
 
 FrameMain::~FrameMain () {
+	automation_hide_timer.Stop();
+	automation_progress_connection.Disconnect();
 	HideAlignmentPicker();
 	// Stop session timers and destroy owned review views before child teardown.
 	context->audioController->SetTimingController(nullptr);
@@ -395,11 +410,60 @@ void FrameMain::InitContents() {
 	MainSizer->Add(new wxStaticLine(Panel),0,wxEXPAND | wxALL,0);
 	MainSizer->Add(TopSizer,0,wxEXPAND | wxALL,0);
 	MainSizer->Add(context->subsGrid,1,wxEXPAND | wxALL,0);
+	automation_panel = new wxPanel(Panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+	auto progress_sizer = new wxBoxSizer(wxVERTICAL);
+	automation_title = new wxStaticText(automation_panel, wxID_ANY, _("Loading Automation scripts"));
+	automation_file = new wxStaticText(automation_panel, wxID_ANY, "", wxDefaultPosition, FromDIP(wxSize(320, -1)), wxST_ELLIPSIZE_MIDDLE | wxST_NO_AUTORESIZE);
+	automation_count = new wxStaticText(automation_panel, wxID_ANY, "0 / 0");
+	automation_gauge = new wxGauge(automation_panel, wxID_ANY, 1, wxDefaultPosition, FromDIP(wxSize(240, 12)));
+	automation_warning = new wxHyperlinkCtrl(automation_panel, wxID_ANY, _("Some scripts failed — Show details"), "automation");
+	automation_warning->Bind(wxEVT_HYPERLINK, [this](wxHyperlinkEvent&) { ShowAutomationDialog(context.get()); });
+	auto gauge_row = new wxBoxSizer(wxHORIZONTAL);
+	gauge_row->Add(automation_gauge, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(8));
+	gauge_row->Add(automation_count, 0, wxALIGN_CENTER_VERTICAL);
+	progress_sizer->Add(automation_title, 0, wxBOTTOM, FromDIP(3));
+	progress_sizer->Add(gauge_row, 0, wxEXPAND);
+	progress_sizer->Add(automation_file, 0, wxEXPAND | wxTOP, FromDIP(3));
+	progress_sizer->Add(automation_warning, 0, wxTOP, FromDIP(3));
+	automation_panel->SetSizer(progress_sizer);
+	MainSizer->Add(automation_panel, 0, wxALIGN_RIGHT | wxALL, FromDIP(6));
+	MainSizer->Hide(automation_panel);
+	automation_hide_timer.SetOwner(this);
+	Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
+		automation_title->Hide(); automation_gauge->Hide(); automation_count->Hide(); automation_file->Hide();
+		if (!automation_warning->IsShown()) MainSizer->Hide(automation_panel);
+		MainSizer->Layout();
+	}, automation_hide_timer.GetId());
+	automation_progress_connection = config::global_scripts->AddProgressListener(&FrameMain::UpdateAutomationProgress, this);
 	Panel->SetSizer(MainSizer);
+	UpdateAutomationProgress(config::global_scripts->GetProgress());
 
 	StartupLog("Perform layout");
 	Layout();
 	StartupLog("Leaving InitContents");
+}
+
+void FrameMain::UpdateAutomationProgress(Automation4::AutoloadProgress const& progress) {
+	automation_hide_timer.Stop();
+	if (!progress.total && !progress.failed) {
+		MainSizer->Hide(automation_panel);
+		MainSizer->Layout();
+		return;
+	}
+	bool was_shown = automation_panel->IsShown();
+	MainSizer->Show(automation_panel);
+	automation_title->Show(); automation_gauge->Show(); automation_count->Show(); automation_file->Show();
+	automation_title->SetLabelText(progress.loading ? _("Loading Automation scripts") : _("Automation scripts loaded"));
+	automation_count->SetLabelText(wxString::Format("%zu / %zu", progress.completed, progress.total));
+	automation_gauge->SetRange(static_cast<int>(std::max<size_t>(1, progress.total)));
+	automation_gauge->SetValue(static_cast<int>(progress.completed));
+	automation_file->SetLabelText(to_wx(progress.filename));
+	automation_file->SetToolTip(to_wx(progress.filename));
+	bool warning_changed = automation_warning->IsShown() != (progress.failed != 0);
+	automation_warning->Show(progress.failed != 0);
+	if (!was_shown || warning_changed || !progress.loading) MainSizer->Layout();
+	else automation_panel->Layout();
+	if (!progress.loading) automation_hide_timer.StartOnce(2000);
 }
 
 void FrameMain::SetDisplayMode(int video, int audio) {

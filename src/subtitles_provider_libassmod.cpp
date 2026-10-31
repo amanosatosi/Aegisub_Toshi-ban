@@ -141,7 +141,8 @@ struct AssCompatBackend {
 	bool api_loaded = false;
 	std::string api_error;
 	std::string loaded_library_name;
-	std::once_flag api_once;
+	std::mutex api_mutex;
+	bool api_attempted = false;
 	ASS_Library *library = nullptr;
 	std::unique_ptr<agi::dispatch::Queue> cache_queue;
 	std::once_flag cache_queue_once;
@@ -345,13 +346,16 @@ bool LoadLibassModApi(AssCompatBackend &backend, std::string &error) {
 	return true;
 }
 
-bool EnsureBackend(AssCompatBackend &backend, std::string *error) {
-	std::call_once(backend.api_once, [&] {
+bool EnsureBackend(AssCompatBackend &backend, std::string *error, bool refresh = false) {
+	std::lock_guard<std::mutex> lock(backend.api_mutex);
+	if (!backend.api_attempted || (refresh && !backend.api_loaded)) {
+		backend.api_attempted = true;
+		backend.api_error.clear();
 		backend.api_loaded = LoadLibassModApi(backend, backend.api_error);
 		if (!backend.api_loaded)
 			LOG_I(backend.config.log_name) << "Subtitle renderer " << backend.config.display_name
 				<< ": unavailable (" << backend.api_error << ")";
-	});
+	}
 	if (!backend.api_loaded && error)
 		*error = backend.api_error;
 	return backend.api_loaded;
@@ -996,8 +1000,8 @@ std::unique_ptr<SubtitlesProvider> Create(std::string const&, agi::BackgroundRun
 	return agi::make_unique<LibassModSubtitlesProvider>(libassmod_backend, br);
 }
 
-bool IsAvailable(std::string *error) {
-	return EnsureBackend(libassmod_backend, error);
+bool IsAvailable(std::string *error, bool refresh) {
+	return EnsureBackend(libassmod_backend, error, refresh);
 }
 
 std::string PrimaryLibraryName() {
@@ -1035,8 +1039,8 @@ std::unique_ptr<SubtitlesProvider> Create(std::string const&, agi::BackgroundRun
 	return agi::make_unique<LibassModSubtitlesProvider>(mangetsu_backend, br);
 }
 
-bool IsAvailable(std::string *error) {
-	return EnsureBackend(mangetsu_backend, error);
+bool IsAvailable(std::string *error, bool refresh) {
+	return EnsureBackend(mangetsu_backend, error, refresh);
 }
 
 std::string PrimaryLibraryName() {

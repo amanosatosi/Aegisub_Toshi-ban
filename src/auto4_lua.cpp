@@ -33,6 +33,7 @@
 ///
 
 #include "auto4_lua.h"
+#include "auto4_lua_init.h"
 
 #include "ass_dialogue.h"
 #include "ass_file.h"
@@ -121,33 +122,36 @@ namespace {
 	int get_translation(lua_State *L)
 	{
 		wxString str(check_wxstring(L, 1));
-		push_value(L, std::string(wxGetTranslation(str).utf8_str()));
+		auto translated = std::make_shared<std::string>();
+		if (!ScriptLoadOnMain([translated, str] { *translated = std::string(wxGetTranslation(str).utf8_str()); }))
+			return error(L, "Automation loading cancelled");
+		push_value(L, *translated);
 		return 1;
 	}
 
 	const char *clipboard_get()
 	{
-		std::string data;
-		agi::dispatch::Main().Sync([&] { data = GetClipboard(); });
-		if (data.empty())
+		auto data = std::make_shared<std::string>();
+		if (!ScriptLoadOnMain([data] { *data = GetClipboard(); })) return nullptr;
+		if (data->empty())
 			return nullptr;
-		return strndup(data);
+		return strndup(*data);
 	}
 
 	bool clipboard_set(const char *str)
 	{
-		bool succeeded = false;
-
-		agi::dispatch::Main().Sync([&] {
+		auto succeeded = std::make_shared<bool>(false);
+		std::string text(str);
+		if (!ScriptLoadOnMain([succeeded, text] {
 			wxClipboard &cb = *wxTheClipboard;
 			if (cb.Open()) {
-				succeeded = cb.SetData(new wxTextDataObject(wxString::FromUTF8(str)));
+				*succeeded = cb.SetData(new wxTextDataObject(to_wx(text)));
 				cb.Close();
 				cb.Flush();
 			}
-		});
+		})) return false;
 
-		return succeeded;
+		return *succeeded;
 	}
 
 	int clipboard_init(lua_State *L)
@@ -336,7 +340,7 @@ namespace {
 		if (const agi::Context *c = get_context(L))
 			push_value(L, c->path->Decode(path));
 		else
-			push_value(L, config::path->Decode(path));
+			push_value(L, GetScriptLoadContext() ? GetScriptLoadContext()->paths->Decode(path) : config::path->Decode(path));
 		return 1;
 	}
 
@@ -408,12 +412,14 @@ namespace {
 
 	int lua_get_text_cursor(lua_State *L)
 	{
+		if (!get_context(L)) { lua_pushnil(L); return 1; }
 		push_value(L, get_context(L)->textSelectionController->GetStagedInsertionPoint() + 1);
 		return 1;
 	}
 
 	int lua_set_text_cursor(lua_State *L)
 	{
+		if (!get_context(L)) return 0;
 		int point = lua_tointeger(L, -1) - 1;
 		lua_pop(L, 1);
 		get_context(L)->textSelectionController->StageSetInsertionPoint(point);
@@ -422,6 +428,7 @@ namespace {
 
 	int lua_get_text_selection(lua_State *L)
 	{
+		if (!get_context(L)) { lua_pushnil(L); return 1; }
 		const agi::Context *c = get_context(L);
 		int start = c->textSelectionController->GetStagedSelectionStart() + 1;
 		int end = c->textSelectionController->GetStagedSelectionEnd() + 1;
@@ -432,6 +439,7 @@ namespace {
 
 	int lua_set_text_selection(lua_State *L)
 	{
+		if (!get_context(L)) return 0;
 		int start = lua_tointeger(L, -2) - 1;
 		int end = lua_tointeger(L, -1) - 1;
 		lua_pop(L, 2);
@@ -441,6 +449,7 @@ namespace {
 
 	int lua_is_modified(lua_State *L)
 	{
+		if (!get_context(L)) { lua_pushnil(L); return 1; }
 		push_value(L, get_context(L)->subsController->IsModified());
 		return 1;
 	}
@@ -541,6 +550,8 @@ namespace {
 		std::string version;
 
 		std::vector<cmd::Command*> macros;
+		std::vector<std::unique_ptr<cmd::Command>> pending_commands;
+		bool published = false;
 		std::vector<std::unique_ptr<ExportFilter>> filters;
 
 		/// load script and create internal structures etc.
@@ -561,7 +572,9 @@ namespace {
 		static LuaScript* GetScriptObject(lua_State *L);
 
 		// Script implementation
-		void Reload() override { Create(); }
+		void Reload() override { Create(); Publish(); }
+		void Publish() override;
+		void StageCommand(std::unique_ptr<cmd::Command> command) { pending_commands.push_back(std::move(command)); }
 
 		std::string GetName() const override { return name; }
 		std::string GetDescription() const override { return description; }
@@ -598,6 +611,7 @@ namespace {
 
 		// register standard libs
 		preload_modules(L);
+		if (auto context = GetScriptLoadContext()) SetInitCancellation(L, &context->cancelled);
 		stackcheck.check_stack(0);
 
 		// dofile and loadfile are replaced with include
@@ -704,6 +718,7 @@ namespace {
 		lua_pop(L, 1);
 		stackcheck.check_stack(0);
 		// if we got this far, the script should be ready
+		if (GetScriptLoadContext()) ClearInitCancellation(L);
 		loaded = true;
 	}
 
@@ -714,13 +729,35 @@ namespace {
 
 		// loops backwards because commands remove themselves from macros when
 		// they're unregistered
-		for (int i = macros.size() - 1; i >= 0; --i)
-			cmd::unreg(macros[i]->name());
+		if (published) {
+			for (int i = static_cast<int>(macros.size()) - 1; i >= 0; --i)
+				cmd::unreg(macros[i]->name());
+		}
+		pending_commands.clear();
+		published = false;
 
 		filters.clear();
 
 		lua_close(L);
 		L = nullptr;
+	}
+
+	void LuaScript::Publish() {
+		if (!L || published) return;
+		// Reject name collisions before transferring any command ownership.
+		for (auto const& command : pending_commands) {
+			try {
+				cmd::get(command->name());
+				description = agi::format("Automation command already registered: %s", command->name());
+				Destroy();
+				return;
+			}
+			catch (cmd::CommandNotFound const&) { }
+		}
+		published = true;
+		for (auto& command : pending_commands) cmd::reg(std::move(command));
+		pending_commands.clear();
+		for (auto& filter : filters) AssExportFilterChain::Register(filter.get());
 	}
 
 	std::vector<ExportFilter*> LuaScript::GetFilters() const
@@ -734,7 +771,7 @@ namespace {
 	void LuaScript::RegisterCommand(LuaCommand *command)
 	{
 		for (auto macro : macros) {
-			if (macro->name() == command->name()) {
+			if (std::string(macro->name()) == command->name()) {
 				error(L, "A macro named '%s' is already defined in script '%s'",
 					command->StrDisplay(nullptr).utf8_str().data(), name.c_str());
 			}
@@ -851,12 +888,8 @@ namespace {
 	// LuaFeatureMacro
 	int LuaCommand::LuaRegister(lua_State *L)
 	{
-		static std::mutex mutex;
 		auto command = agi::make_unique<LuaCommand>(L);
-		{
-			std::lock_guard<std::mutex> lock(mutex);
-			cmd::reg(std::move(command));
-		}
+		LuaScript::GetScriptObject(L)->StageCommand(std::move(command));
 		return 0;
 	}
 
@@ -922,6 +955,7 @@ namespace {
 
 	bool LuaCommand::Validate(const agi::Context *c)
 	{
+		ScriptExecutionGuard execution_guard;
 		if (!(cmd_type & cmd::COMMAND_VALIDATE)) return true;
 
 		set_context(L, c);
@@ -962,6 +996,7 @@ namespace {
 
 	void LuaCommand::operator()(agi::Context *c)
 	{
+		ScriptExecutionGuard execution_guard;
 		c->textSelectionController->DropStagedChanges();
 		LuaStackcheck stackcheck(L);
 		set_context(L, c);
@@ -1067,6 +1102,7 @@ namespace {
 
 	bool LuaCommand::IsActive(const agi::Context *c)
 	{
+		ScriptExecutionGuard execution_guard;
 		if (!(cmd_type & cmd::COMMAND_TOGGLE)) return false;
 
 		LuaStackcheck stackcheck(L);
@@ -1126,17 +1162,15 @@ namespace {
 
 	int LuaExportFilter::LuaRegister(lua_State *L)
 	{
-		static std::mutex mutex;
+		// The script owns this filter until it is destroyed; publication is on the UI thread.
 		auto filter = agi::make_unique<LuaExportFilter>(L);
-		{
-			std::lock_guard<std::mutex> lock(mutex);
-			AssExportFilterChain::Register(std::move(filter));
-		}
+		filter.release();
 		return 0;
 	}
 
 	void LuaExportFilter::ProcessSubs(AssFile *subs, wxWindow *export_dialog)
 	{
+		ScriptExecutionGuard execution_guard;
 		LuaStackcheck stackcheck(L);
 
 		GetFeatureFunction("run");
@@ -1174,6 +1208,7 @@ namespace {
 
 	std::unique_ptr<ScriptDialog> LuaExportFilter::GenerateConfigDialog(wxWindow *parent, agi::Context *c)
 	{
+		ScriptExecutionGuard execution_guard;
 		if (!has_config)
 			return nullptr;
 

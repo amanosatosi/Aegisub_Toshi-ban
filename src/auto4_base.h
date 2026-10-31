@@ -42,18 +42,39 @@
 #include "ass_export_filter.h"
 
 #include <boost/filesystem/path.hpp>
+#include <atomic>
+#include <functional>
 #include <memory>
 #include <vector>
+#include <wx/timer.h>
 
 class AssStyle;
 class DialogProgress;
 class wxWindow;
 class wxDialog;
 
-namespace agi { struct Context; }
+namespace agi { struct Context; class Path; }
 namespace cmd { class Command; }
 
 namespace Automation4 {
+	// Immutable application settings captured on the UI thread for one load.
+	// Workers never read the live options or project path tokens.
+	struct ScriptLoadContext {
+		std::shared_ptr<agi::Path const> paths;
+		std::vector<agi::fs::path> include_paths;
+		std::atomic<bool> cancelled{false};
+	};
+	std::shared_ptr<ScriptLoadContext> GetScriptLoadContext();
+	// A cancellable UI request, also usable by Lua's clipboard FFI callbacks.
+	bool ScriptLoadOnMain(std::function<void()> task);
+	// Keep live Lua states and export-filter dialogs intact across nested event loops.
+	class ScriptExecutionGuard {
+	public:
+		ScriptExecutionGuard();
+		~ScriptExecutionGuard();
+		ScriptExecutionGuard(ScriptExecutionGuard const&) = delete;
+		ScriptExecutionGuard& operator=(ScriptExecutionGuard const&) = delete;
+	};
 	DEFINE_EXCEPTION(AutomationError, agi::Exception);
 	DEFINE_EXCEPTION(ScriptLoadError, AutomationError);
 	DEFINE_EXCEPTION(MacroRunError, AutomationError);
@@ -155,6 +176,8 @@ namespace Automation4 {
 
 		/// Reload this script
 		virtual void Reload() = 0;
+		/// Publish fully initialized features. Called only on the main thread.
+		virtual void Publish() { }
 
 		/// The script's file name with path
 		agi::fs::path GetFilename() const { return filename; }
@@ -221,11 +244,33 @@ namespace Automation4 {
 	};
 
 	/// Manager for scripts in the autoload directory
-	class AutoloadScriptManager final : public ScriptManager {
+	struct AutoloadProgress {
+		size_t completed = 0;
+		size_t total = 0;
+		size_t failed = 0;
+		std::string filename;
+		bool loading = false;
+	};
+
+	class AutoloadScriptManager final : public ScriptManager, private wxEvtHandler {
 		std::string path;
+		struct Batch;
+		std::unique_ptr<Batch> batch;
+		wxTimer timer;
+		bool reload_pending = false;
+		AutoloadProgress progress;
+		std::vector<std::string> errors;
+		agi::signal::Signal<AutoloadProgress const&> ProgressChanged;
+		void StartReload();
+		void OnTimer(wxTimerEvent&);
 	public:
 		AutoloadScriptManager(std::string path);
+		~AutoloadScriptManager();
 		void Reload() override;
+		void Reload(Script *script) override;
+		AutoloadProgress const& GetProgress() const { return progress; }
+		std::vector<std::string> const& GetErrors() const { return errors; }
+		DEFINE_SIGNAL_ADDERS(ProgressChanged, AddProgressListener)
 	};
 
 	/// Both a base class for script factories and a manager of registered
@@ -261,6 +306,7 @@ namespace Automation4 {
 
 		/// Get the full wildcard string for all loaded engines
 		static std::string GetWildcardStr();
+		static bool Supports(agi::fs::path const& filename);
 
 		/// Load a script from a file
 		/// @param filename Script to load
@@ -274,8 +320,9 @@ namespace Automation4 {
 	/// A script which represents a file not recognized by any registered
 	/// automation engines
 	class UnknownScript final : public Script {
+		std::string error;
 	public:
-		UnknownScript(agi::fs::path const& filename) : Script(filename) { }
+		UnknownScript(agi::fs::path const& filename, std::string error = "") : Script(filename), error(std::move(error)) { }
 
 		void Reload() override { }
 

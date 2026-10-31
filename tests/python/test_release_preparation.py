@@ -81,10 +81,12 @@ class ReleasePreparation(unittest.TestCase):
         self.assertIn("System luajit found but not compiled in 5.2 mode", read("meson.build"))
         self.assertIn("__pairs", read("tests/tests/dependencycontrol_runtime.cpp"))
 
-    def test_offer_is_optional_and_precedes_projects(self):
+    def test_offer_is_optional_and_deferred_until_after_projects(self):
         main = read("src/main.cpp")
         self.assertLess(main.index("RegisterOptional(MangetsuRendererOfferKey)"), main.index("config::opt->ConfigUser()"))
-        self.assertLess(main.index("HandleMangetsuRendererOffer("), main.index("NewProjectContext();"))
+        self.assertLess(main.index("NewProjectContext();"), main.index("HandleMangetsuRendererOffer("))
+        self.assertLess(main.index("config::opt->Has(MangetsuRendererOfferKey)"), main.index("mangetsu::IsAvailable()"))
+        self.assertNotIn("SubtitlesProviderFactory::GetClasses()", main)
         self.assertNotIn("Mangetsu Renderer Offer Seen", read("src/libresrc/default_config.json"))
         self.assertNotIn("Mangetsu Renderer Offer Seen", read("packages/win_installer/portable/config.json"))
 

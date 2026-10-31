@@ -295,13 +295,9 @@ struct video_reload_subtitles_provider final : public cmd::Command {
 		STR_HELP("Reloads the current subtitles provider")
 
 		void operator()(agi::Context* c) override {
-		auto providers = SubtitlesProviderFactory::GetClasses();
-		if (providers.empty()) return;
-
-		auto it = find(begin(providers), end(providers), OPT_GET("Subtitle/Provider")->GetString());
-
-		OPT_SET("Subtitle/Provider")->SetString(*it);
-		c->frame->StatusTimeout(fmt_tl("Subtitles provider set to %s", *it), 5000);
+		auto const provider = OPT_GET("Subtitle/Provider")->GetString();
+		OPT_SET("Subtitle/Provider")->SetString(provider);
+		c->frame->StatusTimeout(fmt_tl("Subtitles provider set to %s", provider), 5000);
 	}
 };
 
