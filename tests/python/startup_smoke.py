@@ -46,6 +46,8 @@ def run(portable, output):
         ("PostMessageW", [W.HWND, W.UINT, W.WPARAM, W.LPARAM], W.BOOL),
         ("SendMessageTimeoutW", [W.HWND, W.UINT, W.WPARAM, W.LPARAM, W.UINT, W.UINT, C.POINTER(C.c_size_t)], W.LPARAM),
         ("IsWindowVisible", [W.HWND], W.BOOL),
+        ("GetParent", [W.HWND], W.HWND),
+        ("GetWindowRect", [W.HWND, C.POINTER(W.RECT)], W.BOOL),
     ):
         fn = getattr(user, name)
         fn.argtypes, fn.restype = args, result
@@ -102,8 +104,17 @@ def run(portable, output):
         assert len(choices) == 1, (label, choices)
         assert user.PostMessageW(frame, 0x111, choices[0][1], 0)
 
+    def rect(hwnd):
+        value = W.RECT()
+        assert user.GetWindowRect(hwnd, C.byref(value))
+        return value.left, value.top, value.right, value.bottom
+
+    def progress_control(frame):
+        return next((h for h in windows(process.pid, frame)
+                     if text(h, True).lower() == "msctls_progress32" and user.IsWindowVisible(h)), None)
+
     measurements = []
-    for scenario in ("empty", "scripts", "cancel", "Mangetsu", "libassmod", "missing"):
+    for scenario in ("empty", "success", "scripts", "cancel", "Mangetsu", "libassmod", "missing"):
         profile = output / scenario
         profile.mkdir(parents=True, exist_ok=True)
         for path in portable.iterdir():
@@ -125,7 +136,11 @@ def run(portable, output):
                                     "Include": str(profile / "automation" / "include")}},
         }
         (profile / "config.json").write_text(json.dumps(config), encoding="utf-8")
-        if scenario == "scripts":
+        if scenario in ("success", "scripts"):
+            (autoload / "000-fast.lua").write_text("aegisub.register_macro('Smoke First', '', function() end)", encoding="utf-8")
+        if scenario == "success":
+            (autoload / "slow.lua").write_text("local deadline=os.clock()+2; while os.clock()<deadline do end; aegisub.register_macro('Smoke Slow', '', function() end)", encoding="utf-8")
+        elif scenario == "scripts":
             (autoload / "a.lua").write_text("""
 local deadline = os.clock() + 2
 while os.clock() < deadline do end
@@ -154,8 +169,9 @@ aegisub.register_macro 'Smoke Moon', '', ->
             (autoload / "c.lua").write_text("aegisub.register_macro('Must not publish', '', function() end); error('expected invalid script')", encoding="utf-8")
             (autoload / "ignored.txt").write_text("error('unsupported extension')", encoding="utf-8")
         elif scenario == "cancel":
-            (autoload / "infinite.lua").write_text("while true do end", encoding="utf-8")
-        env = dict(os.environ, CI="true", AEGISUB_STARTUP_SMOKE_DIR=str(profile))
+            for index in range(4):
+                (autoload / f"infinite-{index}.lua").write_text("while true do end", encoding="utf-8")
+        env = dict(os.environ, CI="true", AEGISUB_STARTUP_SMOKE_DIR=str(profile), AEGISUB_AUTOMATION_WORKERS="4")
         started = time.monotonic()
         process = subprocess.Popen([str(profile / "aegisub.exe")], cwd=profile, env=env)
         try:
@@ -167,35 +183,49 @@ aegisub.register_macro 'Smoke Moon', '', ->
             def logs():
                 return "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in (profile / "log").glob("*.json"))
 
-            if scenario == "scripts":
-                wait(lambda: any(text(h) == "Loading Automation scripts" and user.IsWindowVisible(h) for h in windows(process.pid, frame)), "progress before completion")
+            if scenario in ("success", "scripts"):
+                gauge = wait(lambda: progress_control(frame), "progress before completion")
+                status = user.GetParent(user.GetParent(gauge))
+                assert "statusbar" in text(status, True).lower(), "Progress must belong to the status bar"
+                assert rect(gauge)[1] >= rect(status)[1] and rect(gauge)[3] <= rect(status)[3]
+                assert rect(gauge)[3] - rect(gauge)[1] < rect(status)[3] - rect(status)[1], "Thin single-row gauge"
+                wait(lambda: any(name == "Smoke First" for name, _ in entries(user.GetMenu(frame))), "first macro before slow initialization completes")
+                assert not re.search(r'"section"\s*:\s*"startup/automation"', logs()), "First macro must be usable before the batch completes"
+            if scenario == "success":
+                excluded = set(windows(process.pid, status)) | {status}
+                geometry = {h: rect(h) for h in windows(process.pid, frame) if h not in excluded and user.IsWindowVisible(h)}
+                wait(lambda: "2 / 2" in logs(), "successful completion")
+                wait(lambda: not progress_control(frame), "successful progress automatically collapses", seconds=8)
+                assert geometry == {h: rect(h) for h in geometry}, "Progress must not resize the grid or editor"
+            elif scenario == "scripts":
                 # Editing works during initialization, without moving keyboard focus.
                 edit = wait(lambda: next((h for h in windows(process.pid, frame) if "scintilla" in text(h, True).lower() and user.IsWindowVisible(h)), None), "subtitle editor")
                 length = send(edit, 2183)  # SCI_GETTEXTLENGTH
                 send(edit, 0x102, ord("x"))  # WM_CHAR; no cross-process pointer.
                 assert send(edit, 2183) == length + 1
                 send(frame, 0)
-                wait(lambda: "3 / 3" in logs(), "three scripts completed, including the invalid script")
+                wait(lambda: "4 / 4" in logs(), "four scripts completed, including the invalid script")
                 assert "failures: 1" in logs()
                 assert "unsupported extension" not in logs()
                 assert not any(name == "Must not publish" for name, _ in entries(user.GetMenu(frame)))
                 for label, marker in (("Smoke Lua", "lua-ran"), ("Smoke Moon", "moon-ran")):
                     invoke(frame, label)
                     wait(lambda: (profile / marker).exists(), label + " execution")
-                invoke(frame, "Automation...")
+                # Clicking the status strip opens the existing error/details UI.
+                user.PostMessageW(gauge, 0x202, 0, 0)  # WM_LBUTTONUP
                 manager = wait(lambda: next((h for h in windows(process.pid) if text(h) == "Automation Manager"), None), "Automation Manager")
                 rescan = wait(lambda: next((h for h in windows(process.pid, manager) if "scan Autoload Dir" in text(h)), None), "Rescan button")
                 for _ in range(3):
                     user.PostMessageW(rescan, 0xF5, 0, 0)  # BM_CLICK, repeated rescans coalesce.
                     time.sleep(0.05)
-                wait(lambda: any(text(h) == "Loading Automation scripts" and user.IsWindowVisible(h) for h in windows(process.pid, frame)), "manual progress")
+                wait(lambda: progress_control(frame), "manual progress")
                 wait(lambda: logs().count('"section" : "startup/automation"') >= 2 or len(re.findall(r'"section"\s*:\s*"startup/automation"', logs())) >= 2, "rescan completion")
                 # A completed replacement must not destroy a Lua state still running
                 # a macro in DialogProgress's nested event loop.
                 user.PostMessageW(rescan, 0xF5, 0, 0)
                 invoke(frame, "Smoke Held")
                 wait(lambda: (profile / "held-started").exists(), "held macro started")
-                wait(lambda: any("Waiting for running Automation" in text(h) for h in windows(process.pid, frame)), "publication waits for the running macro")
+                wait(lambda: 'publication deferred until Automation/export completes' in logs(), "publication waits for the running macro")
                 assert not (profile / "held-finished").exists()
                 send(frame, 0)
                 wait(lambda: (profile / "held-finished").exists(), "held macro finished")
@@ -206,7 +236,7 @@ aegisub.register_macro 'Smoke Moon', '', ->
                 # Avoid a save prompt after the intentional edit; undo via SCI_UNDO.
                 send(edit, 2176)
             elif scenario == "cancel":
-                wait(lambda: "infinite.lua" in " ".join(text(h) for h in windows(process.pid, frame)), "infinite script started")
+                wait(lambda: progress_control(frame), "four infinite initializers started")
                 send(frame, 0)
             else:
                 wait(lambda: "startup/automation" in logs(), "empty autoload completion")

@@ -38,6 +38,8 @@
 #include <libaegisub/split.h>
 
 #include <algorithm>
+#include <chrono>
+#include <boost/scope_exit.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <boost/locale/collator.hpp>
@@ -453,6 +455,8 @@ class AutomationMenu final : public wxMenu {
 	};
 
 	void Regenerate() {
+		auto start = std::chrono::steady_clock::now();
+		BOOST_SCOPE_EXIT_ALL(&) { LOG_I("startup/automation/menu") << "reconstruction_ms=" << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(); };
 		for (auto item : all_items)
 			cm->Remove(item);
 		all_items.clear();
