@@ -22,7 +22,7 @@ the warning link remains if needed. It opens Automation Manager; failed scripts 
 Show Info retain error descriptions, including directory and publication failures.
 
 Cancellation uses a Lua count hook with the JIT engine disabled during
-initialization. Global JIT mode requests are deferred until publication;
+initialization. Global JIT mode requests are deferred until initialization ends;
 function-specific requests, reported preferences and saved aliases are preserved. Clipboard, translation and non-Windows text measurements
 are marshalled to the main thread using cancellable requests. Queued requests own
 their payloads and never capture the manager or frame. Cancellation is cooperative:
@@ -46,6 +46,8 @@ The ordinary JSON log includes monotonic-clock measurements in these sections:
   shown frame (the wxWidgets Show call), and first responsive idle event.
 * `startup/renderer`: selected/fallback provider construction and separate
   asynchronous renderer/font initialization. These do not measure first video pixels.
+  Completed font timings are emitted when the provider is released, while logging
+  is still alive.
 * `startup/automation/script`: initialization duration for each attempted script.
 * `startup/automation`: completed/total, failures and total batch duration including
   scanning, UI-request waits and publication.

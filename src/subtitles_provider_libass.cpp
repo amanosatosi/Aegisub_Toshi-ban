@@ -82,6 +82,7 @@ void msg_callback(int level, const char *fmt, va_list args, void *) {
 // gets deleted before the cache finishing updating
 struct cache_thread_shared {
 	ASS_Renderer *renderer = nullptr;
+	double initialization_ms = 0;
 	std::atomic<bool> ready{false};
 	~cache_thread_shared() { if (renderer) ass_renderer_done(renderer); }
 };
@@ -154,12 +155,16 @@ LibassSubtitlesProvider::LibassSubtitlesProvider(agi::BackgroundRunner *br)
 			ass_set_fonts(ass_renderer, nullptr, "Sans", 1, nullptr, true);
 		}
 		state->renderer = ass_renderer;
+		state->initialization_ms = StartupMilliseconds(started);
 		state->ready = true;
-		LOG_I("startup/renderer") << "libass renderer/font initialization: " << StartupMilliseconds(started) << " ms";
 	});
 }
 
 LibassSubtitlesProvider::~LibassSubtitlesProvider() {
+	// The cache job can outlive the provider. Report on the owning lifetime,
+	// while application logging still exists, rather than from the cache job.
+	if (shared->ready)
+		LOG_I("startup/renderer") << "libass renderer/font initialization: " << shared->initialization_ms << " ms";
 	if (ass_track) ass_free_track(ass_track);
 }
 

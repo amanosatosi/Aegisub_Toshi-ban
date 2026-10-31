@@ -753,6 +753,7 @@ std::vector<std::string> collect_img_paths(const char *data, size_t len) {
 struct cache_thread_shared {
 	AssCompatBackend *backend = nullptr;
 	ASS_Renderer *renderer = nullptr;
+	double initialization_ms = 0;
 	std::atomic<bool> ready{false};
 	~cache_thread_shared() {
 		if (renderer && backend && backend->api.ass_renderer_done)
@@ -972,12 +973,15 @@ LibassModSubtitlesProvider::LibassModSubtitlesProvider(AssCompatBackend &backend
 			api.ass_set_fonts(ass_renderer, nullptr, "Sans", 1, nullptr, true);
 		}
 		state->renderer = ass_renderer;
+		state->initialization_ms = StartupMilliseconds(started);
 		state->ready = true;
-		LOG_I("startup/renderer") << backend.config.display_name << " renderer/font initialization: " << StartupMilliseconds(started) << " ms";
 	});
 }
 
 LibassModSubtitlesProvider::~LibassModSubtitlesProvider() {
+	// The cache job can outlive this provider and application logging.
+	if (shared->ready)
+		LOG_I("startup/renderer") << backend.config.display_name << " renderer/font initialization: " << shared->initialization_ms << " ms";
 	if (ass_track) backend.api.ass_free_track(ass_track);
 }
 

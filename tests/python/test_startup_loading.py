@@ -1,6 +1,7 @@
 """Contracts complementing the packaged Windows GUI and native Lua tests."""
 from pathlib import Path
 import unittest
+from startup_smoke import visible_main_frame
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -10,6 +11,16 @@ def read(path):
 
 
 class StartupLoading(unittest.TestCase):
+    def test_main_frame_is_not_ready_until_shown(self):
+        handles = [1, 2]
+        menus = {1: True, 2: False}
+        visible = {1: False, 2: True}
+        # The main frame has its menu but is still under construction. An
+        # unrelated visible helper window must not be selected either.
+        self.assertIsNone(visible_main_frame(handles, menus.get, visible.get))
+        visible[1] = True
+        self.assertEqual(1, visible_main_frame(handles, menus.get, visible.get))
+
     def test_startup_has_no_provider_enumeration_or_blocking_autoload_constructor(self):
         app = read("src/main.cpp")
         self.assertNotIn("SubtitlesProviderFactory::GetClasses()", app)

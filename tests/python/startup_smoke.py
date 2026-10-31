@@ -15,6 +15,12 @@ import subprocess
 import time
 
 
+def visible_main_frame(handles, get_menu, is_visible):
+    # A frame gets its menu before its constructor calls Show(). A menu alone
+    # identifies a candidate, not a window that is ready for interaction.
+    return next((h for h in handles if get_menu(h) and is_visible(h)), None)
+
+
 def run(portable, output):
     user = C.WinDLL("user32", use_last_error=True)
     callback = C.WINFUNCTYPE(W.BOOL, W.HWND, W.LPARAM)
@@ -145,7 +151,7 @@ aegisub.register_macro 'Smoke Moon', '', ->
         started = time.monotonic()
         process = subprocess.Popen([str(profile / "aegisub.exe")], cwd=profile, env=env)
         try:
-            frame = wait(lambda: next((h for h in windows(process.pid) if user.GetMenu(h)), None), "main frame")
+            frame = wait(lambda: visible_main_frame(windows(process.pid), user.GetMenu, user.IsWindowVisible), "visible main frame")
             assert user.IsWindowVisible(frame), "Main frame must be visible"
             send(frame, 0)
             visible_ms = (time.monotonic() - started) * 1000
@@ -234,6 +240,13 @@ aegisub.register_macro 'Smoke Moon', '', ->
             assert "First responsive idle event" in logs()
             if scenario == "missing":
                 assert json.loads((profile / "config.json").read_text(encoding="utf-8-sig"))["Subtitle"]["Provider"] == "Mangetsu"
+        except BaseException:
+            print(json.dumps({"scenario": scenario, "exit_code": process.poll(),
+                              "windows": [{"title": text(h), "class": text(h, True),
+                                           "visible": bool(user.IsWindowVisible(h)),
+                                           "menu": bool(user.GetMenu(h))}
+                                          for h in windows(process.pid)]}, indent=2), flush=True)
+            raise
         finally:
             if process.poll() is None:
                 process.kill()
