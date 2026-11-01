@@ -1,62 +1,30 @@
 #!/bin/sh
-set -e
+# Run from any directory. Requires Python 3 and GNU gettext (including Lua support).
+set -eu
+cd "$(dirname "$0")"
 
-maybe_append() {
-  while read -r msg; do
-    msgfile=$(printf '%s' "$msg" | cut -d'|' -f1)
-    msgline=$(printf '%s' "$msg" | cut -d'|' -f2)
-    msgid=$(printf '%s' "$msg" | cut -d'|' -f3-)
+# POTFILES is also used by Meson's built-in gettext target. Keep it current,
+# but use the commands below for the complete catalog (JSON, Lua and installer).
+"${PYTHON:-python3}" update_potfiles.py
+xgettext --directory=.. --files-from=POTFILES -o aegisub.pot --language=C++ --from-code=UTF-8 \
+  --package-name=Aegisub --package-version=Toshi-ban \
+  --sort-by-file -k_ -kSTR_MENU -kSTR_DISP -kSTR_HELP -kfmt_tl \
+  -kfmt_plural:2,3 -kwxPLURAL:1,2
 
-    if ! grep -Fq "msgid $msgid" aegisub.pot; then
-      printf "\n#: %s:%s\nmsgid %s\nmsgstr \"\"\n\n" \
-        "$msgfile" "$msgline" "$msgid" >> aegisub.pot
-    fi
-  done
-}
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+"${PYTHON:-python3}" extract_resources.py > "$tmp/resources.cpp"
+xgettext -o "$tmp/resources.pot" --omit-header --language=C++ --from-code=UTF-8 \
+  --add-location=never -k_ "$tmp/resources.cpp"
+msgcat --use-first -o "$tmp/merged.pot" aegisub.pot "$tmp/resources.pot"
+mv "$tmp/merged.pot" aegisub.pot
+find ../automation -name '*.lua' -type f | LC_ALL=C sort > "$tmp/lua-files"
+if [ -s "$tmp/lua-files" ]; then
+  xgettext --join-existing -o aegisub.pot --language=Lua --from-code=UTF-8 \
+    -ktr --files-from="$tmp/lua-files"
+fi
+xgettext --join-existing -o aegisub.pot --language=Desktop ../packages/desktop/aegisub.desktop.in.in
+xgettext --join-existing -o aegisub.pot --language=AppData ../packages/desktop/aegisub.appdata.xml.in.in
 
-find ../src ../src/command -name '*.cpp' -o -name '*.h' \
-  | xgettext --files-from=- -o - --c++ --sort-by-file \
-             -k_ -kSTR_MENU -kSTR_DISP -kSTR_HELP -kfmt_tl -kfmt_plural:2,3 -kwxT -kwxPLURAL:1,2 \
-  | sed 's/SOME DESCRIPTIVE TITLE./Aegisub 3.2/' \
-  | sed 's/YEAR/2005-2014/' \
-  | sed "s/THE PACKAGE'S COPYRIGHT HOLDER/Rodrigo Braz Monteiro, Niels Martin Hansen, Thomas Goyne et. al./" \
-  | sed 's/PACKAGE/Aegisub/' \
-  | sed 's/VERSION/3.2.0/' \
-  | sed 's/FIRST AUTHOR <EMAIL@ADDRESS>/Niels Martin Hansen <nielsm@aegisub.org>/' \
-  | sed 's/CHARSET/UTF-8/' \
-  > aegisub.pot
-
-sed '/"text"/!d;s/^.*"text" : \("[^"]\+"\).*$/default_menu.json|0|\1/' ../src/libresrc/default_menu.json \
-  | maybe_append
-
-sed '/"text"/!d;s/^.*"text" : \("[^"]\+"\).*$/default_menu.json|0|\1/' ../src/libresrc/osx/default_menu.json \
-  | maybe_append
-
-grep '"[A-Za-z ]\+" : {' -n ../src/libresrc/default_hotkey.json \
-  | sed 's/^\([0-9]\+:\).*\("[^"]\+"\).*$/default_hotkey.json|\1|\2/' \
-  | maybe_append
-
-find ../automation -name '*.lua' \
-  | LC_ALL=C sort \
-  | xargs grep 'tr"[^"]*"' -o -n \
-  | sed 's/\(.*\):\([0-9]\+\):tr\(".*"\)/\1|\2|\3/' \
-  | maybe_append
-
-xgettext ../packages/desktop/aegisub.desktop.in.in \
-  --language=Desktop --join-existing --omit-header -o aegisub.pot
-
-xgettext ../packages/desktop/aegisub.appdata.xml.in.in \
-  --language=AppData --join-existing --omit-header -o aegisub.pot
-
-grep '^_[A-Za-z0-9]*=.*' ../packages/win_installer/fragment_strings.iss.in | while read line
-do
-  printf '%s\n' "$line" \
-    | sed 's/[^=]*=\(.*\)/packages\/win_installer\/fragment_strings.iss|1|"\1"/' \
-    | maybe_append
-done
-
-for lang in $(cat LINGUAS) ; do
-  # If using gettext < 0.21, run twice to avoid reversing order of old strings
-  # ref: https://savannah.gnu.org/bugs/?58778
-  msgmerge --update --backup=none --no-fuzzy-matching --sort-by-file "$lang".po aegisub.pot
-done
+# Updating translations is intentionally separate: msgmerge --update --backup=none
+# --no-fuzzy-matching LANGUAGE.po aegisub.pot
