@@ -4,7 +4,7 @@ i18n = import('i18n')
 i18n.gettext('aegisub',
 	         args: [
 	            '-k_', '-kSTR_MENU', '-kSTR_DISP', '-kSTR_HELP',
-	            '-kfmt_tl', '-kfmt_plural:2,3', '-kwxPLURAL:1,2', '-kwxTRANSLATE', '-kmotion_message',
+	            '-kfmt_tl', '-kfmt_plural:2,3', '-kwxPLURAL:1,2', '-kwxTRANSLATE', '-kmotion_message', '-kt39_message',
 	            '--sort-by-file'
 	         ],
 	         install_dir: localedir)

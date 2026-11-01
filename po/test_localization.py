@@ -20,7 +20,9 @@ pot = (po / 'aegisub.pot').read_text(encoding='utf-8')
 for message in ('Selected line frames: %d - %d', 'Make text fullwidth', '&File', 'Motion Track',
                 'Active subtitle changed. Start a new tracking session.',
                 'Motion Revert metadata is damaged or unsupported.',
-                '%d frame-by-frame transforms; one event per subtitle'):
+                '%d frame-by-frame transforms; one event per subtitle',
+                'No confident phonetic joins identified.',
+                'OCR runtime returned JSON without a data field.'):
     assert 'msgid ' + json.dumps(message) in pot, message
 assert 'my' in (po / 'LINGUAS').read_text(encoding='utf-8').splitlines()
 installer = (root / 'packages/win_installer/fragment_translations.iss').read_text(encoding='utf-8')
@@ -35,6 +37,23 @@ with tempfile.TemporaryDirectory() as tmp:
     with catalog.open('rb') as source:
         translation = gettext.GNUTranslations(source)
     assert translation.gettext('Open Audio File') == 'အသံဖိုင်ဖွင့်ရန်'
+    for source, expected in {
+        'Actor': 'နာမည်',
+        'Undo': 'အုံဖွ စောနကလုပ်တာပျောက်စေ',
+        'Redo': 'အုံဖွ စောနကပျောက်တာပြန်ပေါ်စေ',
+        'Motion Track': 'လှုပ်ရှားမှုပုံတူကူးခြင်း',
+        'Track Motion': 'လှုပ်ရှားမှု ပုံတူကူးရန်',
+        'Save Subtitles as': 'နာမည်ပြောင်းပြီးစာဖိုင်သိမ်းရန်',
+        'Export Subtitles': 'ပုံစံပြောင်းပြီးသိမ်းရန်',
+        'Recent actors': 'အရင်ကသုံးတဲ့ နာမည်များ',
+        'Open recent audio': 'အရင်ကသုံးတဲ့အသံဖိုင်များ',
+        'Paste Lines Over': 'စာကြောင်းများ အစားထိုးကူးထည့်ရန်',
+        'Reload Audio': 'အသံဖိုင် ပြန်တင်ရန်',
+        'Reload Video': 'ဗီဒီယိုဖိုင် ပြန်တင်ရန်',
+        'Revert': 'မူလအတိုင်း ပြန်ထားရန်',
+        'Fast': 'အမြန်',
+    }.items():
+        assert translation.gettext(source) == expected, source
     assert translation.gettext('untranslated test message') == 'untranslated test message'
     assert translation.ngettext('Selection was set to one line', 'Selection was set to %u lines', 3) == 'စာကြောင်း %u ကြောင်း ရွေးထားသည်'
     # msgfmt checks flagged C formats. Also check placeholders in entries that

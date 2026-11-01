@@ -1,8 +1,21 @@
 # Burmese translation review
 
-The catalog is fully translated, but a Myanmar fansubber should review the
-entries in context before calling the interface complete. In particular,
-review these terms:
+The catalog needs a full contextual review by a Myanmar fansubber; translation
+counts and format checks do not verify natural wording. Project-owner choices:
+
+* Subtitle file: စာဖိုင်; audio file: အသံဖိုင်; video file: ဗီဒီယိုဖိုင်.
+  Subtitle lines and text are different concepts.
+* ASS Actor/Name field: နာမည်. Motion Tracking: လှုပ်ရှားမှုပုံတူကူးခြင်း;
+  Track Motion: လှုပ်ရှားမှု ပုံတူကူးရန်.
+* Plain Undo: အုံဖွ စောနကလုပ်တာပျောက်စေ; Redo:
+  အုံဖွ စောနကပျောက်တာပြန်ပေါ်စေ. Keep the playful wording deliberate;
+  do not apply it to reset, revert or removing comments.
+* Subtitle Save As: နာမည်ပြောင်းပြီးစာဖိုင်သိမ်းရန်; subtitle Export:
+  ပုံစံပြောင်းပြီးသိမ်းရန်. Other save and export operations need context.
+* Recent lists use အရင်ကသုံးတဲ့; media reload means ပြန်တင်ရန်, not play.
+  Short ongoing status messages can use နေတုန်း when context is clear.
+
+In particular, review these terms:
 
 * 39 Mode: “mora”, “attack”, “assignment”, “lane” and “handoff” in the
   timing workflow. Some are retained in English where their precise meaning
@@ -11,9 +24,11 @@ review these terms:
   “spike”, especially in messages about edited ASS motion and clip geometry.
 * Mangetsu: “stop”, “anchor”, “placement”, “bubble” and “callout”.
 
-Some fork UI still constructs messages outside gettext, including dynamic
-39 Mode guidance and OCR backend diagnostics. Audit those producers before
-describing the entire application UI as localized.
+Some fork UI still constructs messages outside gettext. In particular,
+`CompactResultReason` and its dynamic match reasons in 39 Mode, the inspector
+text, and OCR runtime debug details need further review. The catalog's other
+entries have not all received the requested contextual language review. Audit
+those areas before describing the entire application UI as localized.
 
 Check the result in the actual UI for wording, mnemonic collisions, wrapping,
 clipping, Myanmar font fallback and combining-mark shaping. The required file

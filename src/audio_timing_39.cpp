@@ -15,6 +15,7 @@
 #include "audio_controller.h"
 #include "audio_rendering_style.h"
 #include "compat.h"
+#include "format.h"
 #include "options.h"
 #include "project.h"
 #include "include/aegisub/context.h"
@@ -592,17 +593,18 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   line_title->SetLabel(to_wx(readable));
   std::string explanation=t39ui::CompactResultReason(*r,selected_lane);
   if(r->resolution==t39::ResolutionSource::UserSelected && r->GetConfidence()==t39::Confidence::Green)
-   explanation="Selected assignment resolved this line.";
+   explanation=from_wx(_("Selected assignment resolved this line."));
   if(r->resolution==t39::ResolutionSource::UserManualRepair && r->GetConfidence()==t39::Confidence::Green)
-   explanation="Mora placement resolved this line; raw attacks are unchanged.";
+   explanation=from_wx(_("Mora placement resolved this line; raw attacks are unchanged."));
   if(r->resolution==t39::ResolutionSource::UserEnglishSegmentation && r->GetConfidence()==t39::Confidence::Green)
-   explanation="English segmentation resolved this line; spelling and raw attacks are unchanged.";
+   explanation=from_wx(_("English segmentation resolved this line; spelling and raw attacks are unchanged."));
   if(r->resolution==t39::ResolutionSource::UserManualTiming && r->GetConfidence()==t39::Confidence::Green)
-   explanation="Manual timing resolved this line; raw attacks are unchanged.";
-  if(r->manual_invalidated)explanation="Previous selected assignment no longer fits the corrected taps.\n"+explanation;
+   explanation=from_wx(_("Manual timing resolved this line; raw attacks are unchanged."));
+  if(r->manual_invalidated)explanation=from_wx(_("Previous selected assignment no longer fits the corrected taps.\n"))+explanation;
   reason->SetLabel(to_wx(explanation));
   if(candidate_guidance){
-   candidate_guidance->SetLabel(to_wx(t39ui::PossibleGroupingGuidance(r->target.analysis)));
+   candidate_guidance->SetLabel(to_wx(t39ui::PossibleGroupingGuidance(r->target.analysis,
+    [](char const* text) { return from_wx(wxGetTranslation(to_wx(text))); })));
    candidate_guidance->Wrap(std::max(250,review_scroll->GetClientSize().x-24));
   }
   line_title->Wrap(std::max(250,review_scroll->GetClientSize().x-24));
@@ -625,7 +627,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
     if(i && (lane.match.confidence!=t39::Confidence::Yellow ||
        lane.match.paths[i].cost-lane.match.paths[0].cost>=t39::ScoringModel{}.ambiguity_margin))break;
     auto label=t39ui::CompactPathChoice(r->target.analysis,lane.match,i);
-    if(label.empty())label="Assignment "+std::to_string(i+1);
+    if(label.empty())label=from_wx(fmt_tl("Assignment %d", static_cast<int>(i+1)));
     if(i>=candidate_buttons.size()){
      auto option=new wxButton(review_scroll,wxID_ANY,to_wx(label));
      choice_sizer->Add(option,0,wxEXPAND|wxALL,4);candidate_buttons.push_back(option);
@@ -795,12 +797,10 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   std::string selected_reading;
   for(size_t i=used_morae;i<std::min(result.target.analysis.morae.size(),used_morae+manual_mora_count);++i)
    selected_reading+=result.target.analysis.morae[i].text;
-  std::string label=std::to_string(used_taps)+" / "+std::to_string(taps)+" attacks linked; "+
-   std::to_string(used_morae)+" / "+std::to_string(result.target.analysis.morae.size())+" morae linked\n"+
-   "Next: "+std::to_string(manual_timing_count)+" attack(s) → ["+selected_reading+"] ("+
-   std::to_string(manual_mora_count)+" morae)\n"+
-   "←/→ attacks   ↑/↓ morae   Enter link   Backspace undo";
-  manual_progress->SetLabel(to_wx(label));manual_progress->Wrap(std::max(250,review_scroll->GetClientSize().x-25));
+  auto label=fmt_tl("%d / %d attacks linked; %d / %d morae linked\nNext: %d attack(s) → [%s] (%d morae)\n←/→ attacks   ↑/↓ morae   Enter link   Backspace undo",
+   static_cast<int>(used_taps),static_cast<int>(taps),static_cast<int>(used_morae),
+   static_cast<int>(result.target.analysis.morae.size()),manual_timing_count,to_wx(selected_reading),manual_mora_count);
+  manual_progress->SetLabel(label);manual_progress->Wrap(std::max(250,review_scroll->GetClientSize().x-25));
   if(review_view){
    std::vector<t39::TimingAssignment> draft;
    std::vector<size_t> next_blocks;
@@ -954,8 +954,8 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  void UpdateOffsetDirection() {
   if(!offset_direction||!offset_spin)return;
   int value=offset_spin->GetValue();
-  offset_direction->SetLabel(to_wx(value<0?"Move taps earlier "+std::to_string(-value)+" ms":
-   value>0?"Move taps later "+std::to_string(value)+" ms":"No timing correction"));
+  offset_direction->SetLabel(value<0 ? fmt_tl("Move taps earlier %d ms", -value) :
+   value>0 ? fmt_tl("Move taps later %d ms", value) : _("No timing correction"));
  }
  void Navigate(int delta,bool problems_only) {
   if(session.Results().empty())return;
@@ -1222,7 +1222,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   for(auto& w:writes){w.event->Text=w.text;auto& l=w.result->lanes[w.result->lane];if(!l.editor.corrections.empty())c->ass->SetExtradataValue(*w.event,"39-mode-correction",t39::Inspect(w.result->target.analysis,l.capture.blocks,l.match,&l.editor));}
   c->ass->Commit(_("39 Mode session timing"),AssFile::COMMIT_DIAG_TEXT|AssFile::COMMIT_EXTRADATA);committing=false;
   for(auto& w:writes){w.result->committed=true;w.result->target.analysis.source=w.text;}
-  notice=std::to_string(writes.size())+" lines committed in one subtitle undo step";Update();Notify();
+  notice=from_wx(fmt_tl("%d lines committed in one subtitle undo step", static_cast<int>(writes.size())));Update();Notify();
  }
 public:
  explicit AudioTimingController39(agi::Context* context):c(context) {

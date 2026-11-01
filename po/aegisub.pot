@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-02 00:50+0630\n"
+"POT-Creation-Date: 2026-11-02 03:09+0630\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -221,138 +221,173 @@ msgstr ""
 msgid "Maximum + Average"
 msgstr ""
 
-#: src/audio_timing_39.cpp:259
+#: src/audio_timing_39.cpp:260
 msgid "Audio preview unavailable"
 msgstr ""
 
-#: src/audio_timing_39.cpp:261
+#: src/audio_timing_39.cpp:262
 msgid "Raw"
 msgstr ""
 
-#: src/audio_timing_39.cpp:262
+#: src/audio_timing_39.cpp:263
 msgid "Adjusted"
 msgstr ""
 
-#: src/audio_timing_39.cpp:263
+#: src/audio_timing_39.cpp:264
 msgid "Assignment"
 msgstr ""
 
-#: src/audio_timing_39.cpp:267
+#: src/audio_timing_39.cpp:268
 msgid "Line end"
 msgstr ""
 
-#: src/audio_timing_39.cpp:267
+#: src/audio_timing_39.cpp:268
 msgid "Line start"
 msgstr ""
 
-#: src/audio_timing_39.cpp:342
+#: src/audio_timing_39.cpp:343
 msgid "Hatch: sung block owned elsewhere   ·   dotted: harmless clamp"
 msgstr ""
 
-#: src/audio_timing_39.cpp:460
+#: src/audio_timing_39.cpp:461
 msgid "Select a lyric line and open audio"
 msgstr ""
 
-#: src/audio_timing_39.cpp:471
+#: src/audio_timing_39.cpp:472
 msgid ""
 "39 Mode start is outside the media; move the comment marker to a playable "
 "time"
 msgstr ""
 
-#: src/audio_timing_39.cpp:494
+#: src/audio_timing_39.cpp:495
 msgid ""
 "Playback could not start. Capture stopped; check the media/audio device."
 msgstr ""
 
-#: src/audio_timing_39.cpp:506
+#: src/audio_timing_39.cpp:507
 msgid ""
 "Subtitle edit or undo invalidated the cached targets. Toggle 39 Mode to "
 "start a new session."
 msgstr ""
 
-#: src/audio_timing_39.cpp:527
+#: src/audio_timing_39.cpp:528
 msgid "No captured lyric targets. Toggle 39 Mode to start again."
 msgstr ""
 
-#: src/audio_timing_39.cpp:540
+#: src/audio_timing_39.cpp:541
 msgid "Source event unavailable"
 msgstr ""
 
-#: src/audio_timing_39.cpp:548
+#: src/audio_timing_39.cpp:549
 msgid "No complete commit preview: "
 msgstr ""
 
-#: src/audio_timing_39.cpp:660
+#: src/audio_timing_39.cpp:596
+msgid "Selected assignment resolved this line."
+msgstr ""
+
+#: src/audio_timing_39.cpp:598
+msgid "Mora placement resolved this line; raw attacks are unchanged."
+msgstr ""
+
+#: src/audio_timing_39.cpp:600
+msgid ""
+"English segmentation resolved this line; spelling and raw attacks are "
+"unchanged."
+msgstr ""
+
+#: src/audio_timing_39.cpp:602
+msgid "Manual timing resolved this line; raw attacks are unchanged."
+msgstr ""
+
+#: src/audio_timing_39.cpp:603
+msgid "Previous selected assignment no longer fits the corrected taps.\n"
+msgstr ""
+
+#: src/audio_timing_39.cpp:630
+#, c-format
+msgid "Assignment %d"
+msgstr ""
+
+#: src/audio_timing_39.cpp:662
 msgid "Discard unapplied mora placement changes?"
 msgstr ""
 
-#: src/audio_timing_39.cpp:661
+#: src/audio_timing_39.cpp:663
 msgid "39 Mode mora placement"
 msgstr ""
 
-#: src/audio_timing_39.cpp:673
+#: src/audio_timing_39.cpp:675
 msgid "Mora placement needs at least one sung attack and readable source text."
 msgstr ""
 
-#: src/audio_timing_39.cpp:679
+#: src/audio_timing_39.cpp:681
 msgid "Mora placement is a draft until Apply placement."
 msgstr ""
 
-#: src/audio_timing_39.cpp:696
+#: src/audio_timing_39.cpp:698
 msgid "Select the sung block on the right of a movable boundary."
 msgstr ""
 
-#: src/audio_timing_39.cpp:698
+#: src/audio_timing_39.cpp:700
 msgid "Boundary moved; capture timestamps and source anchors are unchanged."
 msgstr ""
 
-#: src/audio_timing_39.cpp:704
+#: src/audio_timing_39.cpp:706
 msgid "Select the right sung block of two adjacent assignments."
 msgstr ""
 
-#: src/audio_timing_39.cpp:706
+#: src/audio_timing_39.cpp:708
 msgid "Neighboring attacks now share one source group."
 msgstr ""
 
-#: src/audio_timing_39.cpp:715
+#: src/audio_timing_39.cpp:717
 msgid "Latin cut changed; spelling and source order are unchanged."
 msgstr ""
 
-#: src/audio_timing_39.cpp:716
+#: src/audio_timing_39.cpp:718
 msgid ""
 "Choose a character boundary inside a Latin segment, or move the assignment "
 "boundary before removing a cut."
 msgstr ""
 
-#: src/audio_timing_39.cpp:736
+#: src/audio_timing_39.cpp:738
 msgid "Placement is incomplete; no source text was changed."
 msgstr ""
 
-#: src/audio_timing_39.cpp:739
+#: src/audio_timing_39.cpp:741
 msgid ""
 "Mora placement applied locally; source will change only on Commit all GREEN."
 msgstr ""
 
-#: src/audio_timing_39.cpp:750
+#: src/audio_timing_39.cpp:752
 msgid "Discard the unapplied manual timing changes?"
 msgstr ""
 
-#: src/audio_timing_39.cpp:751
+#: src/audio_timing_39.cpp:753
 msgid "39 Mode manual timing"
 msgstr ""
 
-#: src/audio_timing_39.cpp:770
+#: src/audio_timing_39.cpp:772
 msgid "Manual Toshiki timing applied; raw rhythm capture is unchanged."
 msgstr ""
 
-#: src/audio_timing_39.cpp:773
+#: src/audio_timing_39.cpp:775
 msgid "Manual timing is outside the line or has overlapping blocks."
 msgstr ""
 
-#: src/audio_timing_39.cpp:780
+#: src/audio_timing_39.cpp:782
 msgid ""
 "Manual repair needs a sung attack and a readable mora; retake or provide a "
 "reading."
+msgstr ""
+
+#: src/audio_timing_39.cpp:800
+#, c-format
+msgid ""
+"%d / %d attacks linked; %d / %d morae linked\n"
+"Next: %d attack(s) → [%s] (%d morae)\n"
+"←/→ attacks   ↑/↓ morae   Enter link   Backspace undo"
 msgstr ""
 
 #: src/audio_timing_39.cpp:842
@@ -379,16 +414,26 @@ msgstr ""
 msgid "Timing correction is available after capture, before committing lines."
 msgstr ""
 
+#: src/audio_timing_39.cpp:957
+#, c-format
+msgid "Move taps earlier %d ms"
+msgstr ""
+
+#: src/audio_timing_39.cpp:958
+#, c-format
+msgid "Move taps later %d ms"
+msgstr ""
+
+#: src/audio_timing_39.cpp:958 src/audio_timing_39.cpp:986
+msgid "No timing correction"
+msgstr ""
+
 #: src/audio_timing_39.cpp:974
 msgid "39 Mode — session results"
 msgstr ""
 
 #: src/audio_timing_39.cpp:982
 msgid "Session timing correction"
-msgstr ""
-
-#: src/audio_timing_39.cpp:986
-msgid "No timing correction"
 msgstr ""
 
 #: src/audio_timing_39.cpp:989
@@ -602,6 +647,11 @@ msgstr ""
 
 #: src/audio_timing_39.cpp:1223
 msgid "39 Mode session timing"
+msgstr ""
+
+#: src/audio_timing_39.cpp:1225
+#, c-format
+msgid "%d lines committed in one subtitle undo step"
 msgstr ""
 
 #: src/audio_timing_39.cpp:1277
@@ -7459,6 +7509,114 @@ msgstr ""
 msgid "Motion samples must be consecutive and ordered"
 msgstr ""
 
+#: src/ocr/ocr_engine.cpp:178
+msgid "PaddleOCR-json failed to load the OCR model. Missing inference.pdmodel."
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:179
+#, c-format
+msgid ""
+"PaddleOCR-json failed to load the OCR model. Missing inference.pdmodel in %s."
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:205
+msgid "PaddleOCR-json failed: "
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:208
+msgid "PaddleOCR-json failed before returning OCR JSON."
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:346
+msgid "<folder does not exist>"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:353
+msgid "<empty>"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:367
+msgid ""
+"\n"
+"\n"
+"Folder path:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:368
+msgid ""
+"\n"
+"Files present:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:369
+msgid ""
+"\n"
+"\n"
+"Active config file path:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:370
+msgid ""
+"\n"
+"Selected det_model_dir:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:371
+msgid ""
+"\n"
+"Selected cls_model_dir:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:372
+msgid ""
+"\n"
+"Selected rec_model_dir:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:373
+msgid ""
+"\n"
+"Selected dictionary path:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:381
+msgid "OCR model file is missing:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:382
+#, c-format
+msgid ""
+"\n"
+"\n"
+"PaddleOCR-json requires %s model folders to contain inference.pdmodel and "
+"inference.pdiparams."
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:384
+msgid ""
+"\n"
+"\n"
+"This folder contains the official PP-OCRv5 Paddle 3/PIR files. The bundled "
+"PaddleOCR-json runtime cannot load that model format directly; the Windows "
+"packaging step must export the PP-OCRv5 model to the legacy Paddle Inference "
+"format first."
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:395
+msgid ""
+"\n"
+"\n"
+"Missing required setting: "
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:395
+msgid "OCR model configuration is incomplete:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:416
+msgid "OCR recognition dictionary is missing:\n"
+msgstr ""
+
 #: src/ocr/ocr_engine.cpp:440
 msgid ""
 "OCR files are not installed. Reinstall Aegisub and select the OCR option to "
@@ -7479,6 +7637,54 @@ msgstr ""
 msgid ""
 "This build was configured without bundled PaddleOCR support. Build Windows "
 "artifacts with -Dpaddleocr=enabled."
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:517
+msgid "OCR runtime returned an unexpected backend: "
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:529
+msgid "OCR runtime returned Image2Text JSON without a regions field."
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:557
+msgid ""
+"OCR runtime did not return JSON.\n"
+"\n"
+"Output:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:567
+msgid ""
+"OCR runtime returned extra non-JSON text around the OCR result.\n"
+"\n"
+"Output:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:578
+msgid "OCR runtime returned JSON without a data field."
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:617
+msgid "OCR runtime returned an error without a readable message."
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:620
+msgid ""
+"OCR runtime returned malformed JSON instead of a clean Image2Text result.\n"
+"\n"
+"Output:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:623
+msgid ""
+"OCR runtime returned an invalid Image2Text result.\n"
+"\n"
+"Output:\n"
+msgstr ""
+
+#: src/ocr/ocr_engine.cpp:692
+msgid "Image file does not exist: "
 msgstr ""
 
 #: src/preferences.cpp:82 src/preferences.cpp:84 src/preferences.cpp:517
@@ -8948,6 +9154,24 @@ msgstr ""
 #: src/subtitles_provider_libass.cpp:107
 #: src/subtitles_provider_libassmod.cpp:908
 msgid "This may take several minutes"
+msgstr ""
+
+#: src/timing39_ui.h:82
+msgid "soft"
+msgstr ""
+
+#: src/timing39_ui.h:82
+msgid "strong"
+msgstr ""
+
+#: src/timing39_ui.h:84
+msgid "No confident phonetic joins identified."
+msgstr ""
+
+#: src/timing39_ui.h:85
+msgid ""
+"Rhythmic fallback (up to four morae) is considered only when needed and "
+"requires review."
 msgstr ""
 
 #: src/vcva_tag_gui.cpp:25

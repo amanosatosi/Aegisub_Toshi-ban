@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 xgettext --directory=.. --files-from=POTFILES -o aegisub.pot --language=C++ --from-code=UTF-8 \
   --package-name=Aegisub --package-version=Toshi-ban \
   --sort-by-file -k_ -kSTR_MENU -kSTR_DISP -kSTR_HELP -kfmt_tl \
-  -kfmt_plural:2,3 -kwxPLURAL:1,2 -kwxTRANSLATE -kmotion_message
+  -kfmt_plural:2,3 -kwxPLURAL:1,2 -kwxTRANSLATE -kmotion_message -kt39_message
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM

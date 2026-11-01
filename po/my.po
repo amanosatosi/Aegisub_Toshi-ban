@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Aegisub Toshi-ban\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-02 00:50+0630\n"
+"POT-Creation-Date: 2026-11-02 03:09+0630\n"
 "PO-Revision-Date: 2026-11-02 00:23+0630\n"
 "Last-Translator: Aegisub contributors\n"
 "Language-Team: none\n"
@@ -19,11 +19,11 @@ msgstr ""
 
 #: src/actor_MRU.cpp:38 src/actor_MRU.cpp:103
 msgid "Recent actors"
-msgstr "မကြာသေးမီက သုံးခဲ့သော သရုပ်ဆောင်များ"
+msgstr "အရင်ကသုံးတဲ့ နာမည်များ"
 
 #: src/actor_MRU.cpp:103
 msgid "Recent actors (empty)"
-msgstr "မကြာသေးမီက သုံးခဲ့သော သရုပ်ဆောင်များ (မရှိ)"
+msgstr "အရင်ကသုံးတဲ့ နာမည်များ (မရှိသေးပါ)"
 
 #: src/actor_MRU.cpp:105
 msgid "inactive"
@@ -190,7 +190,7 @@ msgstr "Toshiki K-Timing အလိုအလျောက်ဖြတ်ခြင�
 
 #: src/audio_karaoke.cpp:643
 msgid "Automatic Toshiki K-Timing slot cutting is enabled"
-msgstr "Toshiki K-Timing slot များကို အလိုအလျောက် ဖြတ်နေသည်"
+msgstr "Toshiki K-Timing slot များကို အလိုအလျောက်ဖြတ်ရန် ဖွင့်ထားသည်"
 
 #: src/audio_karaoke.cpp:734
 msgid "karaoke split"
@@ -203,11 +203,11 @@ msgstr "ဂျပန် kana ကို အလိုအလျောက် ခွ�
 #: src/audio_provider_bestsource.cpp:67 src/ffmpegsource_common.cpp:77
 #: src/video_provider_bestsource.cpp:116
 msgid "Indexing"
-msgstr "အညွှန်း ပြုလုပ်နေသည်"
+msgstr "အညွှန်းလုပ်နေတုန်း..."
 
 #: src/audio_provider_bestsource.cpp:68
 msgid "Indexing file... This will take a while!"
-msgstr "ဖိုင်အညွှန်း ပြုလုပ်နေသည်... ခဏစောင့်ပါ။"
+msgstr "ဖိုင်အညွှန်း လုပ်နေတုန်း... ခဏစောင့်ပါ။"
 
 #: src/audio_provider_factory.cpp:129
 msgid "Error loading audio"
@@ -221,41 +221,41 @@ msgstr "အများဆုံး"
 msgid "Maximum + Average"
 msgstr "အများဆုံး + ပျမ်းမျှ"
 
-#: src/audio_timing_39.cpp:259
+#: src/audio_timing_39.cpp:260
 msgid "Audio preview unavailable"
 msgstr "အသံအစမ်းနားထောင်၍ မရပါ"
 
-#: src/audio_timing_39.cpp:261
+#: src/audio_timing_39.cpp:262
 msgid "Raw"
 msgstr "မပြုပြင်ရသေး"
 
-#: src/audio_timing_39.cpp:262
+#: src/audio_timing_39.cpp:263
 msgid "Adjusted"
 msgstr "ညှိပြီး"
 
-#: src/audio_timing_39.cpp:263
+#: src/audio_timing_39.cpp:264
 msgid "Assignment"
 msgstr "သတ်မှတ်ချက်"
 
-#: src/audio_timing_39.cpp:267
+#: src/audio_timing_39.cpp:268
 msgid "Line end"
 msgstr "စာကြောင်းအဆုံး"
 
-#: src/audio_timing_39.cpp:267
+#: src/audio_timing_39.cpp:268
 msgid "Line start"
 msgstr "စာကြောင်းအစ"
 
-#: src/audio_timing_39.cpp:342
+#: src/audio_timing_39.cpp:343
 msgid "Hatch: sung block owned elsewhere   ·   dotted: harmless clamp"
 msgstr ""
 "မျဉ်းစောင်း: အခြားနေရာက သီဆို block   ·   အစက်: ထိခိုက်မှုမရှိသော "
 "ကန့်သတ်ချက်"
 
-#: src/audio_timing_39.cpp:460
+#: src/audio_timing_39.cpp:461
 msgid "Select a lyric line and open audio"
 msgstr "သီချင်းစာသားကြောင်းတစ်ကြောင်း ရွေးပြီး အသံဖိုင်ဖွင့်ပါ"
 
-#: src/audio_timing_39.cpp:471
+#: src/audio_timing_39.cpp:472
 msgid ""
 "39 Mode start is outside the media; move the comment marker to a playable "
 "time"
@@ -263,12 +263,12 @@ msgstr ""
 "39 Mode စတင်ချိန်သည် မီဒီယာအပြင်ဘက် ရောက်နေသည်။ မှတ်ချက် marker ကို "
 "ဖွင့်နိုင်သော အချိန်သို့ ရွှေ့ပါ"
 
-#: src/audio_timing_39.cpp:494
+#: src/audio_timing_39.cpp:495
 msgid ""
 "Playback could not start. Capture stopped; check the media/audio device."
 msgstr "ဖွင့်၍ မရပါ။ မှတ်တမ်းတင်မှု ရပ်သွားသည်။ မီဒီယာ/အသံ device ကို စစ်ပါ။"
 
-#: src/audio_timing_39.cpp:506
+#: src/audio_timing_39.cpp:507
 msgid ""
 "Subtitle edit or undo invalidated the cached targets. Toggle 39 Mode to "
 "start a new session."
@@ -276,63 +276,95 @@ msgstr ""
 "စာတန်းပြင်ဆင်မှု သို့မဟုတ် Undo ကြောင့် သိမ်းထားသော target များ မမှန်တော့ပါ။"
 " Session အသစ်စရန် 39 Mode ကို ပြန်ဖွင့်ပါ။"
 
-#: src/audio_timing_39.cpp:527
+#: src/audio_timing_39.cpp:528
 msgid "No captured lyric targets. Toggle 39 Mode to start again."
 msgstr ""
 "မှတ်တမ်းတင်ထားသော သီချင်းစာသား target မရှိပါ။ ပြန်စရန် 39 Mode ကို "
 "ပြန်ဖွင့်ပါ။"
 
-#: src/audio_timing_39.cpp:540
+#: src/audio_timing_39.cpp:541
 msgid "Source event unavailable"
 msgstr "မူရင်း event မရှိပါ"
 
-#: src/audio_timing_39.cpp:548
+#: src/audio_timing_39.cpp:549
 msgid "No complete commit preview: "
 msgstr "အတည်ပြုမည့် အစမ်းမြင်ကွင်း မပြည့်စုံပါ: "
 
-#: src/audio_timing_39.cpp:660
+#: src/audio_timing_39.cpp:596
+msgid "Selected assignment resolved this line."
+msgstr "ရွေးထားတာနဲ့ ဒီစာကြောင်း အဆင်ပြေပါပြီ။"
+
+#: src/audio_timing_39.cpp:598
+msgid "Mora placement resolved this line; raw attacks are unchanged."
+msgstr ""
+"Mora နေရာချပြီး ဒီစာကြောင်း အဆင်ပြေပါပြီ။ မူရင်းအသံအစမှတ်တွေ မပြောင်းပါ။"
+
+#: src/audio_timing_39.cpp:600
+msgid ""
+"English segmentation resolved this line; spelling and raw attacks are "
+"unchanged."
+msgstr ""
+"အင်္ဂလိပ်စာ ခွဲပြီး ဒီစာကြောင်း အဆင်ပြေပါပြီ။ စာလုံးပေါင်းနဲ့ "
+"မူရင်းအသံအစမှတ်တွေ မပြောင်းပါ။"
+
+#: src/audio_timing_39.cpp:602
+msgid "Manual timing resolved this line; raw attacks are unchanged."
+msgstr ""
+"အချိန်ကိုယ်တိုင်ညှိပြီး ဒီစာကြောင်း အဆင်ပြေပါပြီ။ မူရင်းအသံအစမှတ်တွေ "
+"မပြောင်းပါ။"
+
+#: src/audio_timing_39.cpp:603
+msgid "Previous selected assignment no longer fits the corrected taps.\n"
+msgstr "အရင်ရွေးထားတာက ပြင်ထားတဲ့ tap တွေနဲ့ မကိုက်တော့ပါ။\n"
+
+#: src/audio_timing_39.cpp:630
+#, c-format
+msgid "Assignment %d"
+msgstr "သတ်မှတ်ချက် %d"
+
+#: src/audio_timing_39.cpp:662
 msgid "Discard unapplied mora placement changes?"
 msgstr "အသုံးမပြုရသေးသော mora နေရာပြောင်းလဲမှုများကို ပယ်ဖျက်မလား။"
 
-#: src/audio_timing_39.cpp:661
+#: src/audio_timing_39.cpp:663
 msgid "39 Mode mora placement"
 msgstr "39 Mode mora နေရာချခြင်း"
 
-#: src/audio_timing_39.cpp:673
+#: src/audio_timing_39.cpp:675
 msgid ""
 "Mora placement needs at least one sung attack and readable source text."
 msgstr ""
 "Mora နေရာချရန် သီဆိုမှုအစ အနည်းဆုံးတစ်ခုနှင့် ဖတ်နိုင်သော မူရင်းစာသား "
 "လိုအပ်သည်။"
 
-#: src/audio_timing_39.cpp:679
+#: src/audio_timing_39.cpp:681
 msgid "Mora placement is a draft until Apply placement."
 msgstr "နေရာချမှု အသုံးမပြုမချင်း mora နေရာချမှုသည် မူကြမ်းသာဖြစ်သည်။"
 
-#: src/audio_timing_39.cpp:696
+#: src/audio_timing_39.cpp:698
 msgid "Select the sung block on the right of a movable boundary."
 msgstr "ရွှေ့နိုင်သော နယ်နိမိတ်၏ ညာဘက်ရှိ သီဆိုထားသည့် block ကို ရွေးပါ။"
 
-#: src/audio_timing_39.cpp:698
+#: src/audio_timing_39.cpp:700
 msgid "Boundary moved; capture timestamps and source anchors are unchanged."
 msgstr ""
 "နယ်နိမိတ် ရွှေ့ပြီးပါပြီ။ မှတ်တမ်းတင်ချိန်များနှင့် မူရင်း anchor များ "
 "မပြောင်းပါ။"
 
-#: src/audio_timing_39.cpp:704
+#: src/audio_timing_39.cpp:706
 msgid "Select the right sung block of two adjacent assignments."
 msgstr "ကပ်လျက် သတ်မှတ်ချက်နှစ်ခုအနက် ညာဘက်ရှိ သီဆိုထားသည့် block ကို ရွေးပါ။"
 
-#: src/audio_timing_39.cpp:706
+#: src/audio_timing_39.cpp:708
 msgid "Neighboring attacks now share one source group."
 msgstr "ကပ်လျက် အသံစတင်ချက်များသည် ယခု မူရင်းအုပ်စုတစ်ခုတည်းကို သုံးသည်။"
 
-#: src/audio_timing_39.cpp:715
+#: src/audio_timing_39.cpp:717
 msgid "Latin cut changed; spelling and source order are unchanged."
 msgstr ""
 "Latin စာဖြတ်ရာ ပြောင်းသွားသည်။ စာလုံးပေါင်းနှင့် မူရင်းအစီအစဉ် မပြောင်းပါ။"
 
-#: src/audio_timing_39.cpp:716
+#: src/audio_timing_39.cpp:718
 msgid ""
 "Choose a character boundary inside a Latin segment, or move the assignment "
 "boundary before removing a cut."
@@ -340,44 +372,55 @@ msgstr ""
 "Latin စာပိုင်းအတွင်း အက္ခရာနယ်နိမိတ်ကို ရွေးပါ၊ သို့မဟုတ် အဖြတ်မဖယ်မီ "
 "သတ်မှတ်ချက်နယ်နိမိတ်ကို ရွှေ့ပါ။"
 
-#: src/audio_timing_39.cpp:736
+#: src/audio_timing_39.cpp:738
 msgid "Placement is incomplete; no source text was changed."
 msgstr "နေရာချခြင်း မပြီးသေးပါ။ မူရင်းစာသားကို မပြောင်းထားပါ။"
 
-#: src/audio_timing_39.cpp:739
+#: src/audio_timing_39.cpp:741
 msgid ""
 "Mora placement applied locally; source will change only on Commit all GREEN."
 msgstr ""
 "Mora နေရာချမှုကို ယာယီအသုံးပြုပြီးပါပြီ။ အစိမ်းရောင်အားလုံး အတည်ပြုမှသာ "
 "မူရင်းပြောင်းမည်။"
 
-#: src/audio_timing_39.cpp:750
+#: src/audio_timing_39.cpp:752
 msgid "Discard the unapplied manual timing changes?"
 msgstr "အသုံးမပြုရသေးသော ကိုယ်တိုင်ညှိထားသည့် အချိန်များကို ပယ်ဖျက်မလား။"
 
-#: src/audio_timing_39.cpp:751
+#: src/audio_timing_39.cpp:753
 msgid "39 Mode manual timing"
 msgstr "39 Mode အချိန်ကိုယ်တိုင်ညှိခြင်း"
 
-#: src/audio_timing_39.cpp:770
+#: src/audio_timing_39.cpp:772
 msgid "Manual Toshiki timing applied; raw rhythm capture is unchanged."
 msgstr ""
 "ကိုယ်တိုင်ညှိထားသော Toshiki အချိန်ကို အသုံးပြုပြီးပါပြီ။ "
 "မူရင်းရစ်သမ်မှတ်တမ်း မပြောင်းပါ။"
 
-#: src/audio_timing_39.cpp:773
+#: src/audio_timing_39.cpp:775
 msgid "Manual timing is outside the line or has overlapping blocks."
 msgstr ""
 "ကိုယ်တိုင်ညှိထားသော အချိန်သည် စာကြောင်းအပြင်ဘက် ရောက်နေသည် သို့မဟုတ် block "
 "များ ထပ်နေသည်။"
 
-#: src/audio_timing_39.cpp:780
+#: src/audio_timing_39.cpp:782
 msgid ""
 "Manual repair needs a sung attack and a readable mora; retake or provide a "
 "reading."
 msgstr ""
 "ကိုယ်တိုင်ပြင်ရန် သီဆိုမှုအစနှင့် ဖတ်နိုင်သော mora လိုအပ်သည်။ "
 "ပြန်မှတ်တမ်းတင်ပါ သို့မဟုတ် ဖတ်ပုံထည့်ပါ။"
+
+#: src/audio_timing_39.cpp:800
+#, c-format
+msgid ""
+"%d / %d attacks linked; %d / %d morae linked\n"
+"Next: %d attack(s) → [%s] (%d morae)\n"
+"←/→ attacks   ↑/↓ morae   Enter link   Backspace undo"
+msgstr ""
+"အသံအစ %d / %d ချိတ်ပြီး၊ mora %d / %d ချိတ်ပြီး\n"
+"နောက်တစ်ခု: အသံအစ %d → [%s] (mora %d)\n"
+"←/→ အသံအစ   ↑/↓ mora   Enter ချိတ်ရန်   Backspace ချိတ်ဆက်မှုဖြေရန်"
 
 #: src/audio_timing_39.cpp:842
 msgid "Mora placement resolved; raw capture unchanged."
@@ -405,6 +448,20 @@ msgstr ""
 "အချိန်ပြင်ဆင်မှုကို မှတ်တမ်းတင်ပြီးနောက်၊ စာကြောင်းများ အတည်မပြုမီ "
 "အသုံးပြုနိုင်သည်။"
 
+#: src/audio_timing_39.cpp:957
+#, c-format
+msgid "Move taps earlier %d ms"
+msgstr "Tap တွေကို %d ms စောစေရန်"
+
+#: src/audio_timing_39.cpp:958
+#, c-format
+msgid "Move taps later %d ms"
+msgstr "Tap တွေကို %d ms နောက်ကျစေရန်"
+
+#: src/audio_timing_39.cpp:958 src/audio_timing_39.cpp:986
+msgid "No timing correction"
+msgstr "အချိန်မပြင်ဆင်ရန်"
+
 #: src/audio_timing_39.cpp:974
 msgid "39 Mode — session results"
 msgstr "39 Mode — session ရလဒ်များ"
@@ -412,10 +469,6 @@ msgstr "39 Mode — session ရလဒ်များ"
 #: src/audio_timing_39.cpp:982
 msgid "Session timing correction"
 msgstr "Session အချိန်ပြင်ဆင်ခြင်း"
-
-#: src/audio_timing_39.cpp:986
-msgid "No timing correction"
-msgstr "အချိန်မပြင်ဆင်ရန်"
 
 #: src/audio_timing_39.cpp:989
 msgid "Negative = earlier; positive = later. Raw capture is unchanged."
@@ -453,7 +506,7 @@ msgstr "ပတ်ဝန်းကျင်အသံ ဖွင့်ရန်"
 #: src/audio_timing_39.cpp:1014 src/dialog_motion_track.cpp:1450
 #: src/preferences.cpp:590
 msgid "Stop"
-msgstr "ရပ်မည်"
+msgstr "ရပ်ရန်"
 
 #: src/audio_timing_39.cpp:1016
 msgid ""
@@ -497,12 +550,12 @@ msgstr "ရှေ့ရှိ အဖြတ်ကို ဖယ်ရန်"
 #: src/audio_timing_39.cpp:1048 src/audio_timing_39.cpp:1075
 #: src/audio_timing_39.cpp:1181
 msgid "Undo"
-msgstr "ပြန်ဖြေမည်"
+msgstr "အုံဖွ စောနကလုပ်တာပျောက်စေ"
 
 #: src/audio_timing_39.cpp:1049 src/audio_timing_39.cpp:1076
 #: src/audio_timing_39.cpp:1181
 msgid "Redo"
-msgstr "ပြန်လုပ်မည်"
+msgstr "အုံဖွ စောနကပျောက်တာပြန်ပေါ်စေ"
 
 #: src/audio_timing_39.cpp:1050
 msgid "Reset draft"
@@ -525,7 +578,7 @@ msgstr "နောက်တစ်ခုနှင့် ချိတ်ရန်"
 
 #: src/audio_timing_39.cpp:1062
 msgid "Undo link"
-msgstr "ချိတ်ဆက်မှု ပြန်ဖြေရန်"
+msgstr "ချိတ်ဆက်မှု ဖြေရန်"
 
 #: src/audio_timing_39.cpp:1070
 msgid ""
@@ -636,9 +689,15 @@ msgstr "အတည်ပြုနိုင်သော စာကြောင်�
 msgid "39 Mode session timing"
 msgstr "39 Mode session အချိန်ညှိခြင်း"
 
+#: src/audio_timing_39.cpp:1225
+#, c-format
+msgid "%d lines committed in one subtitle undo step"
+msgstr ""
+"စာကြောင်း %d ကြောင်း အတည်ပြုပြီးပါပြီ။ တစ်ကြိမ်တည်း ပြန်ဖြေနိုင်ပါတယ်။"
+
 #: src/audio_timing_39.cpp:1277
 msgid "39 Mode • preparing playback • F/J primary • D/K secondary"
-msgstr "39 Mode • ဖွင့်ရန် ပြင်ဆင်နေသည် • F/J ပင်မ • D/K ဒုတိယ"
+msgstr "39 Mode • ဖွင့်ရန် ပြင်နေတုန်း... • F/J ပင်မ • D/K ဒုတိယ"
 
 #: src/audio_timing_39.cpp:1279
 msgid "39 Mode • F/J primary • D/K secondary • Pause/stop to review"
@@ -686,7 +745,7 @@ msgstr ""
 
 #: src/auto4_base.cpp:619
 msgid "Waiting for running Automation or export dialog"
-msgstr "လုပ်ဆောင်နေသော Automation သို့မဟုတ် export dialog ကို စောင့်နေသည်"
+msgstr "Automation သို့မဟုတ် export ပြီးတာကို စောင့်နေတုန်း..."
 
 #: src/auto4_base.cpp:683 src/auto4_base.cpp:686 src/auto4_base.cpp:755
 #: src/dialog_automation.cpp:249 src/dialog_automation.cpp:252
@@ -858,7 +917,7 @@ msgstr "နောက်မှ"
 
 #: src/command/app.cpp:171 src/preferences.cpp:1264
 msgid "Restart Now"
-msgstr "ယခု ပြန်ဖွင့်မည်"
+msgstr "အခုပြန်ဖွင့်ရန်"
 
 #: src/command/app.cpp:181
 msgid "&Log window"
@@ -957,11 +1016,11 @@ msgstr "ဖွင့်ထားသော document အားလုံးကိ�
 
 #: src/command/audio.cpp:66
 msgid "&Close Audio"
-msgstr "အသံပိတ်မည်(&C)"
+msgstr "အသံပိတ်ရန်(&C)"
 
 #: src/command/audio.cpp:67
 msgid "Close Audio"
-msgstr "အသံပိတ်မည်"
+msgstr "အသံပိတ်ရန်"
 
 #: src/command/audio.cpp:68
 msgid "Close the currently open audio file"
@@ -1005,11 +1064,11 @@ msgstr "အမှားစစ်ဆေးရန် မိနစ် ၁၅၀ က
 
 #: src/command/audio.cpp:117
 msgid "Open Audio from &Video"
-msgstr "ဗီဒီယိုမှ အသံဖွင့်မည်(&V)"
+msgstr "ဗီဒီယိုမှ အသံဖွင့်ရန်(&V)"
 
 #: src/command/audio.cpp:118
 msgid "Open Audio from Video"
-msgstr "ဗီဒီယိုမှ အသံဖွင့်မည်"
+msgstr "ဗီဒီယိုမှ အသံဖွင့်ရန်"
 
 #: src/command/audio.cpp:119
 msgid "Open the audio from the current video file"
@@ -1017,11 +1076,11 @@ msgstr "လက်ရှိဗီဒီယိုဖိုင်မှ အသံ�
 
 #: src/command/audio.cpp:133 src/command/audio.cpp:134
 msgid "Reload Audio"
-msgstr "အသံ ပြန်ဖွင့်ရန်"
+msgstr "အသံဖိုင် ပြန်တင်ရန်"
 
 #: src/command/audio.cpp:135
 msgid "Reload the current audio file"
-msgstr "လက်ရှိအသံဖိုင် ပြန်ဖွင့်ရန်"
+msgstr "လက်ရှိအသံဖိုင်ကို ပြန်တင်ရန်"
 
 #: src/command/audio.cpp:144
 msgid "&Spectrum Display"
@@ -1248,11 +1307,11 @@ msgstr "Toshiki K-Timing အလိုအလျောက်ဖြတ်ခြင�
 
 #: src/command/automation.cpp:48
 msgid "&Reload Automation scripts"
-msgstr "Automation script များ ပြန်ဖွင့်မည်(&R)"
+msgstr "Automation script များ ပြန်တင်ရန်(&R)"
 
 #: src/command/automation.cpp:49
 msgid "Reload Automation scripts"
-msgstr "Automation script များ ပြန်ဖွင့်မည်"
+msgstr "Automation script များ ပြန်တင်ရန်"
 
 #: src/command/automation.cpp:50
 msgid "Reload all Automation scripts and rescan the autoload folder"
@@ -1261,7 +1320,7 @@ msgstr ""
 
 #: src/command/automation.cpp:55
 msgid "Reloading all Automation scripts"
-msgstr "Automation script အားလုံး ပြန်ဖွင့်နေသည်"
+msgstr "Automation script အားလုံး ပြန်တင်နေတုန်း..."
 
 #: src/command/automation.cpp:61
 msgid "R&eload autoload Automation scripts"
@@ -1277,7 +1336,7 @@ msgstr "Automation autoload ဖိုလ်ဒါကို ပြန်စစ်
 
 #: src/command/automation.cpp:67
 msgid "Reloading autoload Automation scripts"
-msgstr "Autoload Automation script များ ပြန်ဖွင့်နေသည်"
+msgstr "Autoload Automation script တွေ ပြန်တင်နေတုန်း..."
 
 #: src/command/automation.cpp:74 src/command/automation.cpp:86
 msgid "&Automation..."
@@ -1540,11 +1599,11 @@ msgstr "စာကြောင်းများ ဖျက်ခြင်း"
 
 #: src/command/edit.cpp:2781 src/command/edit.cpp:2782
 msgid "Comment/Uncomment Lines"
-msgstr "စာကြောင်းများကို မှတ်ချက်အဖြစ် ပြောင်းရန်/ပြန်ဖြေရန်"
+msgstr "စာကြောင်းများ၏ Comment ဖွင့်/ပိတ်ရန်"
 
 #: src/command/edit.cpp:2783
 msgid "Toggle comment state for selected lines"
-msgstr "ရွေးထားသော စာကြောင်းများ၏ မှတ်ချက်အခြေအနေ ပြောင်းရန်"
+msgstr "ရွေးထားသော စာကြောင်းများ၏ Comment ဖွင့်/ပိတ်ရန်"
 
 #: src/command/edit.cpp:2808
 msgid "toggle comment"
@@ -1714,15 +1773,15 @@ msgstr "စာတန်းများ ကူးထည့်ရန်"
 
 #: src/command/edit.cpp:3270
 msgid "Paste Lines &Over..."
-msgstr "စာကြောင်းများ အပေါ်ထပ်ကူးထည့်ရန်(&O)..."
+msgstr "စာကြောင်းများ အစားထိုးကူးထည့်ရန်(&O)..."
 
 #: src/command/edit.cpp:3271
 msgid "Paste Lines Over"
-msgstr "စာကြောင်းများ အပေါ်ထပ်ကူးထည့်ရန်"
+msgstr "စာကြောင်းများ အစားထိုးကူးထည့်ရန်"
 
 #: src/command/edit.cpp:3272
 msgid "Paste subtitles over others"
-msgstr "အခြားစာတန်းများအပေါ် ထပ်ကူးထည့်ရန်"
+msgstr "ရွေးထားသော စာကြောင်းများမှာ ရွေးထားသည့် ကွက်တွေကို အစားထိုးကူးထည့်ရန်"
 
 #: src/command/edit.cpp:3355
 msgid "Recom&bine Lines"
@@ -1792,7 +1851,7 @@ msgstr ""
 
 #: src/command/edit.cpp:3546
 msgid "Redo last undone action"
-msgstr "ပြန်ဖြေထားသော နောက်ဆုံးလုပ်ဆောင်ချက်ကို ပြန်လုပ်ရန်"
+msgstr "အုံဖွ စောနကပျောက်တာပြန်ပေါ်စေ"
 
 #: src/command/edit.cpp:3551
 msgid "Nothing to &redo"
@@ -1801,7 +1860,7 @@ msgstr "ပြန်လုပ်စရာ မရှိပါ(&R)"
 #: src/command/edit.cpp:3552
 #, c-format
 msgid "&Redo %s"
-msgstr "%s ပြန်လုပ်ရန်(&R)"
+msgstr "အုံဖွ %s ပြန်ပေါ်စေ(&R)"
 
 #: src/command/edit.cpp:3556
 msgid "Nothing to redo"
@@ -1810,11 +1869,11 @@ msgstr "ပြန်လုပ်စရာ မရှိပါ"
 #: src/command/edit.cpp:3557
 #, c-format
 msgid "Redo %s"
-msgstr "%s ပြန်လုပ်ရန်"
+msgstr "အုံဖွ %s ပြန်ပေါ်စေ"
 
 #: src/command/edit.cpp:3572
 msgid "Undo last action"
-msgstr "နောက်ဆုံးလုပ်ဆောင်ချက်ကို ပြန်ဖြေရန်"
+msgstr "အုံဖွ စောနကလုပ်တာပျောက်စေ"
 
 #: src/command/edit.cpp:3577
 msgid "Nothing to &undo"
@@ -1823,7 +1882,7 @@ msgstr "ပြန်ဖြေစရာ မရှိပါ(&U)"
 #: src/command/edit.cpp:3578
 #, c-format
 msgid "&Undo %s"
-msgstr "%s ပြန်ဖြေရန်(&U)"
+msgstr "အုံဖွ %s လုပ်ထားတာ ပျောက်စေ(&U)"
 
 #: src/command/edit.cpp:3582
 msgid "Nothing to undo"
@@ -1832,12 +1891,12 @@ msgstr "ပြန်ဖြေစရာ မရှိပါ"
 #: src/command/edit.cpp:3583
 #, c-format
 msgid "Undo %s"
-msgstr "%s ပြန်ဖြေရန်"
+msgstr "အုံဖွ %s လုပ်ထားတာ ပျောက်စေ"
 
 #: src/command/edit.cpp:3597 src/command/edit.cpp:3598
 #: src/dialog_motion_track.cpp:1129
 msgid "Revert"
-msgstr "မူလသို့ ပြန်ပြောင်းမည်"
+msgstr "မူလအတိုင်း ပြန်ထားရန်"
 
 #: src/command/edit.cpp:3599
 msgid ""
@@ -1853,7 +1912,7 @@ msgstr "စာကြောင်း မူလအတိုင်း ပြန်�
 #: src/dialog_mangetsu_gradient.cpp:691 src/dialog_motion_track.cpp:1155
 #: src/preferences.cpp:590
 msgid "Clear"
-msgstr "ရှင်းမည်"
+msgstr "ရှင်းလင်းရန်"
 
 #: src/command/edit.cpp:3612
 msgid "Clear the current line's text"
@@ -1914,15 +1973,15 @@ msgstr "ရှေ့စာကြောင်းသို့ သွားရန�
 
 #: src/command/grid.cpp:102 src/command/grid.cpp:122
 msgid "&Actor Name"
-msgstr "သရုပ်ဆောင်အမည်(&A)"
+msgstr "နာမည်(&A)"
 
 #: src/command/grid.cpp:103 src/command/grid.cpp:123
 msgid "Actor Name"
-msgstr "သရုပ်ဆောင်အမည်"
+msgstr "နာမည်"
 
 #: src/command/grid.cpp:104
 msgid "Sort all subtitles by their actor names"
-msgstr "စာတန်းအားလုံးကို သရုပ်ဆောင်အမည်အလိုက် စီရန်"
+msgstr "စာတန်းအားလုံးကို နာမည်အလိုက် စီရန်"
 
 #: src/command/grid.cpp:108 src/command/grid.cpp:128 src/command/grid.cpp:140
 #: src/command/grid.cpp:152 src/command/grid.cpp:164 src/command/grid.cpp:176
@@ -1935,7 +1994,7 @@ msgstr "စီခြင်း"
 
 #: src/command/grid.cpp:124
 msgid "Sort selected subtitles by their actor names"
-msgstr "ရွေးထားသော စာတန်းများကို သရုပ်ဆောင်အမည်အလိုက် စီရန်"
+msgstr "ရွေးထားသော စာတန်းများကို နာမည်အလိုက် စီရန်"
 
 #: src/command/grid.cpp:134 src/command/grid.cpp:146
 #: src/dialog_search_replace.cpp:88
@@ -2315,27 +2374,27 @@ msgstr "Keyframe ဖိုင် သိမ်းရန်"
 #: src/command/recent.cpp:90 src/command/recent.cpp:91
 #: src/command/recent.cpp:101 src/command/recent.cpp:102
 msgid "Recent"
-msgstr "မကြာသေးမီက"
+msgstr "အရင်ကသုံးတဲ့အရာများ"
 
 #: src/command/recent.cpp:54
 msgid "Open recent audio"
-msgstr "မကြာသေးမီက အသံဖိုင်ဖွင့်ရန်"
+msgstr "အရင်ကသုံးတဲ့အသံဖိုင်များ"
 
 #: src/command/recent.cpp:65
 msgid "Open recent keyframes"
-msgstr "မကြာသေးမီက keyframe ဖွင့်ရန်"
+msgstr "အရင်ကသုံးတဲ့ keyframe ဖိုင်များ"
 
 #: src/command/recent.cpp:76
 msgid "Open recent subtitles"
-msgstr "မကြာသေးမီက စာဖိုင်ဖွင့်ရန်"
+msgstr "အရင်ကသုံးတဲ့စာဖိုင်များ"
 
 #: src/command/recent.cpp:92
 msgid "Open recent timecodes"
-msgstr "မကြာသေးမီက timecode ဖွင့်ရန်"
+msgstr "အရင်ကသုံးတဲ့ timecode ဖိုင်များ"
 
 #: src/command/recent.cpp:103
 msgid "Open recent videos"
-msgstr "မကြာသေးမီက ဗီဒီယိုဖိုင်ဖွင့်ရန်"
+msgstr "အရင်ကသုံးတဲ့ဗီဒီယိုဖိုင်များ"
 
 #: src/command/subtitle.cpp:163
 msgid "set alignment"
@@ -2364,11 +2423,11 @@ msgstr "ပူးတွဲဖိုင် စီမံခန့်ခွဲရ�
 
 #: src/command/subtitle.cpp:213
 msgid "&Find..."
-msgstr "ရှာမည်(&F)..."
+msgstr "ရှာရန်(&F)..."
 
 #: src/command/subtitle.cpp:214 src/dialog_search_replace.cpp:48
 msgid "Find"
-msgstr "ရှာမည်"
+msgstr "ရှာရန်"
 
 #: src/command/subtitle.cpp:215
 msgid "Search for text in the subtitles"
@@ -2376,11 +2435,11 @@ msgstr "စာတန်းများတွင် စာသားရှာရ�
 
 #: src/command/subtitle.cpp:226
 msgid "Find &Next"
-msgstr "နောက်တစ်ခု ရှာမည်(&N)"
+msgstr "နောက်တစ်ခု ရှာရန်(&N)"
 
 #: src/command/subtitle.cpp:227
 msgid "Find Next"
-msgstr "နောက်တစ်ခု ရှာမည်"
+msgstr "နောက်တစ်ခု ရှာရန်"
 
 #: src/command/subtitle.cpp:228
 msgid "Find next match of last search"
@@ -2444,7 +2503,7 @@ msgstr "စာဖိုင်အသစ်"
 #: src/command/subtitle.cpp:378 src/dialog_motion_track.cpp:1157
 #: src/dialog_progress.cpp:195 src/dialog_style_manager.cpp:318
 msgid "Close"
-msgstr "ပိတ်မည်"
+msgstr "ပိတ်ရန်"
 
 #: src/command/subtitle.cpp:388
 msgid "&Open Subtitles..."
@@ -2581,24 +2640,24 @@ msgstr "လက်ရှိစာဖိုင်သိမ်းရန်"
 
 #: src/command/subtitle.cpp:555
 msgid "Save Subtitles &as..."
-msgstr "စာဖိုင် အမည်ပြောင်းသိမ်းမည်(&A)..."
+msgstr "နာမည်ပြောင်းပြီးစာဖိုင်သိမ်းရန်(&A)..."
 
 #: src/command/subtitle.cpp:556
 msgid "Save Subtitles as"
-msgstr "စာဖိုင် အမည်ပြောင်းသိမ်းမည်"
+msgstr "နာမည်ပြောင်းပြီးစာဖိုင်သိမ်းရန်"
 
 #: src/command/subtitle.cpp:557
 msgid "Save subtitles with another name"
-msgstr "စာဖိုင်ကို အခြားအမည်ဖြင့် သိမ်းရန်"
+msgstr "နာမည်ပြောင်းပြီးစာဖိုင်သိမ်းရန်"
 
 #: src/command/subtitle.cpp:566 src/dialog_export.cpp:126
 #: src/dialog_selected_choices.cpp:26 src/subs_edit_ctrl.cpp:529
 msgid "Select &All"
-msgstr "အားလုံး ရွေးမည်(&A)"
+msgstr "အားလုံးရွေးရန်(&A)"
 
 #: src/command/subtitle.cpp:567
 msgid "Select All"
-msgstr "အားလုံး ရွေးမည်"
+msgstr "အားလုံးရွေးရန်"
 
 #: src/command/subtitle.cpp:568
 msgid "Select all dialogue lines"
@@ -2880,11 +2939,11 @@ msgstr "ASSDraw3.exe ကို ဖွင့်၍ မရပါ။"
 
 #: src/command/tool.cpp:91
 msgid "&Export Subtitles..."
-msgstr "စာတန်းများ Export လုပ်ရန်(&E)..."
+msgstr "ပုံစံပြောင်းပြီးသိမ်းရန်(&E)..."
 
 #: src/command/tool.cpp:92
 msgid "Export Subtitles"
-msgstr "စာတန်းများ Export လုပ်ရန်"
+msgstr "ပုံစံပြောင်းပြီးသိမ်းရန်"
 
 #: src/command/tool.cpp:93
 msgid ""
@@ -2906,11 +2965,11 @@ msgstr "ဖောင့်စုဆောင်းသည့်ကိရိယာ
 
 #: src/command/tool.cpp:116
 msgid "S&elect Lines..."
-msgstr "စာကြောင်းများ ရွေးမည်(&E)..."
+msgstr "စာကြောင်းများ ရွေးရန်(&E)..."
 
 #: src/command/tool.cpp:117
 msgid "Select Lines"
-msgstr "စာကြောင်းများ ရွေးမည်"
+msgstr "စာကြောင်းများ ရွေးရန်"
 
 #: src/command/tool.cpp:118
 msgid "Select lines based on defined criteria"
@@ -3150,11 +3209,11 @@ msgstr "ဗီဒီယိုကို အချိုး 16:9 ဖြင့် �
 
 #: src/command/video.cpp:252
 msgid "&Close Video"
-msgstr "ဗီဒီယိုပိတ်မည်(&C)"
+msgstr "ဗီဒီယိုပိတ်ရန်(&C)"
 
 #: src/command/video.cpp:253
 msgid "Close Video"
-msgstr "ဗီဒီယိုပိတ်မည်"
+msgstr "ဗီဒီယိုပိတ်ရန်"
 
 #: src/command/video.cpp:254
 msgid "Close the currently open video file"
@@ -3423,11 +3482,11 @@ msgstr "အရောင်တစ်ရောင်တည်းပါ အစာ�
 
 #: src/command/video.cpp:710 src/command/video.cpp:711
 msgid "Reload Video"
-msgstr "ဗီဒီယို ပြန်ဖွင့်ရန်"
+msgstr "ဗီဒီယိုဖိုင် ပြန်တင်ရန်"
 
 #: src/command/video.cpp:712
 msgid "Reload the current video file"
-msgstr "လက်ရှိဗီဒီယိုဖိုင် ပြန်ဖွင့်ရန်"
+msgstr "လက်ရှိဗီဒီယိုဖိုင်ကို ပြန်တင်ရန်"
 
 #: src/command/video.cpp:722 src/command/video.cpp:723
 msgid "Toggle autoscroll of video"
@@ -3449,7 +3508,7 @@ msgstr "ဗီဒီယိုရွှေ့ထားမှုကို မူ�
 #: src/command/video.cpp:750 src/command/video.cpp:751
 #: src/dialog_motion_track.cpp:1030 src/dialog_motion_track.cpp:1450
 msgid "Play"
-msgstr "ဖွင့်မည်"
+msgstr "ဖွင့်ရန်"
 
 #: src/command/video.cpp:752
 msgid "Play video starting on this position"
@@ -3646,19 +3705,18 @@ msgstr "စာတန်းများကို vector ဧရိယာအတွ�
 #: src/dialog_motion_track.cpp:1914 src/dialog_motion_track.cpp:1931
 #: src/dialog_motion_track.cpp:2090
 msgid "Motion Track"
-msgstr "Motion Tracking"
+msgstr "လှုပ်ရှားမှုပုံတူကူးခြင်း"
 
 #: src/command/vis_tool.cpp:223
 msgid "Track motion or a clip and apply it natively to selected subtitles"
 msgstr ""
-"Motion သို့မဟုတ် clip ကို track လုပ်ပြီး ရွေးထားသော စာတန်းများတွင် "
-"တိုက်ရိုက်အသုံးပြုရန်"
+"လှုပ်ရှားမှု သို့မဟုတ် clip ကို ပုံတူကူးပြီး ရွေးထားသော စာတန်းများတွင် "
+"အသုံးပြုရန်"
 
 #: src/command/vis_tool.cpp:233 src/dialog_motion_track.cpp:1786
 msgid ""
 "Motion Track requires OpenCV, but this build was configured without OpenCV."
-msgstr ""
-"Motion Tracking အတွက် OpenCV လိုအပ်သော်လည်း ဤ build တွင် OpenCV မပါပါ။"
+msgstr "လှုပ်ရှားမှုပုံတူကူးရန် OpenCV လိုပေမဲ့ ဒီ build မှာ မပါပါ။"
 
 #: src/command/vis_tool.cpp:244 src/command/vis_tool.cpp:245
 #: src/command/vis_tool.cpp:262 src/command/vis_tool.cpp:263
@@ -3883,7 +3941,7 @@ msgstr "Control point ထည့်ရန်"
 #: src/command/vis_tool.cpp:549 src/command/vis_tool.cpp:550
 #: src/dialog_mangetsu_gradient.cpp:688
 msgid "Remove"
-msgstr "ဖယ်ရှားမည်"
+msgstr "ဖယ်ရှားရန်"
 
 #: src/command/vis_tool.cpp:551
 msgid "Removes a control point"
@@ -4159,7 +4217,7 @@ msgstr "ဗားရှင်းများ"
 
 #: src/dialog_autosave.cpp:85
 msgid "Open"
-msgstr "ဖွင့်မည်"
+msgstr "ဖွင့်ရန်"
 
 #: src/dialog_autosave.cpp:94
 #, c-format
@@ -4328,7 +4386,7 @@ msgstr "Export လုပ်ရန်..."
 
 #: src/dialog_export.cpp:190
 msgid "Export subtitles file"
-msgstr "စာဖိုင် Export လုပ်ရန်"
+msgstr "ပုံစံပြောင်းပြီးသိမ်းရန်"
 
 #: src/dialog_export.cpp:205 src/dialog_export.cpp:208
 #: src/dialog_export.cpp:211
@@ -4474,15 +4532,15 @@ msgstr "* အသုံးပြုထားသော ဖောင့်စာရ
 
 #: src/dialog_fonts_collector.cpp:116
 msgid "Symlinking fonts to folder...\n"
-msgstr "ဖောင့်များကို ဖိုလ်ဒါသို့ symlink ချိတ်နေသည်...\n"
+msgstr "ဖောင့်တွေကို ဖိုလ်ဒါနဲ့ symlink ချိတ်နေတုန်း...\n"
 
 #: src/dialog_fonts_collector.cpp:120
 msgid "Copying fonts to folder...\n"
-msgstr "ဖောင့်များကို ဖိုလ်ဒါသို့ ကူးယူနေသည်...\n"
+msgstr "ဖောင့်တွေကို ဖိုလ်ဒါထဲ ကူးနေတုန်း...\n"
 
 #: src/dialog_fonts_collector.cpp:123
 msgid "Copying fonts to archive...\n"
-msgstr "ဖောင့်များကို archive သို့ ကူးယူနေသည်...\n"
+msgstr "ဖောင့်တွေကို archive ထဲ ကူးနေတုန်း...\n"
 
 #: src/dialog_fonts_collector.cpp:135
 #, c-format
@@ -4823,11 +4881,11 @@ msgstr "အသစ် / အမည်ပြောင်းသိမ်းရန်
 
 #: src/dialog_mangetsu_chat_style.cpp:337
 msgid "Save"
-msgstr "သိမ်းမည်"
+msgstr "သိမ်းရန်"
 
 #: src/dialog_mangetsu_chat_style.cpp:338 src/dialog_style_manager.cpp:280
 msgid "Delete"
-msgstr "ဖျက်မည်"
+msgstr "ဖျက်ရန်"
 
 #: src/dialog_mangetsu_chat_style.cpp:338
 msgid "Rename..."
@@ -4978,7 +5036,7 @@ msgstr "အိုကေ"
 
 #: src/dialog_mangetsu_gradient.cpp:700 src/dialog_motion_track.cpp:1126
 msgid "Apply"
-msgstr "အသုံးပြုမည်"
+msgstr "အသုံးပြုရန်"
 
 #: src/dialog_mangetsu_gradient.cpp:1050
 msgid "set outline size"
@@ -5184,7 +5242,7 @@ msgstr "ယုံကြည်မှု"
 
 #: src/dialog_motion_track.cpp:890
 msgid "Place and track a marker to plot data"
-msgstr "ဒေတာဂရပ်ပြရန် marker တစ်ခုချပြီး track လုပ်ပါ"
+msgstr "ဂရပ်ကြည့်ရန် marker ချပြီး လှုပ်ရှားမှုတွက်ပါ"
 
 #: src/dialog_motion_track.cpp:948
 msgid "Video frame timing changed. Start a new tracking session."
@@ -5200,7 +5258,7 @@ msgstr ""
 
 #: src/dialog_motion_track.cpp:1010
 msgid "Track Motion"
-msgstr "Motion Tracking စမည်"
+msgstr "လှုပ်ရှားမှု ပုံတူကူးရန်"
 
 #: src/dialog_motion_track.cpp:1012
 msgid "Subtitle"
@@ -5215,32 +5273,32 @@ msgid ""
 "Place a square on the selected channel's object, then track the selected "
 "range. Direction buttons also work on this channel."
 msgstr ""
-"ရွေးထားသော channel ၏ အရာဝတ္ထုပေါ်တွင် စတုရန်းချပြီး ရွေးထားသော အပိုင်းကို "
-"track လုပ်ပါ။ ဦးတည်ချက်ခလုတ်များကိုလည်း ဤ channel တွင် သုံးနိုင်သည်။"
+"ရွေးထားတဲ့ channel ရဲ့ အရာဝတ္ထုပေါ် စတုရန်းချပြီး ရွေးထားတဲ့အပိုင်းကို "
+"တွက်ချက်ပါ။ ဦးတည်ချက်ခလုတ်တွေကိုလည်း ဒီ channel မှာ သုံးနိုင်ပါတယ်။"
 
 #: src/dialog_motion_track.cpp:1020
 msgid ""
 "Edit the subtitle tracking channel. Switching channels preserves both tracks"
 " and does not start tracking."
 msgstr ""
-"စာတန်း tracking channel ကို ပြင်ရန်။ Channel ပြောင်းလျှင် track နှစ်ခုလုံး "
-"ကျန်ရှိမည်ဖြစ်ပြီး tracking မစပါ။"
+"စာတန်းအတွက် channel ကို ပြင်ရန်။ Channel ပြောင်းရင် မှတ်တမ်းနှစ်ခုလုံး "
+"ကျန်မယ်၊ တွက်ချက်မှုလည်း အလိုအလျောက် မစပါ။"
 
 #: src/dialog_motion_track.cpp:1031
 msgid "Track to Start"
-msgstr "အစအထိ Track လုပ်ရန်"
+msgstr "အစအထိ တွက်ရန်"
 
 #: src/dialog_motion_track.cpp:1032
 msgid "Track Previous"
-msgstr "ရှေ့ frame ကို Track လုပ်ရန်"
+msgstr "ရှေ့ frame တွက်ရန်"
 
 #: src/dialog_motion_track.cpp:1033
 msgid "Track Next"
-msgstr "နောက် frame ကို Track လုပ်ရန်"
+msgstr "နောက် frame တွက်ရန်"
 
 #: src/dialog_motion_track.cpp:1034
 msgid "Track to End"
-msgstr "အဆုံးအထိ Track လုပ်ရန်"
+msgstr "အဆုံးအထိ တွက်ရန်"
 
 #: src/dialog_motion_track.cpp:1035
 msgid "Play the selected frame range inside this dialog"
@@ -5251,23 +5309,23 @@ msgid ""
 "Track backward to the nearest earlier handoff mark, or the selected line "
 "start."
 msgstr ""
-"အနီးဆုံး ရှေ့ handoff အမှတ် သို့မဟုတ် ရွေးထားသော စာကြောင်းအစအထိ နောက်ပြန် "
-"track လုပ်ရန်။"
+"အနီးဆုံး ရှေ့ handoff အမှတ် သို့မဟုတ် ရွေးထားတဲ့ စာကြောင်းအစအထိ "
+"နောက်ပြန်တွက်ရန်။"
 
 #: src/dialog_motion_track.cpp:1037
 msgid "Track previous frame"
-msgstr "ရှေ့ frame ကို track လုပ်ရန်"
+msgstr "ရှေ့ frame ၏ လှုပ်ရှားမှုတွက်ရန်"
 
 #: src/dialog_motion_track.cpp:1038
 msgid "Track next frame"
-msgstr "နောက် frame ကို track လုပ်ရန်"
+msgstr "နောက် frame ၏ လှုပ်ရှားမှုတွက်ရန်"
 
 #: src/dialog_motion_track.cpp:1039
 msgid ""
 "Track forward to the nearest later handoff mark, or the selected line end."
 msgstr ""
-"အနီးဆုံး နောက် handoff အမှတ် သို့မဟုတ် ရွေးထားသော စာကြောင်းအဆုံးအထိ ရှေ့သို့"
-" track လုပ်ရန်။"
+"အနီးဆုံး နောက် handoff အမှတ် သို့မဟုတ် ရွေးထားတဲ့ စာကြောင်းအဆုံးအထိ "
+"ရှေ့သို့တွက်ရန်။"
 
 #: src/dialog_motion_track.cpp:1048
 msgid "Mark Handoff Frame"
@@ -5343,7 +5401,7 @@ msgstr "မြင်ကွင်း:"
 
 #: src/dialog_motion_track.cpp:1085
 msgid "Fast"
-msgstr "မြန်မြန်"
+msgstr "အမြန်"
 
 #: src/dialog_motion_track.cpp:1086
 msgid "Viewable"
@@ -5354,9 +5412,9 @@ msgid ""
 "Fast tracks without extra delay. Viewable displays every frame and both "
 "tracker squares long enough to spot drift; tracking results are identical."
 msgstr ""
-"မြန်မြန်မုဒ်သည် အပိုစောင့်ချိန်မရှိဘဲ track လုပ်သည်။ ကြည့်နိုင်ရန်မုဒ်တွင် "
-"frame တိုင်းနှင့် tracker စတုရန်းနှစ်ခုလုံးကို "
-"လွဲချော်မှုမြင်နိုင်လောက်အောင် ပြသည်။ ရလဒ်မှာ တူညီသည်။"
+"အမြန်မုဒ်မှာ မစောင့်ဘဲ တွက်ချက်မယ်။ ကြည့်နိုင်ရန်မုဒ်မှာ လွဲနေမှုကို "
+"မြင်နိုင်အောင် frame တစ်ခုချင်းနဲ့ tracker စတုရန်းနှစ်ခုကို ပြမယ်။ ရလဒ်ကတော့"
+" တူပါတယ်။"
 
 #: src/dialog_motion_track.cpp:1093
 msgid "Noise Cleanup:"
@@ -5385,7 +5443,7 @@ msgstr ""
 
 #: src/dialog_motion_track.cpp:1109
 msgid "Show track trail"
-msgstr "ခြေရာလမ်းကြောင်း ပြမည်"
+msgstr "ရွေ့လျားခဲ့တဲ့ လမ်းကြောင်းပြရန်"
 
 #: src/dialog_motion_track.cpp:1111
 msgid "Show nearby tracked marker positions in the preview."
@@ -5400,16 +5458,16 @@ msgid ""
 "Hide this window while positioning/styling in the main video. Reopen Motion "
 "Track to restore the same session."
 msgstr ""
-"ပင်မဗီဒီယိုတွင် နေရာချခြင်း/စတိုင်ပြင်ခြင်း ပြုလုပ်စဉ် ဤဝင်းဒိုးကို "
-"ဖျောက်ရန်။ ယခင် session သို့ ပြန်ဝင်ရန် Motion Track ကို ပြန်ဖွင့်ပါ။"
+"ပင်မဗီဒီယိုမှာ နေရာနဲ့စတိုင် ပြင်စဉ် ဒီဝင်းဒိုးကို ဖျောက်ထားမယ်။ ယခင် "
+"session သို့ ပြန်ဝင်ရန် လှုပ်ရှားမှုပုံတူကူးခြင်းကို ပြန်ဖွင့်ပါ။"
 
 #: src/dialog_motion_track.cpp:1153
 msgid "Copy Motion Data"
-msgstr "Motion ဒေတာ ကူးယူမည်"
+msgstr "လှုပ်ရှားမှုမှတ်တမ်း ကူးယူရန်"
 
 #: src/dialog_motion_track.cpp:1154
 msgid "Save Data"
-msgstr "ဒေတာ သိမ်းမည်"
+msgstr "မှတ်တမ်းသိမ်းရန်"
 
 #: src/dialog_motion_track.cpp:1156
 msgid "New Session"
@@ -5436,7 +5494,7 @@ msgstr "အမှတ်အသားများ:"
 #: src/dialog_motion_track.cpp:1287
 #, c-format
 msgid "Frame cache: lazy (%d frames)"
-msgstr "Frame cache: လိုမှသိမ်းမည် (%d frames)"
+msgstr "Frame cache: လိုတဲ့အခါမှ သိမ်းရန် (%d frames)"
 
 #: src/dialog_motion_track.cpp:1291
 #, c-format
@@ -5445,48 +5503,48 @@ msgstr "%s: %d / %d"
 
 #: src/dialog_motion_track.cpp:1292
 msgid "Cached frames"
-msgstr "သိမ်းထားသော frame များ"
+msgstr "သိမ်းပြီးသော frame များ"
 
 #: src/dialog_motion_track.cpp:1292
 msgid "Caching frames"
-msgstr "frame များ သိမ်းနေသည်"
+msgstr "Frame တွေ သိမ်းနေတုန်း"
 
 #: src/dialog_motion_track.cpp:1704 src/dialog_motion_track.cpp:1775
 #: src/dialog_motion_track.cpp:1850
 msgid "Place a tracker marker before tracking."
-msgstr "Tracking မစမီ tracker marker တစ်ခု ချပါ။"
+msgstr "မတွက်ခင် tracker အမှတ်တစ်ခု ချပါ။"
 
 #: src/dialog_motion_track.cpp:1797
 msgid ""
 "The current tracker run has reached its handoff frame. Place a new tracker "
 "square to continue."
 msgstr ""
-"လက်ရှိ tracking သည် handoff frame သို့ ရောက်ပါပြီ။ ဆက်ရန် tracker "
-"စတုရန်းအသစ် ချပါ။"
+"လက်ရှိတွက်ချက်မှု handoff frame ရောက်ပါပြီ။ ဆက်တွက်ရန် tracker စတုရန်းအသစ် "
+"ချပါ။"
 
 #: src/dialog_motion_track.cpp:1827
 msgid ""
 "Tracking was lost before the segment end. Motion data was preserved up to "
 "the last valid frame."
 msgstr ""
-"အပိုင်းမဆုံးမီ tracking ပျောက်သွားသည်။ နောက်ဆုံးမှန်ကန်သော frame အထိ motion "
-"ဒေတာကို ထိန်းသိမ်းထားသည်။"
+"အပိုင်းမဆုံးခင် အရာဝတ္ထုကို ဆက်မတွေ့တော့ပါ။ နောက်ဆုံးမှန်ကန်တဲ့ frame အထိ "
+"လှုပ်ရှားမှုမှတ်တမ်းကို သိမ်းထားပါတယ်။"
 
 #: src/dialog_motion_track.cpp:1841
 msgid "Tracking failed while reading video frames."
-msgstr "ဗီဒီယို frame များ ဖတ်နေစဉ် tracking မအောင်မြင်ပါ။"
+msgstr "ဗီဒီယို frame တွေ ဖတ်နေစဉ် လှုပ်ရှားမှုတွက်လို့ မရပါ။"
 
 #: src/dialog_motion_track.cpp:1905
 msgid "No motion data to copy."
-msgstr "ကူးယူရန် motion ဒေတာ မရှိပါ။"
+msgstr "ကူးယူရန် လှုပ်ရှားမှုမှတ်တမ်း မရှိပါ။"
 
 #: src/dialog_motion_track.cpp:1914
 msgid "No motion data to save."
-msgstr "သိမ်းရန် motion ဒေတာ မရှိပါ။"
+msgstr "သိမ်းရန် လှုပ်ရှားမှုမှတ်တမ်း မရှိပါ။"
 
 #: src/dialog_motion_track.cpp:1919
 msgid "Save motion track data"
-msgstr "Motion tracking ဒေတာ သိမ်းရန်"
+msgstr "လှုပ်ရှားမှုမှတ်တမ်း သိမ်းရန်"
 
 #: src/dialog_motion_track.cpp:1923
 msgid "Text files (*.txt)|*.txt|All files (*.*)|*.*"
@@ -5505,8 +5563,8 @@ msgstr "ပင်မဗီဒီယို ရည်ညွှန်း frame: %d"
 msgid ""
 "Select Subtitle or \\clip, place a tracker square, then press Track Motion."
 msgstr ""
-"Subtitle သို့မဟုတ် \\clip ကိုရွေးပြီး tracker စတုရန်းချကာ Track Motion ကို "
-"နှိပ်ပါ။"
+"Subtitle သို့မဟုတ် \\clip ကိုရွေးပြီး tracker စတုရန်းချကာ လှုပ်ရှားမှု "
+"ပုံတူကူးရန်ကို နှိပ်ပါ။"
 
 #: src/dialog_motion_track.cpp:1997
 msgid "Seek the main video to a tracked reference frame."
@@ -5518,7 +5576,9 @@ msgstr "Clip track တွင် ပင်မဗီဒီယို၏ ရည်�
 
 #: src/dialog_motion_track.cpp:2006
 msgid "Track the full selected subtitle range before Apply."
-msgstr "အသုံးမပြုမီ ရွေးထားသော စာတန်းအပိုင်းတစ်ခုလုံးကို track လုပ်ပါ။"
+msgstr ""
+"အသုံးမပြုခင် ရွေးထားတဲ့ စာတန်းအပိုင်းတစ်ခုလုံးရဲ့ လှုပ်ရှားမှုကို "
+"အရင်တွက်ပါ။"
 
 #: src/dialog_motion_track.cpp:2021
 #, c-format
@@ -5542,8 +5602,8 @@ msgid ""
 "Edit the separate clip tracking channel. Switching channels preserves both "
 "tracks and does not start tracking."
 msgstr ""
-"သီးခြား clip tracking channel ကို ပြင်ရန်။ Channel ပြောင်းလျှင် track "
-"နှစ်ခုလုံး ကျန်ရှိမည်ဖြစ်ပြီး tracking မစပါ။"
+"Clip အတွက် သီးခြား channel ကို ပြင်ရန်။ Channel ပြောင်းရင် "
+"မှတ်တမ်းနှစ်ခုလုံး ကျန်မယ်၊ တွက်ချက်မှုလည်း အလိုအလျောက် မစပါ။"
 
 #: src/dialog_motion_track.cpp:2047
 msgid ""
@@ -5557,18 +5617,20 @@ msgstr ""
 msgid ""
 "Place a tracker square on the clip's object, then press Track Motion again."
 msgstr ""
-"Clip ၏ အရာဝတ္ထုပေါ်တွင် tracker စတုရန်းချပြီး Track Motion ကို ထပ်နှိပ်ပါ။"
+"Clip ထဲက အရာဝတ္ထုပေါ် tracker စတုရန်းချပြီး လှုပ်ရှားမှု ပုံတူကူးရန်ကို "
+"ထပ်နှိပ်ပါ။"
 
 #: src/dialog_motion_track.cpp:2097
 msgid ""
 "Place a tracker square on the subtitle's object, then press Track Motion "
 "again."
 msgstr ""
-"စာတန်း၏ အရာဝတ္ထုပေါ်တွင် tracker စတုရန်းချပြီး Track Motion ကို ထပ်နှိပ်ပါ။"
+"စာတန်းနဲ့လိုက်မယ့် အရာဝတ္ထုပေါ် tracker စတုရန်းချပြီး လှုပ်ရှားမှု "
+"ပုံတူကူးရန်ကို ထပ်နှိပ်ပါ။"
 
 #: src/dialog_motion_track.cpp:2127
 msgid "Advanced Motion Apply"
-msgstr "အဆင့်မြင့် Motion အသုံးပြုခြင်း"
+msgstr "လှုပ်ရှားမှုကို အဆင့်မြင့်အသုံးပြုရန်"
 
 #: src/dialog_motion_track.cpp:2130
 msgid "Automatic"
@@ -5619,7 +5681,7 @@ msgstr "သီးခြား clip track"
 
 #: src/dialog_motion_track.cpp:2155
 msgid "Follow main motion track"
-msgstr "ပင်မ motion track အတိုင်း လိုက်ရန်"
+msgstr "ပင်မလှုပ်ရှားမှုအတိုင်း လိုက်ရန်"
 
 #: src/dialog_motion_track.cpp:2156
 msgid "Keep clip unchanged"
@@ -5644,11 +5706,13 @@ msgstr "လှည့်မှု ခွင့်ပြုကွာခြား�
 #: src/dialog_motion_track.cpp:2190 src/dialog_motion_track.cpp:2197
 #: src/dialog_motion_track.cpp:2247
 msgid "Motion Apply"
-msgstr "Motion အသုံးပြုရန်"
+msgstr "လှုပ်ရှားမှု အသုံးပြုရန်"
 
 #: src/dialog_motion_track.cpp:2197
 msgid "Select the Mangetsu subtitle renderer before applying native tracking."
-msgstr "Native tracking အသုံးမပြုမီ Mangetsu စာတန်း Renderer ကို ရွေးပါ။"
+msgstr ""
+"ပုံတူကူးထားတဲ့ လှုပ်ရှားမှုကို အသုံးမပြုခင် Mangetsu စာတန်း Renderer ကို "
+"ရွေးပါ။"
 
 #: src/dialog_motion_track.cpp:2224
 #, c-format
@@ -5663,15 +5727,15 @@ msgstr "ပိုမိုကျစ်လျစ်သော transform %d ခု�
 
 #: src/dialog_motion_track.cpp:2234
 msgid "apply native motion tracking"
-msgstr "Native motion tracking အသုံးပြုခြင်း"
+msgstr "လှုပ်ရှားမှုပုံတူကူးထားတာ အသုံးပြုခြင်း"
 
 #: src/dialog_motion_track.cpp:2264
 msgid "revert native motion tracking"
-msgstr "Native motion tracking ပြန်ဖြေခြင်း"
+msgstr "ပုံတူကူးထားတဲ့ လှုပ်ရှားမှုကို မူလအတိုင်းပြန်ထားခြင်း"
 
 #: src/dialog_motion_track.cpp:2275
 msgid "Motion Revert"
-msgstr "Motion ပြန်ဖြေရန်"
+msgstr "လှုပ်ရှားမှုကို မူလအတိုင်းပြန်ထားရန်"
 
 #: src/dialog_ocr.cpp:84
 msgid "PP-OCRv5"
@@ -5745,11 +5809,11 @@ msgstr "စာကြောင်း အစားထိုးရန်..."
 
 #: src/dialog_ocr.cpp:616 src/video_box.cpp:277
 msgid "Copy"
-msgstr "ကူးယူမည်"
+msgstr "ကူးယူရန်"
 
 #: src/dialog_ocr.cpp:694
 msgid "Recognizing..."
-msgstr "စာသားဖတ်နေသည်..."
+msgstr "ဖတ်နေတုန်း..."
 
 #: src/dialog_ocr.cpp:742 src/dialog_ocr.cpp:892
 msgid "OCR runtime unavailable"
@@ -5806,7 +5870,7 @@ msgstr "လက်ရှိစာကြောင်းစာသား အစာ�
 
 #: src/dialog_paste_over.cpp:55
 msgid "Select Fields to Paste Over"
-msgstr "အပေါ်ထပ်ကူးထည့်မည့် ကွက်များ ရွေးပါ"
+msgstr "အစားထိုးကူးထည့်မည့် ကွက်များ ရွေးပါ"
 
 #: src/dialog_paste_over.cpp:58
 msgid "Fields"
@@ -5814,7 +5878,7 @@ msgstr "ကွက်များ"
 
 #: src/dialog_paste_over.cpp:59
 msgid "Please select the fields that you want to paste over:"
-msgstr "အပေါ်ထပ်ကူးထည့်လိုသော ကွက်များကို ရွေးပါ:"
+msgstr "အစားထိုးကူးထည့်လိုသော ကွက်များကို ရွေးပါ:"
 
 #: src/dialog_paste_over.cpp:63 src/subs_edit_box.cpp:170
 msgid "Comment"
@@ -5828,7 +5892,7 @@ msgstr "စတိုင်"
 #: src/dialog_paste_over.cpp:68 src/grid_column.cpp:328
 #: src/grid_column.cpp:329 src/subs_edit_box.cpp:190
 msgid "Actor"
-msgstr "သရုပ်ဆောင်"
+msgstr "နာမည်"
 
 #: src/dialog_paste_over.cpp:69
 msgid "Margin Left"
@@ -5860,7 +5924,7 @@ msgstr "စာသား(&E)"
 
 #: src/dialog_progress.cpp:261
 msgid "Cancelling..."
-msgstr "ပယ်ဖျက်နေသည်..."
+msgstr "ပယ်ဖျက်နေတုန်း..."
 
 #: src/dialog_properties.cpp:94
 msgid "Script Properties"
@@ -6010,7 +6074,7 @@ msgstr "ဦးတည်ရာ Resolution"
 
 #: src/dialog_search_replace.cpp:48
 msgid "Replace"
-msgstr "အစားထိုးမည်"
+msgstr "အစားထိုးရန်"
 
 #: src/dialog_search_replace.cpp:68
 msgid "Find what:"
@@ -6042,7 +6106,7 @@ msgstr "စာသား(&T)"
 
 #: src/dialog_search_replace.cpp:88
 msgid "A&ctor"
-msgstr "သရုပ်ဆောင်(&C)"
+msgstr "နာမည်(&C)"
 
 #: src/dialog_search_replace.cpp:88
 msgid "St&yle"
@@ -6118,7 +6182,7 @@ msgstr "စတိုင်(&S)"
 
 #: src/dialog_selection.cpp:137
 msgid "Act&or"
-msgstr "သရုပ်ဆောင်(&O)"
+msgstr "နာမည်(&O)"
 
 #: src/dialog_selection.cpp:137
 msgid "E&ffect"
@@ -6881,7 +6945,7 @@ msgstr "စာသားတင်သွင်းမှု ရွေးချယ�
 
 #: src/dialog_text_import.cpp:54
 msgid "Actor separator:"
-msgstr "သရုပ်ဆောင်အမည် ခွဲခြားသင်္ကေတ:"
+msgstr "နာမည်ခွဲသင်္ကေတ:"
 
 #: src/dialog_text_import.cpp:56
 msgid "Comment starter:"
@@ -7263,7 +7327,7 @@ msgstr "ပြောင်းလဲနိုင်သော(&A)"
 
 #: src/export_framerate.cpp:96
 msgid "&Constant: "
-msgstr "အတည်(&C): "
+msgstr "ပုံသေ(&C): "
 
 #: src/export_framerate.cpp:108
 msgid "&Reverse transformation"
@@ -7279,7 +7343,7 @@ msgstr "ရလဒ်: "
 
 #: src/ffmpegsource_common.cpp:78 src/video_provider_bestsource.cpp:140
 msgid "Reading timecodes and frame/sample data"
-msgstr "Timecode နှင့် frame/sample ဒေတာ ဖတ်နေသည်"
+msgstr "Timecode နဲ့ frame/sample တွေ ဖတ်နေတုန်း..."
 
 #: src/fold_controller.cpp:78
 msgid "add fold"
@@ -7363,11 +7427,11 @@ msgstr "အသုံးပြုထားသော စာကြောင်း�
 
 #: src/font_file_lister.cpp:211
 msgid "Parsing file\n"
-msgstr "ဖိုင်ဖတ်နေသည်\n"
+msgstr "ဖိုင်ဖတ်နေတုန်း...\n"
 
 #: src/font_file_lister.cpp:225
 msgid "Searching for font files\n"
-msgstr "ဖောင့်ဖိုင်များ ရှာနေသည်\n"
+msgstr "ဖောင့်ဖိုင်တွေ ရှာနေတုန်း...\n"
 
 #: src/font_file_lister.cpp:227
 msgid ""
@@ -7398,7 +7462,7 @@ msgstr[0] ""
 
 #: src/font_file_lister_fontconfig.cpp:56
 msgid "Updating font cache\n"
-msgstr "ဖောင့် cache မွမ်းမံနေသည်\n"
+msgstr "ဖောင့် cache ပြင်နေတုန်း...\n"
 
 #: src/frame_main.cpp:511
 msgid "Automation (!)"
@@ -7552,7 +7616,7 @@ msgstr "ဗလာ"
 
 #: src/menu.cpp:238
 msgid "&Recent"
-msgstr "မကြာသေးမီက(&R)"
+msgstr "အရင်ကသုံးတဲ့အရာများ(&R)"
 
 #: src/menu.cpp:472
 msgid "No Automation macros loaded"
@@ -7568,11 +7632,11 @@ msgstr "စာတန်း track အများအပြား တွေ့ရ�
 
 #: src/mkv_wrap.cpp:267
 msgid "Parsing Matroska"
-msgstr "Matroska ဖတ်နေသည်"
+msgstr "Matroska ဖတ်နေတုန်း..."
 
 #: src/mkv_wrap.cpp:267
 msgid "Reading subtitles from Matroska file."
-msgstr "Matroska ဖိုင်မှ စာတန်းများ ဖတ်နေသည်။"
+msgstr "Matroska ဖိုင်ထဲက စာတန်းတွေ ဖတ်နေတုန်း..."
 
 #: src/motion_tracking/motion_track_apply.cpp:33
 msgid "Motion contains a non-finite value."
@@ -7732,7 +7796,9 @@ msgstr "Track လုပ်ထားသော clip ပြောင်းသွာ
 
 #: src/motion_tracking/motion_track_commit.cpp:51
 msgid "Motion Revert metadata is damaged or unsupported."
-msgstr "Motion Revert metadata ပျက်စီးနေသည် သို့မဟုတ် မပံ့ပိုးပါ။"
+msgstr ""
+"လှုပ်ရှားမှုကို မူလအတိုင်းပြန်ထားရန် လိုတဲ့ metadata ပျက်နေပါတယ် သို့မဟုတ် "
+"မပံ့ပိုးပါ။"
 
 #: src/motion_tracking/motion_track_commit.cpp:79
 msgid "Apply requires exactly one event per original subtitle."
@@ -7747,8 +7813,8 @@ msgid ""
 "Revert the legacy split motion family once before applying Mangetsu "
 "tracking."
 msgstr ""
-"Mangetsu tracking မသုံးမီ ယခင်ခွဲထားသော motion family ကို တစ်ကြိမ် "
-"ပြန်ဖြေပါ။"
+"Mangetsu နဲ့ လှုပ်ရှားမှု ပုံတူမကူးခင် အရင်ခွဲထားတဲ့ motion family ကို "
+"မူလအတိုင်း တစ်ကြိမ်ပြန်ထားပါ။"
 
 #: src/motion_tracking/motion_track_commit.cpp:129
 msgid ""
@@ -7760,7 +7826,8 @@ msgstr ""
 
 #: src/motion_tracking/motion_track_commit.cpp:152
 msgid "Select a subtitle with generated tracking to Revert."
-msgstr "ပြန်ဖြေရန် tracking ပြုလုပ်ထားသော စာတန်းကို ရွေးပါ။"
+msgstr ""
+"မူလအတိုင်း ပြန်ထားရန် ပုံတူကူးထားတဲ့ လှုပ်ရှားမှုပါတဲ့ စာတန်းကို ရွေးပါ။"
 
 #: src/motion_tracking/motion_track_optimizer.cpp:16
 msgid "Invalid motion tolerance"
@@ -7777,6 +7844,140 @@ msgstr "Motion signal မမှန်ပါ"
 #: src/motion_tracking/motion_track_optimizer.cpp:23
 msgid "Motion samples must be consecutive and ordered"
 msgstr "Motion sample များသည် ဆက်တိုက်ဖြစ်ပြီး အစဉ်လိုက် ရှိရမည်"
+
+#: src/ocr/ocr_engine.cpp:178
+msgid ""
+"PaddleOCR-json failed to load the OCR model. Missing inference.pdmodel."
+msgstr ""
+"PaddleOCR-json က OCR model ကို ဖွင့်မရပါ။ inference.pdmodel ပျောက်နေပါတယ်။"
+
+#: src/ocr/ocr_engine.cpp:179
+#, c-format
+msgid ""
+"PaddleOCR-json failed to load the OCR model. Missing inference.pdmodel in "
+"%s."
+msgstr ""
+"PaddleOCR-json က OCR model ကို ဖွင့်မရပါ။ %s မှာ inference.pdmodel "
+"ပျောက်နေပါတယ်။"
+
+#: src/ocr/ocr_engine.cpp:205
+msgid "PaddleOCR-json failed: "
+msgstr "PaddleOCR-json အလုပ်မလုပ်ပါ: "
+
+#: src/ocr/ocr_engine.cpp:208
+msgid "PaddleOCR-json failed before returning OCR JSON."
+msgstr "OCR JSON မရခင် PaddleOCR-json ရပ်သွားပါတယ်။"
+
+#: src/ocr/ocr_engine.cpp:346
+msgid "<folder does not exist>"
+msgstr "<ဖိုလ်ဒါ မရှိပါ>"
+
+#: src/ocr/ocr_engine.cpp:353
+msgid "<empty>"
+msgstr "<ဗလာ>"
+
+#: src/ocr/ocr_engine.cpp:367
+msgid ""
+"\n"
+"\n"
+"Folder path:\n"
+msgstr ""
+"\n"
+"\n"
+"ဖိုလ်ဒါလမ်းကြောင်း:\n"
+
+#: src/ocr/ocr_engine.cpp:368
+msgid ""
+"\n"
+"Files present:\n"
+msgstr ""
+"\n"
+"ရှိနေသောဖိုင်များ:\n"
+
+#: src/ocr/ocr_engine.cpp:369
+msgid ""
+"\n"
+"\n"
+"Active config file path:\n"
+msgstr ""
+"\n"
+"\n"
+"လက်ရှိဆက်တင်ဖိုင် လမ်းကြောင်း:\n"
+
+#: src/ocr/ocr_engine.cpp:370
+msgid ""
+"\n"
+"Selected det_model_dir:\n"
+msgstr ""
+"\n"
+"ရွေးထားသော det_model_dir:\n"
+
+#: src/ocr/ocr_engine.cpp:371
+msgid ""
+"\n"
+"Selected cls_model_dir:\n"
+msgstr ""
+"\n"
+"ရွေးထားသော cls_model_dir:\n"
+
+#: src/ocr/ocr_engine.cpp:372
+msgid ""
+"\n"
+"Selected rec_model_dir:\n"
+msgstr ""
+"\n"
+"ရွေးထားသော rec_model_dir:\n"
+
+#: src/ocr/ocr_engine.cpp:373
+msgid ""
+"\n"
+"Selected dictionary path:\n"
+msgstr ""
+"\n"
+"ရွေးထားသော အဘိဓာန်လမ်းကြောင်း:\n"
+
+#: src/ocr/ocr_engine.cpp:381
+msgid "OCR model file is missing:\n"
+msgstr "OCR model ဖိုင် ပျောက်နေပါတယ်:\n"
+
+#: src/ocr/ocr_engine.cpp:382
+#, c-format
+msgid ""
+"\n"
+"\n"
+"PaddleOCR-json requires %s model folders to contain inference.pdmodel and inference.pdiparams."
+msgstr ""
+"\n"
+"\n"
+"PaddleOCR-json အတွက် %s model ဖိုလ်ဒါထဲမှာ inference.pdmodel နဲ့ inference.pdiparams ရှိဖို့ လိုပါတယ်။"
+
+#: src/ocr/ocr_engine.cpp:384
+msgid ""
+"\n"
+"\n"
+"This folder contains the official PP-OCRv5 Paddle 3/PIR files. The bundled PaddleOCR-json runtime cannot load that model format directly; the Windows packaging step must export the PP-OCRv5 model to the legacy Paddle Inference format first."
+msgstr ""
+"\n"
+"\n"
+"ဒီဖိုလ်ဒါမှာ တရားဝင် PP-OCRv5 Paddle 3/PIR ဖိုင်တွေ ပါပါတယ်။ တွဲပါလာတဲ့ PaddleOCR-json runtime က အဲဒီ model ပုံစံကို တိုက်ရိုက်ဖွင့်မရပါ။ Windows package ပြုလုပ်စဉ် PP-OCRv5 model ကို ယခင် Paddle Inference ပုံစံသို့ အရင် export လုပ်ရပါမယ်။"
+
+#: src/ocr/ocr_engine.cpp:395
+msgid ""
+"\n"
+"\n"
+"Missing required setting: "
+msgstr ""
+"\n"
+"\n"
+"လိုအပ်နေသော ဆက်တင်: "
+
+#: src/ocr/ocr_engine.cpp:395
+msgid "OCR model configuration is incomplete:\n"
+msgstr "OCR model ဆက်တင် မပြည့်စုံပါ:\n"
+
+#: src/ocr/ocr_engine.cpp:416
+msgid "OCR recognition dictionary is missing:\n"
+msgstr "OCR စာဖတ်အဘိဓာန် ပျောက်နေပါတယ်:\n"
 
 #: src/ocr/ocr_engine.cpp:440
 msgid ""
@@ -7805,6 +8006,66 @@ msgid ""
 msgstr ""
 "ဤ build တွင် PaddleOCR ပံ့ပိုးမှု မပါပါ။ Windows build ကို "
 "-Dpaddleocr=enabled ဖြင့် တည်ဆောက်ပါ။"
+
+#: src/ocr/ocr_engine.cpp:517
+msgid "OCR runtime returned an unexpected backend: "
+msgstr "OCR runtime က မမျှော်လင့်ထားတဲ့ backend ပြန်ပို့လာပါတယ်: "
+
+#: src/ocr/ocr_engine.cpp:529
+msgid "OCR runtime returned Image2Text JSON without a regions field."
+msgstr "OCR runtime က regions field မပါတဲ့ Image2Text JSON ပြန်ပို့လာပါတယ်။"
+
+#: src/ocr/ocr_engine.cpp:557
+msgid ""
+"OCR runtime did not return JSON.\n"
+"\n"
+"Output:\n"
+msgstr ""
+"OCR runtime က JSON ပြန်မပို့ပါ။\n"
+"\n"
+"ရလဒ်:\n"
+
+#: src/ocr/ocr_engine.cpp:567
+msgid ""
+"OCR runtime returned extra non-JSON text around the OCR result.\n"
+"\n"
+"Output:\n"
+msgstr ""
+"OCR ရလဒ်ပတ်လည်မှာ JSON မဟုတ်တဲ့ စာသားပိုတွေ ပါလာပါတယ်။\n"
+"\n"
+"ရလဒ်:\n"
+
+#: src/ocr/ocr_engine.cpp:578
+msgid "OCR runtime returned JSON without a data field."
+msgstr "OCR runtime က data field မပါတဲ့ JSON ပြန်ပို့လာပါတယ်။"
+
+#: src/ocr/ocr_engine.cpp:617
+msgid "OCR runtime returned an error without a readable message."
+msgstr "OCR runtime မှာ အမှားဖြစ်ပေမဲ့ ဖတ်လို့ရတဲ့ အမှားစာ မပါပါ။"
+
+#: src/ocr/ocr_engine.cpp:620
+msgid ""
+"OCR runtime returned malformed JSON instead of a clean Image2Text result.\n"
+"\n"
+"Output:\n"
+msgstr ""
+"OCR runtime က Image2Text ရလဒ်အစား ပုံစံမမှန်တဲ့ JSON ပြန်ပို့လာပါတယ်။\n"
+"\n"
+"ရလဒ်:\n"
+
+#: src/ocr/ocr_engine.cpp:623
+msgid ""
+"OCR runtime returned an invalid Image2Text result.\n"
+"\n"
+"Output:\n"
+msgstr ""
+"OCR runtime က မမှန်ကန်တဲ့ Image2Text ရလဒ် ပြန်ပို့လာပါတယ်။\n"
+"\n"
+"ရလဒ်:\n"
+
+#: src/ocr/ocr_engine.cpp:692
+msgid "Image file does not exist: "
+msgstr "ပုံဖိုင် မရှိပါ: "
 
 #: src/preferences.cpp:82 src/preferences.cpp:84 src/preferences.cpp:517
 #: src/preferences.cpp:538 src/preferences.cpp:680
@@ -7877,7 +8138,7 @@ msgstr "အမည်အမြန်ထည့်စဉ် အသံအလို�
 
 #: src/preferences.cpp:163
 msgid "Recently Used Lists"
-msgstr "မကြာသေးမီက အသုံးပြုထားသောစာရင်းများ"
+msgstr "အရင်ကသုံးတဲ့အရာများ"
 
 #: src/preferences.cpp:165
 msgid "Find/Replace"
@@ -9033,13 +9294,13 @@ msgstr "ဤစာကြောင်း၏ စတိုင်"
 
 #: src/subs_edit_box.cpp:180
 msgid "Edit"
-msgstr "ပြင်ဆင်မည်"
+msgstr "ပြင်ရန်"
 
 #: src/subs_edit_box.cpp:191
 msgid ""
 "Actor name for this speech. This is only for reference, and is mainly "
 "useless."
-msgstr "ဤစကားပြော၏ သရုပ်ဆောင်အမည်။ ကိုးကားရန်သာ ဖြစ်သည်။"
+msgstr "ဒီစာကြောင်းအတွက် နာမည်။ မှတ်သားဖို့သာ သုံးပါတယ်။"
 
 #: src/subs_edit_box.cpp:212 src/subs_edit_box.cpp:1126
 msgid "Enable fast name set mode."
@@ -9144,7 +9405,7 @@ msgstr ""
 #: src/subs_edit_box.cpp:1047 src/subs_edit_box.cpp:1115
 #: src/subs_edit_box.cpp:1578
 msgid "actor change"
-msgstr "သရုပ်ဆောင်ပြောင်းခြင်း"
+msgstr "နာမည်ပြောင်းခြင်း"
 
 #: src/subs_edit_box.cpp:1125
 msgid "Disable fast name set mode."
@@ -9176,15 +9437,15 @@ msgstr "စာလုံးပေါင်းစစ်သည့် ဘာသာ�
 
 #: src/subs_edit_ctrl.cpp:520
 msgid "Collapse motion tracking"
-msgstr "Motion tracking ခေါက်သိမ်းရန်"
+msgstr "လှုပ်ရှားမှုပုံတူကူးထားတာ ခေါက်သိမ်းရန်"
 
 #: src/subs_edit_ctrl.cpp:520
 msgid "Show full motion tracking"
-msgstr "Motion tracking အပြည့်ပြရန်"
+msgstr "လှုပ်ရှားမှုပုံတူကူးထားတာ အပြည့်ပြရန်"
 
 #: src/subs_edit_ctrl.cpp:521
 msgid "Copy motion tracking tags"
-msgstr "Motion tracking tag များ ကူးယူရန်"
+msgstr "လှုပ်ရှားမှုပုံတူကူးထားတဲ့ tag များ ကူးယူရန်"
 
 #: src/subs_edit_ctrl.cpp:525
 msgid "Cu&t"
@@ -9307,12 +9568,31 @@ msgstr "စာကြောင်းသည် အများဆုံးအရ�
 #: src/subtitles_provider_libass.cpp:106
 #: src/subtitles_provider_libassmod.cpp:907
 msgid "Updating font index"
-msgstr "ဖောင့်အညွှန်း မွမ်းမံနေသည်"
+msgstr "ဖောင့်အညွှန်း ပြင်နေတုန်း..."
 
 #: src/subtitles_provider_libass.cpp:107
 #: src/subtitles_provider_libassmod.cpp:908
 msgid "This may take several minutes"
 msgstr "မိနစ်အနည်းငယ် ကြာနိုင်သည်"
+
+#: src/timing39_ui.h:82
+msgid "soft"
+msgstr "ဖြစ်နိုင်ခြေနည်း"
+
+#: src/timing39_ui.h:82
+msgid "strong"
+msgstr "ဖြစ်နိုင်ခြေများ"
+
+#: src/timing39_ui.h:84
+msgid "No confident phonetic joins identified."
+msgstr "အသံထွက်အရ ပေါင်းနိုင်မယ်လို့ သေချာတဲ့အတွဲ မတွေ့ပါ။"
+
+#: src/timing39_ui.h:85
+msgid ""
+"Rhythmic fallback (up to four morae) is considered only when needed and "
+"requires review."
+msgstr ""
+"လိုအပ်မှသာ ရစ်သမ်အရ mora လေးခုအထိ ပေါင်းစဉ်းစားမည်။ ပြန်စစ်ဖို့ လိုပါတယ်။"
 
 #: src/vcva_tag_gui.cpp:25
 #, c-format
@@ -9461,7 +9741,7 @@ msgstr ""
 
 #: src/video_provider_bestsource.cpp:139
 msgid "Scanning"
-msgstr "စစ်ဆေးနေသည်"
+msgstr "ရှာနေတုန်း..."
 
 #: src/video_provider_bestsource.cpp:196
 msgid ""
@@ -9479,7 +9759,7 @@ msgstr "ဗီဒီယိုဖွင့်ရာတွင် အမှား�
 
 #: src/video_provider_vs.cpp:112
 msgid "Executing VapourSynth Script"
-msgstr "VapourSynth Script လုပ်ဆောင်နေသည်"
+msgstr "VapourSynth Script လုပ်ဆောင်နေတုန်း..."
 
 #: src/video_provider_vs.cpp:122
 msgid "Failed to execute script! Press \"Close\" to continue."
@@ -9614,7 +9894,7 @@ msgid "Insert at video time (before)"
 msgstr "ဗီဒီယိုအချိန်တွင် ထည့်ရန် (ရှေ့တွင်)"
 
 msgid "Installing runtime libraries..."
-msgstr "Runtime library များ ထည့်သွင်းနေသည်..."
+msgstr "Runtime library တွေ ထည့်နေတုန်း..."
 
 msgid "Join (as Karaoke)"
 msgstr "ပေါင်းရန် (Karaoke အဖြစ်)"
@@ -9629,7 +9909,7 @@ msgid "Make Times Continuous"
 msgstr "အချိန်များ ဆက်စပ်စေရန်"
 
 msgid "Open Recent"
-msgstr "မကြာသေးမီကဖိုင် ဖွင့်ရန်"
+msgstr "အရင်ကသုံးတဲ့ဖိုင်များ"
 
 msgid "Open..."
 msgstr "ဖွင့်ရန်..."
