@@ -255,6 +255,7 @@ src/motion_tracking/motion_track_engine.cpp
 src/motion_tracking/motion_track_engine.h
 src/motion_tracking/motion_track_export_ae.cpp
 src/motion_tracking/motion_track_export_ae.h
+src/motion_tracking/motion_track_message.h
 src/motion_tracking/motion_track_optimizer.cpp
 src/motion_tracking/motion_track_optimizer.h
 src/motion_tracking/motion_track_segments.cpp

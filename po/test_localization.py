@@ -2,9 +2,11 @@
 """Smoke checks for extraction inputs, the catalog and Windows deployment."""
 import json
 import gettext
+import re
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
@@ -15,7 +17,10 @@ assert (po / 'POTFILES').read_text(encoding='utf-8').splitlines() == expected
 resources = subprocess.check_output([sys.executable, str(po / 'extract_resources.py')], text=True, encoding='utf-8')
 assert json.dumps('&File') in resources
 pot = (po / 'aegisub.pot').read_text(encoding='utf-8')
-for message in ('Selected line frames: %d - %d', 'Make text fullwidth', '&File', 'Motion Track'):
+for message in ('Selected line frames: %d - %d', 'Make text fullwidth', '&File', 'Motion Track',
+                'Active subtitle changed. Start a new tracking session.',
+                'Motion Revert metadata is damaged or unsupported.',
+                '%d frame-by-frame transforms; one event per subtitle'):
     assert 'msgid ' + json.dumps(message) in pot, message
 assert 'my' in (po / 'LINGUAS').read_text(encoding='utf-8').splitlines()
 installer = (root / 'packages/win_installer/fragment_translations.iss').read_text(encoding='utf-8')
@@ -29,6 +34,15 @@ with tempfile.TemporaryDirectory() as tmp:
                     str(po / 'my.po')], check=True)
     with catalog.open('rb') as source:
         translation = gettext.GNUTranslations(source)
-    assert translation.gettext('Open Audio File') == 'အသံဖိုင် ဖွင့်မည်'
+    assert translation.gettext('Open Audio File') == 'အသံဖိုင်ဖွင့်ရန်'
     assert translation.gettext('untranslated test message') == 'untranslated test message'
+    # msgfmt checks flagged C formats. Also check placeholders in entries that
+    # do not carry a format flag, and preserve literal ASS override tags.
+    tokens = re.compile(r'%(?:\d+\$)?[-+#0 ]*\d*(?:\.\d+)?[a-zA-Z%]|\{(?:\d+|[a-zA-Z_]\w*)?\}|\\(?:clip|iclip|movevc|[1234]?[a-zA-Z]+)')
+    for original, translated in translation._catalog.items():
+        if isinstance(original, str) and original:
+            assert Counter(tokens.findall(original)) == Counter(tokens.findall(translated)), original
+    fuzzy = subprocess.check_output(['msgattrib', '--only-fuzzy', '--no-obsolete',
+                                     str(po / 'my.po')], text=True, encoding='utf-8')
+    assert not re.search(r'^#,.*\bfuzzy\b', fuzzy, re.MULTILINE)
 print('Localization smoke checks passed')

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-02 00:25+0630\n"
+"POT-Creation-Date: 2026-11-02 00:34+0630\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -4802,6 +4802,15 @@ msgstr ""
 msgid "Place and track a marker to plot data"
 msgstr ""
 
+#: src/dialog_motion_track.cpp:948
+msgid "Video frame timing changed. Start a new tracking session."
+msgstr ""
+
+#: src/dialog_motion_track.cpp:956
+msgid ""
+"Subtitle document or coordinate system changed. Start a new tracking session."
+msgstr ""
+
 #: src/dialog_motion_track.cpp:1010
 msgid "Track Motion"
 msgstr ""
@@ -5212,7 +5221,7 @@ msgid "Rotation tolerance (degrees)"
 msgstr ""
 
 #: src/dialog_motion_track.cpp:2190 src/dialog_motion_track.cpp:2197
-#: src/dialog_motion_track.cpp:2244
+#: src/dialog_motion_track.cpp:2247
 msgid "Motion Apply"
 msgstr ""
 
@@ -5220,15 +5229,25 @@ msgstr ""
 msgid "Select the Mangetsu subtitle renderer before applying native tracking."
 msgstr ""
 
-#: src/dialog_motion_track.cpp:2231
+#: src/dialog_motion_track.cpp:2224
+#, c-format
+msgid "%d frame-by-frame transforms; one event per subtitle"
+msgstr ""
+
+#: src/dialog_motion_track.cpp:2225
+#, c-format
+msgid "%d optimized transforms; one event per subtitle"
+msgstr ""
+
+#: src/dialog_motion_track.cpp:2234
 msgid "apply native motion tracking"
 msgstr ""
 
-#: src/dialog_motion_track.cpp:2261
+#: src/dialog_motion_track.cpp:2264
 msgid "revert native motion tracking"
 msgstr ""
 
-#: src/dialog_motion_track.cpp:2272
+#: src/dialog_motion_track.cpp:2275
 msgid "Motion Revert"
 msgstr ""
 
@@ -7051,6 +7070,184 @@ msgstr ""
 msgid "Reading subtitles from Matroska file."
 msgstr ""
 
+#: src/motion_tracking/motion_track_apply.cpp:33
+msgid "Motion contains a non-finite value."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:52
+msgid ""
+"Track every selected subtitle frame and the current main-video reference "
+"frame before Apply."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:55
+msgid "Tracking contains an invalid sample."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:62
+msgid "Tracking has no source video resolution."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:65
+msgid "Tracking samples must be ordered without duplicate frames."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:67
+msgid "Tracking contains a non-finite angle."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:86
+msgid "An authored motion tag has missing parameters."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:91
+msgid "An authored motion value has an unclosed annotation."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:95
+msgid "An authored motion value is empty."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:101
+msgid "An authored relative motion value needs ~+N or ~-N."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:108
+msgid "An authored motion value is not a finite number."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:110
+msgid "An authored motion value cannot be composed safely."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:116
+#: src/motion_tracking/motion_track_apply.cpp:185
+msgid "Authored motion transforms are nested too deeply."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:120
+#: src/motion_tracking/motion_track_apply.cpp:161
+msgid "An authored transform is malformed."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:125
+msgid "An authored transform has unsupported timing or acceleration."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:158
+msgid "Authored transforms are nested too deeply."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:167
+msgid ""
+"Authored animated position competes with tracked position in Mangetsu. "
+"Disable X/Y in Advanced Apply, or use a static authored position."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:171
+msgid ""
+"Animated clip geometry cannot safely compose with Track for \\clip. Keep the "
+"clip unchanged in Advanced Apply."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:175
+msgid ""
+"Authored \\movevc cannot compose with clip transforms. Keep the clip "
+"unchanged in Advanced Apply."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:301
+msgid ""
+"Select positive-duration dialogue events with loaded video timing and script "
+"resolution."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:303
+msgid "The subtitle does not cover a video frame."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:326
+msgid ""
+"Multiple authored clip shapes use legacy composition. Select one clip shape, "
+"or keep clips unchanged in Advanced Apply."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:339
+msgid ""
+"Object/clip zoom must be uniform. Disable Scale in Advanced Apply for an "
+"anisotropic track."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:341
+msgid ""
+"Mangetsu clippos/clips cannot rotate clip geometry. Disable Rotation in "
+"Advanced Apply, or keep the clip unchanged."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:508
+msgid "Active subtitle changed. Start a new tracking session."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:509
+#: src/motion_tracking/motion_track_apply.cpp:512
+msgid "Subtitle selection changed. Start a new tracking session."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:514
+msgid "Subtitle timing changed. Start a new tracking session."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:515
+msgid "Subtitle content changed. Start a new tracking session."
+msgstr ""
+
+#: src/motion_tracking/motion_track_apply.cpp:516
+msgid "The tracked clip changed. Track the clip again."
+msgstr ""
+
+#: src/motion_tracking/motion_track_commit.cpp:51
+msgid "Motion Revert metadata is damaged or unsupported."
+msgstr ""
+
+#: src/motion_tracking/motion_track_commit.cpp:79
+msgid "Apply requires exactly one event per original subtitle."
+msgstr ""
+
+#: src/motion_tracking/motion_track_commit.cpp:83
+msgid "Apply cannot change subtitle timing."
+msgstr ""
+
+#: src/motion_tracking/motion_track_commit.cpp:85
+msgid ""
+"Revert the legacy split motion family once before applying Mangetsu tracking."
+msgstr ""
+
+#: src/motion_tracking/motion_track_commit.cpp:129
+msgid ""
+"This motion family is incomplete or was duplicated. Use Undo or restore its "
+"missing events."
+msgstr ""
+
+#: src/motion_tracking/motion_track_commit.cpp:152
+msgid "Select a subtitle with generated tracking to Revert."
+msgstr ""
+
+#: src/motion_tracking/motion_track_optimizer.cpp:16
+msgid "Invalid motion tolerance"
+msgstr ""
+
+#: src/motion_tracking/motion_track_optimizer.cpp:19
+msgid "Invalid motion sample"
+msgstr ""
+
+#: src/motion_tracking/motion_track_optimizer.cpp:21
+msgid "Invalid motion signal"
+msgstr ""
+
+#: src/motion_tracking/motion_track_optimizer.cpp:23
+msgid "Motion samples must be consecutive and ordered"
+msgstr ""
+
 #: src/ocr/ocr_engine.cpp:440
 msgid ""
 "OCR files are not installed. Reinstall Aegisub and select the OCR option to "
@@ -7334,8 +7531,21 @@ msgstr ""
 msgid "Default to Video Zoom"
 msgstr ""
 
+#: src/preferences.cpp:271
+msgid ""
+"Reverses the behavior of Ctrl while scrolling the video display. If not set, "
+"scrolling will default to UI zoom and Ctrl+scrolling will zoom the video. If "
+"set, this will be reversed."
+msgstr ""
+
 #: src/preferences.cpp:272
 msgid "Disable zooming with scroll bar"
+msgstr ""
+
+#: src/preferences.cpp:273
+msgid ""
+"Makes the scroll bar not zoom the video. Useful when using a track pad that "
+"often scrolls accidentally."
 msgstr ""
 
 #: src/preferences.cpp:274
@@ -7912,6 +8122,13 @@ msgstr ""
 
 #: src/preferences.cpp:595
 msgid "Downmix to stereo"
+msgstr ""
+
+#: src/preferences.cpp:596
+msgid ""
+"Reduces memory usage on surround audio, but may cause audio tracks to sound "
+"blank in specific circumstances. This will not affect audio with two "
+"channels or less."
 msgstr ""
 
 #: src/preferences.cpp:601
