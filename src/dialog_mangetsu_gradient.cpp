@@ -12,6 +12,7 @@
 #include "ass_style.h"
 #include "compat.h"
 #include "dialogs.h"
+#include "format.h"
 #include "gradient_placement_session.h"
 #include "include/aegisub/context.h"
 #include "mangetsu_gradient_placement.h"
