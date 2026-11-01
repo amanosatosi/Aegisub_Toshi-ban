@@ -22,5 +22,6 @@ For Burmese use Myanmar Unicode and the fansubbing terms စာဖိုင် (
 file), အသံဖိုင် (audio file), and ဗီဒီယိုဖိုင် (video file). Distinguish a
 subtitle file from subtitle text or lines. Preserve placeholders, access keys,
 and technical identifiers. Leave uncertain strings untranslated for review.
-The initial Burmese catalog is incomplete and needs native-speaker review,
-especially for specialist terminology, layout and complex-script rendering.
+The Burmese catalog needs native-speaker review, especially for specialist
+terminology, layout and complex-script rendering; catalog completeness alone
+does not establish that every UI string is exposed to gettext.

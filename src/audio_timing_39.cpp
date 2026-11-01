@@ -457,7 +457,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  void Prepare() {
   auto active=c->selectionController->GetActiveLine();
   auto provider=c->project->AudioProvider();
-  if(!active||!provider){notice="Select a lyric line and open audio";return;}
+  if(!active||!provider){notice=from_wx(_("Select a lyric line and open audio"));return;}
   c->videoController->Stop();
   c->audioController->Stop();
   std::vector<AssDialogue*> all;
@@ -468,7 +468,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    full_start=setup.playback_start;
    for(auto const& target:setup.targets)events[target.id]=all[target.id-1];
   if(full_start.time>=media_end) {
-   notice="39 Mode start is outside the media; move the comment marker to a playable time";
+   notice=from_wx(_("39 Mode start is outside the media; move the comment marker to a playable time"));
     c->frame->StatusTimeout(to_wx(notice));return;
    }
    auto preview_targets=t39::DiscoverTargets(setup.targets,setup.explicit_scope,setup.active_style,full_start.time,setup.playback_end);
@@ -491,7 +491,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
     if(!c->audioController->IsPlaying())PlaybackStopped(session.StartTime());
    }
    catch(...) {
-    notice="Playback could not start. Capture stopped; check the media/audio device.";
+    notice=from_wx(_("Playback could not start. Capture stopped; check the media/audio device."));
     c->audioController->Stop();PlaybackStopped(session.StartTime());
    }
   }
@@ -503,7 +503,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   if(committing||!(type&(AssFile::COMMIT_DIAG_FULL|AssFile::COMMIT_DIAG_ADDREM)))return;
   if(timing_mode)CloseTimingDraft();
    c->audioController->Stop();countdown.Stop();session.Discard();events.clear();ordinary_boundaries.Reset({});target_boundaries.Reset({});
-  notice="Subtitle edit or undo invalidated the cached targets. Toggle 39 Mode to start a new session.";
+  notice=from_wx(_("Subtitle edit or undo invalidated the cached targets. Toggle 39 Mode to start a new session."));
   if(inspector)inspector->Hide();Update();Notify();
  }
 	void Update(bool all_rows=false) {
@@ -524,7 +524,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
     if(rows->GetSelection()!=int(selected))rows->SetSelection(int(selected));
     lane_choice->SetSelection(r->lane+1);
     status->SetLabel(to_wx(notice));
-  }else status->SetLabel(to_wx(notice.empty()?"No captured lyric targets. Toggle 39 Mode to start again.":notice));
+  }else status->SetLabel((notice.empty() ? _("No captured lyric targets. Toggle 39 Mode to start again.") : to_wx(notice)));
   UpdatePane();
   if(inspector&&inspector->IsShown())UpdateInspector();
   refreshing=false;
@@ -545,7 +545,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   t39::CommitPlan plan;std::string output,error;
   if(!t39::BuildCommitPlan(*event->second,analysis,lane.capture.blocks,mapping,plan,error,
    draft||lane.manual_active)||!t39::SerializeCommitPlan(*event->second,plan,output,error)){
-   commit_preview->ChangeValue(to_wx("No complete commit preview: "+error));return;
+   commit_preview->ChangeValue(_("No complete commit preview: ") + to_wx(error));return;
   }
   for(auto const& atom:plan.atoms){
    std::string role=atom.kind==t39::CommitAtomKind::Sung?"SUNG  ":
@@ -670,13 +670,13 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   if(manual_mode)CloseManual();
   auto const& lane=r->lanes[selected_lane];
   if(!t39ui::SungTapCount(lane.capture)||r->target.analysis.morae.empty()){
-   notice="Mora placement needs at least one sung attack and readable source text.";Update();return;
+   notice=from_wx(_("Mora placement needs at least one sung attack and readable source text."));Update();return;
   }
   placement_draft.Begin(r->target.analysis,lane.capture.blocks,lane.Assignments());
   placement_mode=true;placement_row=selected;placement_lane=selected_lane;
   placement_pane->Show();
   review_view->SetDraft(placement_draft.Assignments(),{});
-  notice="Mora placement is a draft until Apply placement.";Update();
+  notice=from_wx(_("Mora placement is a draft until Apply placement."));Update();
  }
  void UpdatePlacementDraft() {
   if(!placement_mode)return;
@@ -736,7 +736,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    placement_hint->SetLabel(_("Placement is incomplete; no source text was changed."));return;
   }
   if(placement_draft.HasLatinCuts())r->resolution=t39::ResolutionSource::UserEnglishSegmentation;
-  notice="Mora placement applied locally; source will change only on Commit all GREEN.";
+  notice=from_wx(_("Mora placement applied locally; source will change only on Commit all GREEN."));
   ClosePlacement();Update();
  }
  void CloseTimingDraft() {
@@ -767,17 +767,17 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   if(!timing_mode||timing_row!=selected||timing_lane!=selected_lane)return;
   auto draft=timing_draft.Blocks();
   if(session.SetManualTiming(selected,selected_lane,draft)){
-   notice="Manual Toshiki timing applied; raw rhythm capture is unchanged.";
+   notice=from_wx(_("Manual Toshiki timing applied; raw rhythm capture is unchanged."));
    CloseTimingDraft();Update();
   }
-  else {notice="Manual timing is outside the line or has overlapping blocks.";Update();}
+  else {notice=from_wx(_("Manual timing is outside the line or has overlapping blocks."));Update();}
  }
  void StartManual() {
   auto r=Current();if(!r||r->committed)return;
   if(!MayLeavePlacement())return;
   if(timing_mode&&!MayLeaveTimingDraft())return;
   if(!t39ui::SungTapCount(r->lanes[selected_lane].capture)||r->target.analysis.morae.empty()){
-   notice="Manual repair needs a sung attack and a readable mora; retake or provide a reading.";Update();return;
+   notice=from_wx(_("Manual repair needs a sung attack and a readable mora; retake or provide a reading."));Update();return;
   }
   manual_mode=true;manual_row=selected;manual_lane=selected_lane;
   manual_groups.clear();manual_timing_count=manual_mora_count=1;
@@ -839,11 +839,11 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
     first_mora+=group.second;
    }
    if(session.SetManualAssignment(selected,manual_lane,std::move(mapping))){
-   notice="Mora placement resolved; raw capture unchanged.";CloseManual();Update();
-   }else {manual_groups.pop_back();notice="Manual mapping could not be completed; check the remaining groups.";UpdateManualProgress();}
+   notice=from_wx(_("Mora placement resolved; raw capture unchanged."));CloseManual();Update();
+   }else {manual_groups.pop_back();notice=from_wx(_("Manual mapping could not be completed; check the remaining groups."));UpdateManualProgress();}
    return;
   }
-  if(used_taps==taps||used_morae==morae){manual_groups.pop_back();notice="Both attacks and morae must finish together.";}
+  if(used_taps==taps||used_morae==morae){manual_groups.pop_back();notice=from_wx(_("Both attacks and morae must finish together."));}
   manual_timing_count=manual_mora_count=1;UpdateManualProgress();
  }
  void UndoManual(){if(!manual_groups.empty())manual_groups.pop_back();UpdateManualProgress();}
@@ -947,7 +947,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
    offset_spin->SetValue(session.TimingCorrection());UpdateOffsetDirection();return;
   }
   int offset=offset_spin->GetValue();
-  if(!session.SetTimingCorrection(offset))notice="Timing correction is available after capture, before committing lines.";
+  if(!session.SetTimingCorrection(offset))notice=from_wx(_("Timing correction is available after capture, before committing lines."));
   else notice.clear();
   Update(true);
  }
@@ -1087,12 +1087,12 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   reset_actions->Add(reset_manual,0,wxALL,3);
   reset_manual->Bind(wxEVT_BUTTON,[this](wxCommandEvent&){
    if(placement_mode)ClosePlacement();
-   if(session.ResetManualAssignment(selected,selected_lane)){notice="Automatic assignment restored; raw capture unchanged.";CloseManual();Update();}
+   if(session.ResetManualAssignment(selected,selected_lane)){notice=from_wx(_("Automatic assignment restored; raw capture unchanged."));CloseManual();Update();}
   });
   reset_timing=new wxButton(review_scroll,wxID_ANY,_("Reset manual timing"));
   reset_actions->Add(reset_timing,0,wxALL,3);
   reset_timing->Bind(wxEVT_BUTTON,[this](wxCommandEvent&){
-   if(session.ResetManualTiming(selected,selected_lane)){notice="Raw-derived timing restored.";CloseTimingDraft();Update();}
+   if(session.ResetManualTiming(selected,selected_lane)){notice=from_wx(_("Raw-derived timing restored."));CloseTimingDraft();Update();}
   });
   Button(review_scroll,reset_actions,_("Advanced / Inspector"),[this]{ShowInspector();});
   right->Add(reset_actions,0,wxLEFT|wxRIGHT|wxBOTTOM,5);
@@ -1189,7 +1189,7 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
   }
   UpdateInspector();inspector->Show();inspector->Raise();
  }
- void Move(int delta){if(auto r=Current()){if(!MayLeavePlacement())return;if(!r->lanes[selected_lane].editor.Move(r->target.analysis,size_t(std::max(0,assignments->GetSelection())),delta))notice="Protected divider; choose a complete alternative path.";else {notice="Assignment moved; raw timestamps unchanged";r->resolution=t39::ResolutionSource::UserSelected;r->reviewed=true;}Update();}}
+ void Move(int delta){if(auto r=Current()){if(!MayLeavePlacement())return;if(!r->lanes[selected_lane].editor.Move(r->target.analysis,size_t(std::max(0,assignments->GetSelection())),delta))notice=from_wx(_("Protected divider; choose a complete alternative path."));else {notice=from_wx(_("Assignment moved; raw timestamps unchanged"));r->resolution=t39::ResolutionSource::UserSelected;r->reviewed=true;}Update();}}
  void History(bool redo){if(auto r=Current()){if(!MayLeavePlacement())return;auto& e=r->lanes[selected_lane].editor;if(redo)e.Redo();else e.Undo();r->resolution=t39::ResolutionSource::UserSelected;r->reviewed=true;Update();}}
  void Retake(){
   auto current=Current();
@@ -1205,19 +1205,19 @@ class AudioTimingController39 final : public AudioTimingController, public wxEve
  }
  void CommitResults() {
   if(Is39SessionActive())return;
-  if(placement_mode){notice="Apply or cancel the mora placement draft before committing.";Update();return;}
+  if(placement_mode){notice=from_wx(_("Apply or cancel the mora placement draft before committing."));Update();return;}
   struct Write{t39::SessionResult* result;AssDialogue* event;std::string text;};std::vector<Write> writes;
   for(auto& r:session.Results()) {
    if(r.committed||r.lane<0)continue;
    auto confidence=r.GetConfidence();
    if(confidence!=t39::Confidence::Green)continue;
-   auto it=events.find(r.target.id);if(it==events.end()||it->second->Text.get()!=r.target.analysis.source){notice="Source changed; restart session before committing";Update();return;}
+   auto it=events.find(r.target.id);if(it==events.end()||it->second->Text.get()!=r.target.analysis.source){notice=from_wx(_("Source changed; restart session before committing"));Update();return;}
    auto& l=r.lanes[r.lane];std::string output,error;
    if(!t39::Serialize(*it->second,r.target.analysis,l.capture.blocks,l.Assignments(),output,error,
     l.manual_active)){notice=error;Update();return;}
    writes.push_back({&r,it->second,std::move(output)});
   }
-  if(writes.empty()){notice="No eligible lines to commit";Update();return;}
+  if(writes.empty()){notice=from_wx(_("No eligible lines to commit"));Update();return;}
   committing=true;
   for(auto& w:writes){w.event->Text=w.text;auto& l=w.result->lanes[w.result->lane];if(!l.editor.corrections.empty())c->ass->SetExtradataValue(*w.event,"39-mode-correction",t39::Inspect(w.result->target.analysis,l.capture.blocks,l.match,&l.editor));}
   c->ass->Commit(_("39 Mode session timing"),AssFile::COMMIT_DIAG_TEXT|AssFile::COMMIT_EXTRADATA);committing=false;

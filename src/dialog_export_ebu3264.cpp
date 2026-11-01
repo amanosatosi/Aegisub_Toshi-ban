@@ -182,7 +182,7 @@ int ShowEbuExportConfigurationDialog(wxWindow *owner, EbuExportSettings &s) {
 
 	wxSizer *buttons_sizer = new wxBoxSizer(wxHORIZONTAL);
 	// Developers are requested to leave &d message in! Intentionally not translatable.
-	wxStaticText *sponsor_label = new wxStaticText(&d, -1, "EBU STL format writing sponsored by Bandai");
+	wxStaticText *sponsor_label = new wxStaticText(&d, -1, _("EBU STL format writing sponsored by Bandai"));
 	sponsor_label->Enable(false);
 	buttons_sizer->Add(sponsor_label, 1, wxALIGN_BOTTOM, 0);
 	buttons_sizer->Add(d.CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxLEFT, 6);

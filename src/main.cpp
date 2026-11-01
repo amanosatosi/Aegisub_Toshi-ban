@@ -222,7 +222,7 @@ bool AegisubApp::OnInit() {
 		config::opt->Remove("Video/Playback/Speed");
 	}
 	catch (agi::Exception const& err) {
-		wxMessageBox("Configuration file is invalid. Error reported:\n" + to_wx(err.GetMessage()), "Error");
+		wxMessageBox(_("Configuration file is invalid. Error reported:\n") + to_wx(err.GetMessage()), _("Error"));
 	}
 
 #ifdef _WIN32
@@ -353,7 +353,7 @@ bool AegisubApp::OnInit() {
 				config::opt->Flush();
 			}
 			catch (agi::fs::FileSystemError const& e) {
-				wxMessageBox(to_wx(e.GetMessage()), "Error saving config file", wxOK | wxICON_ERROR | wxCENTER);
+				wxMessageBox(to_wx(e.GetMessage()), _("Error saving config file"), wxOK | wxICON_ERROR | wxCENTER);
 			}
 #endif
 		}
@@ -369,16 +369,16 @@ bool AegisubApp::OnInit() {
 			OpenFiles(wxArrayStringsAdapter(args.size() - 1, &args[1]));
 	}
 	catch (agi::Exception const& e) {
-		wxMessageBox(to_wx(e.GetMessage()), "Fatal error while initializing");
+		wxMessageBox(to_wx(e.GetMessage()), _("Fatal error while initializing"));
 		return false;
 	}
 	catch (std::exception const& e) {
-		wxMessageBox(to_wx(e.what()), "Fatal error while initializing");
+		wxMessageBox(to_wx(e.what()), _("Fatal error while initializing"));
 		return false;
 	}
 #ifndef _DEBUG
 	catch (...) {
-		wxMessageBox("Unhandled exception","Fatal error while initializing");
+		wxMessageBox(_("Unhandled exception"),_("Fatal error while initializing"));
 		return false;
 	}
 #endif
@@ -505,7 +505,7 @@ void AegisubApp::UnhandledException(bool stackWalk) {
 		wxMessageBox(agi::wxformat(exception_message, path), _("Program error"), wxOK | wxICON_ERROR | wxCENTER, nullptr);
 	}
 	else if (LastStartupState) {
-		wxMessageBox(fmt_wx("Aegisub has crashed while starting up!\n\nThe last startup step attempted was: %s.", LastStartupState), _("Program error"), wxOK | wxICON_ERROR | wxCENTER);
+		wxMessageBox(fmt_tl("Aegisub has crashed while starting up!\n\nThe last startup step attempted was: %s.", LastStartupState), _("Program error"), wxOK | wxICON_ERROR | wxCENTER);
 	}
 #endif
 }

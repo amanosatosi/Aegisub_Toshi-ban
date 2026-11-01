@@ -339,7 +339,7 @@ bool Project::DoLoadVideo(agi::fs::path const& path) {
 
 	std::string warning = video_provider->GetWarning();
 	if (!warning.empty())
-		wxMessageBox(to_wx(warning), "Warning", wxICON_WARNING | wxOK);
+		wxMessageBox(to_wx(warning), _("Warning"), wxICON_WARNING | wxOK);
 
 	video_has_subtitles = false;
 	if (agi::fs::HasExtension(path, "mkv"))

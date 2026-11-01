@@ -1,8 +1,8 @@
 # Burmese translation review
 
-The catalog is incomplete; untranslated entries deliberately fall back to
-English. A Myanmar fansubber should review the translated entries in context
-before calling the interface complete. In particular, review these terms:
+The catalog is fully translated, but a Myanmar fansubber should review the
+entries in context before calling the interface complete. In particular,
+review these terms:
 
 * 39 Mode: “mora”, “attack”, “assignment”, “lane” and “handoff” in the
   timing workflow. Some are retained in English where their precise meaning
@@ -10,6 +10,10 @@ before calling the interface complete. In particular, review these terms:
 * Motion Tracking: “sample”, “tolerance”, “tracking channel”, “jitter” and
   “spike”, especially in messages about edited ASS motion and clip geometry.
 * Mangetsu: “stop”, “anchor”, “placement”, “bubble” and “callout”.
+
+Some fork UI still constructs messages outside gettext, including dynamic
+39 Mode guidance and OCR backend diagnostics. Audit those producers before
+describing the entire application UI as localized.
 
 Check the result in the actual UI for wording, mnemonic collisions, wrapping,
 clipping, Myanmar font fallback and combining-mark shaping. The required file

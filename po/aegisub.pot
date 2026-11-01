@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-02 00:34+0630\n"
+"POT-Creation-Date: 2026-11-02 00:50+0630\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -249,8 +249,37 @@ msgstr ""
 msgid "Hatch: sung block owned elsewhere   ·   dotted: harmless clamp"
 msgstr ""
 
+#: src/audio_timing_39.cpp:460
+msgid "Select a lyric line and open audio"
+msgstr ""
+
+#: src/audio_timing_39.cpp:471
+msgid ""
+"39 Mode start is outside the media; move the comment marker to a playable "
+"time"
+msgstr ""
+
+#: src/audio_timing_39.cpp:494
+msgid ""
+"Playback could not start. Capture stopped; check the media/audio device."
+msgstr ""
+
+#: src/audio_timing_39.cpp:506
+msgid ""
+"Subtitle edit or undo invalidated the cached targets. Toggle 39 Mode to "
+"start a new session."
+msgstr ""
+
+#: src/audio_timing_39.cpp:527
+msgid "No captured lyric targets. Toggle 39 Mode to start again."
+msgstr ""
+
 #: src/audio_timing_39.cpp:540
 msgid "Source event unavailable"
+msgstr ""
+
+#: src/audio_timing_39.cpp:548
+msgid "No complete commit preview: "
 msgstr ""
 
 #: src/audio_timing_39.cpp:660
@@ -259,6 +288,14 @@ msgstr ""
 
 #: src/audio_timing_39.cpp:661
 msgid "39 Mode mora placement"
+msgstr ""
+
+#: src/audio_timing_39.cpp:673
+msgid "Mora placement needs at least one sung attack and readable source text."
+msgstr ""
+
+#: src/audio_timing_39.cpp:679
+msgid "Mora placement is a draft until Apply placement."
 msgstr ""
 
 #: src/audio_timing_39.cpp:696
@@ -291,6 +328,11 @@ msgstr ""
 msgid "Placement is incomplete; no source text was changed."
 msgstr ""
 
+#: src/audio_timing_39.cpp:739
+msgid ""
+"Mora placement applied locally; source will change only on Commit all GREEN."
+msgstr ""
+
 #: src/audio_timing_39.cpp:750
 msgid "Discard the unapplied manual timing changes?"
 msgstr ""
@@ -299,12 +341,42 @@ msgstr ""
 msgid "39 Mode manual timing"
 msgstr ""
 
+#: src/audio_timing_39.cpp:770
+msgid "Manual Toshiki timing applied; raw rhythm capture is unchanged."
+msgstr ""
+
+#: src/audio_timing_39.cpp:773
+msgid "Manual timing is outside the line or has overlapping blocks."
+msgstr ""
+
+#: src/audio_timing_39.cpp:780
+msgid ""
+"Manual repair needs a sung attack and a readable mora; retake or provide a "
+"reading."
+msgstr ""
+
+#: src/audio_timing_39.cpp:842
+msgid "Mora placement resolved; raw capture unchanged."
+msgstr ""
+
+#: src/audio_timing_39.cpp:843
+msgid "Manual mapping could not be completed; check the remaining groups."
+msgstr ""
+
+#: src/audio_timing_39.cpp:846
+msgid "Both attacks and morae must finish together."
+msgstr ""
+
 #: src/audio_timing_39.cpp:937
 msgid "Hide full session raw capture"
 msgstr ""
 
 #: src/audio_timing_39.cpp:937 src/audio_timing_39.cpp:1183
 msgid "Show full session raw capture"
+msgstr ""
+
+#: src/audio_timing_39.cpp:950
+msgid "Timing correction is available after capture, before committing lines."
 msgstr ""
 
 #: src/audio_timing_39.cpp:974
@@ -452,8 +524,16 @@ msgstr ""
 msgid "Reset mora placement"
 msgstr ""
 
+#: src/audio_timing_39.cpp:1090
+msgid "Automatic assignment restored; raw capture unchanged."
+msgstr ""
+
 #: src/audio_timing_39.cpp:1092
 msgid "Reset manual timing"
+msgstr ""
+
+#: src/audio_timing_39.cpp:1095
+msgid "Raw-derived timing restored."
 msgstr ""
 
 #: src/audio_timing_39.cpp:1097
@@ -498,6 +578,26 @@ msgstr ""
 
 #: src/audio_timing_39.cpp:1185
 msgid "Text files (*.txt)|*.txt"
+msgstr ""
+
+#: src/audio_timing_39.cpp:1192
+msgid "Assignment moved; raw timestamps unchanged"
+msgstr ""
+
+#: src/audio_timing_39.cpp:1192
+msgid "Protected divider; choose a complete alternative path."
+msgstr ""
+
+#: src/audio_timing_39.cpp:1208
+msgid "Apply or cancel the mora placement draft before committing."
+msgstr ""
+
+#: src/audio_timing_39.cpp:1214
+msgid "Source changed; restart session before committing"
+msgstr ""
+
+#: src/audio_timing_39.cpp:1220
+msgid "No eligible lines to commit"
 msgstr ""
 
 #: src/audio_timing_39.cpp:1223
@@ -2351,6 +2451,22 @@ msgstr ""
 msgid "Advanced Substation Alpha (*.ass)|*.ass|All files (*.*)|*.*"
 msgstr ""
 
+#: src/command/subtitle.cpp:528 src/command/subtitle.cpp:531
+#: src/dialog_fonts_collector.cpp:311 src/dialog_fonts_collector.cpp:316
+#: src/dialog_fonts_collector.cpp:321 src/dialog_kara_timing_copy.cpp:574
+#: src/dialog_kara_timing_copy.cpp:576 src/dialog_kara_timing_copy.cpp:626
+#: src/dialog_search_replace.cpp:144 src/dialog_spellchecker.cpp:143
+#: src/dialog_spellchecker.cpp:149 src/dialog_style_manager.cpp:687
+#: src/dialog_style_manager.cpp:692 src/dialog_style_manager.cpp:695
+#: src/main.cpp:225 src/preferences.cpp:446
+msgid "Error"
+msgstr ""
+
+#: src/command/subtitle.cpp:531 src/dialog_export.cpp:211
+#: src/dialog_style_manager.cpp:695
+msgid "Unknown error"
+msgstr ""
+
 #: src/command/subtitle.cpp:538
 msgid "&Save Subtitles"
 msgstr ""
@@ -2625,6 +2741,10 @@ msgstr ""
 
 #: src/command/timecode.cpp:86
 msgid "Save a VFR timecodes v2 file"
+msgstr ""
+
+#: src/command/timecode.cpp:104
+msgid "Error saving timecodes"
 msgstr ""
 
 #: src/command/tool.cpp:62
@@ -3688,6 +3808,7 @@ msgstr ""
 
 #: src/dialog_align.cpp:128 src/dialog_mangetsu_gradient.cpp:664
 #: src/dialog_mangetsu_gradient.cpp:1073 src/dialog_mangetsu_gradient.cpp:1102
+#: src/dialog_mangetsu_gradient.cpp:1210
 msgid "Color"
 msgstr ""
 
@@ -4049,6 +4170,11 @@ msgstr ""
 msgid "Export subtitles file"
 msgstr ""
 
+#: src/dialog_export.cpp:205 src/dialog_export.cpp:208
+#: src/dialog_export.cpp:211
+msgid "Error exporting subtitles"
+msgstr ""
+
 #: src/dialog_export_ebu3264.cpp:84
 msgid "EBU STL export"
 msgstr ""
@@ -4175,6 +4301,10 @@ msgstr ""
 msgid "Display standard"
 msgstr ""
 
+#: src/dialog_export_ebu3264.cpp:185
+msgid "EBU STL format writing sponsored by Bandai"
+msgstr ""
+
 #: src/dialog_fonts_collector.cpp:102
 #, c-format
 msgid "* An error occurred when enumerating the used fonts: %s.\n"
@@ -4275,13 +4405,6 @@ msgstr ""
 
 #: src/dialog_fonts_collector.cpp:276
 msgid "&Start!"
-msgstr ""
-
-#: src/dialog_fonts_collector.cpp:311 src/dialog_fonts_collector.cpp:316
-#: src/dialog_fonts_collector.cpp:321 src/dialog_kara_timing_copy.cpp:574
-#: src/dialog_kara_timing_copy.cpp:576 src/dialog_kara_timing_copy.cpp:626
-#: src/preferences.cpp:446
-msgid "Error"
 msgstr ""
 
 #: src/dialog_fonts_collector.cpp:311
@@ -4635,7 +4758,7 @@ msgid ""
 msgstr ""
 
 #: src/dialog_mangetsu_gradient.cpp:665 src/dialog_mangetsu_gradient.cpp:1074
-#: src/dialog_mangetsu_gradient.cpp:1107
+#: src/dialog_mangetsu_gradient.cpp:1107 src/dialog_mangetsu_gradient.cpp:1210
 msgid "Alpha"
 msgstr ""
 
@@ -4676,12 +4799,75 @@ msgstr ""
 msgid "set outline size"
 msgstr ""
 
+#: src/dialog_mangetsu_gradient.cpp:1063 src/dialog_mangetsu_gradient.cpp:1200
+#: src/dialog_style_editor.cpp:296
+msgid "Primary"
+msgstr ""
+
+#: src/dialog_mangetsu_gradient.cpp:1064 src/dialog_mangetsu_gradient.cpp:1201
+#: src/dialog_style_editor.cpp:296
+msgid "Secondary"
+msgstr ""
+
+#: src/dialog_mangetsu_gradient.cpp:1066 src/dialog_mangetsu_gradient.cpp:1197
+#: src/dialog_mangetsu_gradient.cpp:1202
+#, c-format
+msgid "Outline %d"
+msgstr ""
+
+#: src/dialog_mangetsu_gradient.cpp:1067 src/dialog_mangetsu_gradient.cpp:1203
+#: src/dialog_style_editor.cpp:296
+msgid "Shadow"
+msgstr ""
+
+#: src/dialog_mangetsu_gradient.cpp:1068 src/dialog_mangetsu_gradient.cpp:1204
+msgid "Fifth"
+msgstr ""
+
+#: src/dialog_mangetsu_gradient.cpp:1078
+#, c-format
+msgid "Editing: %s — %s"
+msgstr ""
+
+#: src/dialog_mangetsu_gradient.cpp:1079
+#, c-format
+msgid "Gradient Editor — %s"
+msgstr ""
+
 #: src/dialog_mangetsu_gradient.cpp:1102
 msgid "Color *"
 msgstr ""
 
 #: src/dialog_mangetsu_gradient.cpp:1107
 msgid "Alpha *"
+msgstr ""
+
+#: src/dialog_mangetsu_gradient.cpp:1192 src/dialog_mangetsu_gradient.cpp:1205
+msgid "Main"
+msgstr ""
+
+#: src/dialog_mangetsu_gradient.cpp:1192 src/dialog_style_editor.cpp:198
+#: src/dialog_style_editor.cpp:296
+msgid "Outline"
+msgstr ""
+
+#: src/dialog_mangetsu_gradient.cpp:1219
+#, c-format
+msgid ""
+"Editing: %s / %s / %s -> %s\n"
+"Original gradient: %s   Pending edit: %s"
+msgstr ""
+
+#: src/dialog_mangetsu_gradient.cpp:1221
+msgid "no"
+msgstr ""
+
+#: src/dialog_mangetsu_gradient.cpp:1221
+msgid "yes"
+msgstr ""
+
+#: src/dialog_mangetsu_gradient.cpp:1229
+msgid "Preview only — edit this outline to keep it."
 msgstr ""
 
 #: src/dialog_mangetsu_gradient.cpp:1341
@@ -5337,6 +5523,10 @@ msgstr ""
 msgid "OCR failed"
 msgstr ""
 
+#: src/dialog_ocr.cpp:808
+msgid "No text found."
+msgstr ""
+
 #: src/dialog_ocr.cpp:810
 #, c-format
 msgid "Recognized %d line(s)."
@@ -5488,6 +5678,11 @@ msgstr ""
 msgid "Layout: "
 msgstr ""
 
+#: src/dialog_properties.cpp:161 src/dialog_resample.cpp:172
+#: src/dialog_resample.cpp:186
+msgid "YCbCr Matrix:"
+msgstr ""
+
 #: src/dialog_properties.cpp:164
 msgid "Resolution"
 msgstr ""
@@ -5560,10 +5755,6 @@ msgstr ""
 
 #: src/dialog_resample.cpp:167 src/dialog_resample.cpp:181
 msgid "x"
-msgstr ""
-
-#: src/dialog_resample.cpp:172 src/dialog_resample.cpp:186
-msgid "YCbCr Matrix:"
 msgstr ""
 
 #: src/dialog_resample.cpp:175
@@ -5889,6 +6080,14 @@ msgstr ""
 msgid "Misspelled word:"
 msgstr ""
 
+#: src/dialog_spellchecker.cpp:143
+msgid "No spellchecker available."
+msgstr ""
+
+#: src/dialog_spellchecker.cpp:149
+msgid "No spellchecker dictionaries available."
+msgstr ""
+
 #: src/dialog_spellchecker.cpp:183
 msgid "Ignore &UPPERCASE words"
 msgstr ""
@@ -5943,10 +6142,6 @@ msgstr ""
 
 #: src/dialog_style_editor.cpp:197
 msgid "Margins"
-msgstr ""
-
-#: src/dialog_style_editor.cpp:198 src/dialog_style_editor.cpp:296
-msgid "Outline"
 msgstr ""
 
 #: src/dialog_style_editor.cpp:199
@@ -6051,18 +6246,6 @@ msgstr ""
 
 #: src/dialog_style_editor.cpp:252
 msgid "Alignment in screen, in numpad style"
-msgstr ""
-
-#: src/dialog_style_editor.cpp:296
-msgid "Primary"
-msgstr ""
-
-#: src/dialog_style_editor.cpp:296
-msgid "Secondary"
-msgstr ""
-
-#: src/dialog_style_editor.cpp:296
-msgid "Shadow"
 msgstr ""
 
 #: src/dialog_style_editor.cpp:307 src/grid_column.cpp:363
@@ -6299,6 +6482,10 @@ msgstr ""
 
 #: src/dialog_style_manager.cpp:667
 msgid "style delete"
+msgstr ""
+
+#: src/dialog_style_manager.cpp:687
+msgid "Unsupported subtitle format"
 msgstr ""
 
 #: src/dialog_style_manager.cpp:708
@@ -6999,6 +7186,10 @@ msgstr ""
 msgid "Invalid command name for hotkey"
 msgstr ""
 
+#: src/main.cpp:225
+msgid "Configuration file is invalid. Error reported:\n"
+msgstr ""
+
 #: src/main.cpp:297
 #, c-format
 msgid ""
@@ -7029,8 +7220,28 @@ msgid ""
 "do it manually via the Help menu."
 msgstr ""
 
+#: src/main.cpp:356
+msgid "Error saving config file"
+msgstr ""
+
+#: src/main.cpp:372 src/main.cpp:376 src/main.cpp:381
+msgid "Fatal error while initializing"
+msgstr ""
+
+#: src/main.cpp:381
+msgid "Unhandled exception"
+msgstr ""
+
 #: src/main.cpp:505 src/main.cpp:508
 msgid "Program error"
+msgstr ""
+
+#: src/main.cpp:508
+#, c-format
+msgid ""
+"Aegisub has crashed while starting up!\n"
+"\n"
+"The last startup step attempted was: %s."
 msgstr ""
 
 #: src/main.cpp:522
@@ -8402,6 +8613,10 @@ msgid ""
 "\n"
 msgstr ""
 
+#: src/project.cpp:342 src/video_provider_bestsource.cpp:196
+msgid "Warning"
+msgstr ""
+
 #: src/resolution_resampler.cpp:348
 msgid "resolution resampling"
 msgstr ""
@@ -8433,6 +8648,14 @@ msgstr ""
 #: src/subs_controller.cpp:281
 #, c-format
 msgid "File backup saved as \"%s\"."
+msgstr ""
+
+#: src/subs_controller.cpp:284
+msgid "Exception when attempting to autosave file: "
+msgstr ""
+
+#: src/subs_controller.cpp:287
+msgid "Unhandled exception when attempting to autosave file."
 msgstr ""
 
 #: src/subs_controller.cpp:425
@@ -8878,10 +9101,6 @@ msgid ""
 "BestSource had to fall back to linear decoding. Seeking through the video "
 "will be very slow now. You may want to try a different video provider, but "
 "note that those are not guaranteed to be frame-exact."
-msgstr ""
-
-#: src/video_provider_bestsource.cpp:196
-msgid "Warning"
 msgstr ""
 
 #: src/video_provider_manager.cpp:210

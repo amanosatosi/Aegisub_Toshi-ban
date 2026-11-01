@@ -281,10 +281,10 @@ void SubsController::AutoSave() {
 			msg = fmt_tl("File backup saved as \"%s\".", path);
 		}
 		catch (const agi::Exception& err) {
-			msg = to_wx("Exception when attempting to autosave file: " + err.GetMessage());
+			msg = _("Exception when attempting to autosave file: ") + to_wx(err.GetMessage());
 		}
 		catch (...) {
-			msg = "Unhandled exception when attempting to autosave file.";
+			msg = _("Unhandled exception when attempting to autosave file.");
 		}
 
 		agi::dispatch::Main().Async([frame, msg] {

@@ -36,6 +36,7 @@ with tempfile.TemporaryDirectory() as tmp:
         translation = gettext.GNUTranslations(source)
     assert translation.gettext('Open Audio File') == 'အသံဖိုင်ဖွင့်ရန်'
     assert translation.gettext('untranslated test message') == 'untranslated test message'
+    assert translation.ngettext('Selection was set to one line', 'Selection was set to %u lines', 3) == 'စာကြောင်း %u ကြောင်း ရွေးထားသည်'
     # msgfmt checks flagged C formats. Also check placeholders in entries that
     # do not carry a format flag, and preserve literal ASS override tags.
     tokens = re.compile(r'%(?:\d+\$)?[-+#0 ]*\d*(?:\.\d+)?[a-zA-Z%]|\{(?:\d+|[a-zA-Z_]\w*)?\}|\\(?:clip|iclip|movevc|[1234]?[a-zA-Z]+)')
@@ -45,4 +46,7 @@ with tempfile.TemporaryDirectory() as tmp:
     fuzzy = subprocess.check_output(['msgattrib', '--only-fuzzy', '--no-obsolete',
                                      str(po / 'my.po')], text=True, encoding='utf-8')
     assert not re.search(r'^#,.*\bfuzzy\b', fuzzy, re.MULTILINE)
+    untranslated = subprocess.check_output(['msgattrib', '--untranslated', '--no-obsolete',
+                                            str(po / 'my.po')], text=True, encoding='utf-8')
+    assert not re.search(r'^msgid ', untranslated, re.MULTILINE), 'Burmese catalog has untranslated entries'
 print('Localization smoke checks passed')
