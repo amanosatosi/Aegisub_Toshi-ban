@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-02 03:09+0630\n"
+"POT-Creation-Date: 2026-11-02 03:14+0630\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -9172,6 +9172,14 @@ msgstr ""
 msgid ""
 "Rhythmic fallback (up to four morae) is considered only when needed and "
 "requires review."
+msgstr ""
+
+#: src/toolbar.cpp:149
+msgid "Undo (toolbar label)"
+msgstr ""
+
+#: src/toolbar.cpp:153
+msgid "Redo (toolbar label)"
 msgstr ""
 
 #: src/vcva_tag_gui.cpp:25

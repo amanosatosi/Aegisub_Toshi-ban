@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Aegisub Toshi-ban\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-02 03:09+0630\n"
+"POT-Creation-Date: 2026-11-02 03:14+0630\n"
 "PO-Revision-Date: 2026-11-02 00:23+0630\n"
 "Last-Translator: Aegisub contributors\n"
 "Language-Team: none\n"
@@ -273,8 +273,8 @@ msgid ""
 "Subtitle edit or undo invalidated the cached targets. Toggle 39 Mode to "
 "start a new session."
 msgstr ""
-"စာတန်းပြင်ဆင်မှု သို့မဟုတ် Undo ကြောင့် သိမ်းထားသော target များ မမှန်တော့ပါ။"
-" Session အသစ်စရန် 39 Mode ကို ပြန်ဖွင့်ပါ။"
+"စာတန်းပြင်ဆင်မှု သို့မဟုတ် နောက်ဆုတ်မှုကြောင့် သိမ်းထားသော target များ "
+"မမှန်တော့ပါ။ Session အသစ်စရန် 39 Mode ကို ပြန်ဖွင့်ပါ။"
 
 #: src/audio_timing_39.cpp:528
 msgid "No captured lyric targets. Toggle 39 Mode to start again."
@@ -420,7 +420,7 @@ msgid ""
 msgstr ""
 "အသံအစ %d / %d ချိတ်ပြီး၊ mora %d / %d ချိတ်ပြီး\n"
 "နောက်တစ်ခု: အသံအစ %d → [%s] (mora %d)\n"
-"←/→ အသံအစ   ↑/↓ mora   Enter ချိတ်ရန်   Backspace ချိတ်ဆက်မှုဖြေရန်"
+"←/→ အသံအစ   ↑/↓ mora   Enter ချိတ်ရန်   Backspace နောက်ဆုတ်ရန်"
 
 #: src/audio_timing_39.cpp:842
 msgid "Mora placement resolved; raw capture unchanged."
@@ -550,12 +550,12 @@ msgstr "ရှေ့ရှိ အဖြတ်ကို ဖယ်ရန်"
 #: src/audio_timing_39.cpp:1048 src/audio_timing_39.cpp:1075
 #: src/audio_timing_39.cpp:1181
 msgid "Undo"
-msgstr "အုံဖွ စောနကလုပ်တာပျောက်စေ"
+msgstr "လုပ်ထားတာနောက်ဆုတ်"
 
 #: src/audio_timing_39.cpp:1049 src/audio_timing_39.cpp:1076
 #: src/audio_timing_39.cpp:1181
 msgid "Redo"
-msgstr "အုံဖွ စောနကပျောက်တာပြန်ပေါ်စေ"
+msgstr "လုပ်ထားတာရှေ့တိုး"
 
 #: src/audio_timing_39.cpp:1050
 msgid "Reset draft"
@@ -578,7 +578,7 @@ msgstr "နောက်တစ်ခုနှင့် ချိတ်ရန်"
 
 #: src/audio_timing_39.cpp:1062
 msgid "Undo link"
-msgstr "ချိတ်ဆက်မှု ဖြေရန်"
+msgstr "နောက်ဆုံးချိတ်ဆက်မှုကို နောက်ဆုတ်ရန်"
 
 #: src/audio_timing_39.cpp:1070
 msgid ""
@@ -693,7 +693,7 @@ msgstr "39 Mode session အချိန်ညှိခြင်း"
 #, c-format
 msgid "%d lines committed in one subtitle undo step"
 msgstr ""
-"စာကြောင်း %d ကြောင်း အတည်ပြုပြီးပါပြီ။ တစ်ကြိမ်တည်း ပြန်ဖြေနိုင်ပါတယ်။"
+"စာကြောင်း %d ကြောင်း အတည်ပြုပြီးပါပြီ။ တစ်ကြိမ်တည်း နောက်ဆုတ်နိုင်ပါတယ်။"
 
 #: src/audio_timing_39.cpp:1277
 msgid "39 Mode • preparing playback • F/J primary • D/K secondary"
@@ -1851,47 +1851,47 @@ msgstr ""
 
 #: src/command/edit.cpp:3546
 msgid "Redo last undone action"
-msgstr "အုံဖွ စောနကပျောက်တာပြန်ပေါ်စေ"
+msgstr "လုပ်ထားတာရှေ့တိုး"
 
 #: src/command/edit.cpp:3551
 msgid "Nothing to &redo"
-msgstr "ပြန်လုပ်စရာ မရှိပါ(&R)"
+msgstr "ရှေ့တိုးစရာ မရှိပါ(&R)"
 
 #: src/command/edit.cpp:3552
 #, c-format
 msgid "&Redo %s"
-msgstr "အုံဖွ %s ပြန်ပေါ်စေ(&R)"
+msgstr "%s — လုပ်ထားတာရှေ့တိုး(&R)"
 
 #: src/command/edit.cpp:3556
 msgid "Nothing to redo"
-msgstr "ပြန်လုပ်စရာ မရှိပါ"
+msgstr "ရှေ့တိုးစရာ မရှိပါ"
 
 #: src/command/edit.cpp:3557
 #, c-format
 msgid "Redo %s"
-msgstr "အုံဖွ %s ပြန်ပေါ်စေ"
+msgstr "%s — လုပ်ထားတာရှေ့တိုး"
 
 #: src/command/edit.cpp:3572
 msgid "Undo last action"
-msgstr "အုံဖွ စောနကလုပ်တာပျောက်စေ"
+msgstr "လုပ်ထားတာနောက်ဆုတ်"
 
 #: src/command/edit.cpp:3577
 msgid "Nothing to &undo"
-msgstr "ပြန်ဖြေစရာ မရှိပါ(&U)"
+msgstr "နောက်ဆုတ်စရာ မရှိပါ(&U)"
 
 #: src/command/edit.cpp:3578
 #, c-format
 msgid "&Undo %s"
-msgstr "အုံဖွ %s လုပ်ထားတာ ပျောက်စေ(&U)"
+msgstr "%s — လုပ်ထားတာနောက်ဆုတ်(&U)"
 
 #: src/command/edit.cpp:3582
 msgid "Nothing to undo"
-msgstr "ပြန်ဖြေစရာ မရှိပါ"
+msgstr "နောက်ဆုတ်စရာ မရှိပါ"
 
 #: src/command/edit.cpp:3583
 #, c-format
 msgid "Undo %s"
-msgstr "အုံဖွ %s လုပ်ထားတာ ပျောက်စေ"
+msgstr "%s — လုပ်ထားတာနောက်ဆုတ်"
 
 #: src/command/edit.cpp:3597 src/command/edit.cpp:3598
 #: src/dialog_motion_track.cpp:1129
@@ -6869,7 +6869,7 @@ msgstr "စတိုင်တင်သွင်းပြီး resolution ပြ
 
 #: src/dialog_style_manager.cpp:915
 msgid "Are you sure? This cannot be undone!"
-msgstr "သေချာပါသလား။ ဤလုပ်ဆောင်ချက်ကို ပြန်ဖြေ၍ မရပါ။"
+msgstr "သေချာပါသလား။ ဒီလုပ်ဆောင်ချက်ကို နောက်ဆုတ်လို့ မရပါ။"
 
 #: src/dialog_style_manager.cpp:915
 msgid "Sort styles"
@@ -7821,7 +7821,7 @@ msgid ""
 "This motion family is incomplete or was duplicated. Use Undo or restore its "
 "missing events."
 msgstr ""
-"ဤ motion family မပြည့်စုံပါ သို့မဟုတ် ပွားထားသည်။ Undo သုံးပါ သို့မဟုတ် "
+"ဒီ motion family မပြည့်စုံပါ သို့မဟုတ် ပွားထားပါတယ်။ နောက်ဆုတ်ပါ သို့မဟုတ် "
 "ပျောက်နေသော event များ ပြန်ထည့်ပါ။"
 
 #: src/motion_tracking/motion_track_commit.cpp:152
@@ -8106,7 +8106,7 @@ msgstr "ချိတ်ထားသော ဖိုင်များ အလိ�
 
 #: src/preferences.cpp:94
 msgid "Undo Levels"
-msgstr "ပြန်ဖြေနိုင်သည့် အဆင့်"
+msgstr "နောက်ဆုတ်နိုင်သည့် အဆင့်အရေအတွက်"
 
 #: src/preferences.cpp:97
 msgid "Fast naming"
@@ -9593,6 +9593,14 @@ msgid ""
 "requires review."
 msgstr ""
 "လိုအပ်မှသာ ရစ်သမ်အရ mora လေးခုအထိ ပေါင်းစဉ်းစားမည်။ ပြန်စစ်ဖို့ လိုပါတယ်။"
+
+#: src/toolbar.cpp:149
+msgid "Undo (toolbar label)"
+msgstr "နောက်ဆုတ်"
+
+#: src/toolbar.cpp:153
+msgid "Redo (toolbar label)"
+msgstr "ရှေ့တိုး"
 
 #: src/vcva_tag_gui.cpp:25
 #, c-format

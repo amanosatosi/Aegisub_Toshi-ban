@@ -39,8 +39,14 @@ with tempfile.TemporaryDirectory() as tmp:
     assert translation.gettext('Open Audio File') == 'အသံဖိုင်ဖွင့်ရန်'
     for source, expected in {
         'Actor': 'နာမည်',
-        'Undo': 'အုံဖွ စောနကလုပ်တာပျောက်စေ',
-        'Redo': 'အုံဖွ စောနကပျောက်တာပြန်ပေါ်စေ',
+        'Undo': 'လုပ်ထားတာနောက်ဆုတ်',
+        'Redo': 'လုပ်ထားတာရှေ့တိုး',
+        'Undo (toolbar label)': 'နောက်ဆုတ်',
+        'Redo (toolbar label)': 'ရှေ့တိုး',
+        'Nothing to undo': 'နောက်ဆုတ်စရာ မရှိပါ',
+        'Nothing to redo': 'ရှေ့တိုးစရာ မရှိပါ',
+        '&Undo %s': '%s — လုပ်ထားတာနောက်ဆုတ်(&U)',
+        '&Redo %s': '%s — လုပ်ထားတာရှေ့တိုး(&R)',
         'Motion Track': 'လှုပ်ရှားမှုပုံတူကူးခြင်း',
         'Track Motion': 'လှုပ်ရှားမှု ပုံတူကူးရန်',
         'Save Subtitles as': 'နာမည်ပြောင်းပြီးစာဖိုင်သိမ်းရန်',

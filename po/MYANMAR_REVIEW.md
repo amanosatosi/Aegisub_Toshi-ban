@@ -7,9 +7,9 @@ counts and format checks do not verify natural wording. Project-owner choices:
   Subtitle lines and text are different concepts.
 * ASS Actor/Name field: နာမည်. Motion Tracking: လှုပ်ရှားမှုပုံတူကူးခြင်း;
   Track Motion: လှုပ်ရှားမှု ပုံတူကူးရန်.
-* Plain Undo: အုံဖွ စောနကလုပ်တာပျောက်စေ; Redo:
-  အုံဖွ စောနကပျောက်တာပြန်ပေါ်စေ. Keep the playful wording deliberate;
-  do not apply it to reset, revert or removing comments.
+* Undo: လုပ်ထားတာနောက်ဆုတ်; Redo: လုပ်ထားတာရှေ့တိုး. Toolbar
+  labels use နောက်ဆုတ် and ရှေ့တိုး. These describe edit history; do not
+  apply them to navigation, reset, revert or removing comments.
 * Subtitle Save As: နာမည်ပြောင်းပြီးစာဖိုင်သိမ်းရန်; subtitle Export:
   ပုံစံပြောင်းပြီးသိမ်းရန်. Other save and export operations need context.
 * Recent lists use အရင်ကသုံးတဲ့; media reload means ပြန်တင်ရန်, not play.
