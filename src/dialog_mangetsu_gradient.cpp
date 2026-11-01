@@ -24,7 +24,6 @@
 #include "video_controller.h"
 #include "visual_tool_gradient_placement.h"
 
-#include <libaegisub/format.h>
 #include <libaegisub/color.h>
 #include <libaegisub/make_unique.h>
 

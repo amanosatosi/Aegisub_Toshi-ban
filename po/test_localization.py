@@ -14,6 +14,13 @@ po = root / 'po'
 expected = sorted(p.relative_to(root).as_posix() for p in (root / 'src').rglob('*')
                   if p.is_file() and p.suffix in ('.cpp', '.h'))
 assert (po / 'POTFILES').read_text(encoding='utf-8').splitlines() == expected
+# src/format.h defines the translated formatting helpers and already includes
+# libaegisub/format.h, which is not guarded against repeated inclusion.
+for path in (root / 'src').rglob('*.cpp'):
+    source = path.read_text(encoding='utf-8-sig')
+    if re.search(r'\bfmt_(?:tl|wx|plural)\s*\(', source):
+        assert re.search(r'#\s*include\s*"(?:\.\./)*format\.h"', source), path
+        assert not re.search(r'#\s*include\s*<libaegisub/format\.h>', source), path
 resources = subprocess.check_output([sys.executable, str(po / 'extract_resources.py')], text=True, encoding='utf-8')
 assert json.dumps('&File') in resources
 pot = (po / 'aegisub.pot').read_text(encoding='utf-8')
