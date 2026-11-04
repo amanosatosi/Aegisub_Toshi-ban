@@ -49,6 +49,13 @@ class PropertyDialog final : public wxDialog {
 	wxBoxSizer *body;
 	wxCheckBox *linked = nullptr;
 	std::vector<std::unique_ptr<Row>> rows;
+	int Dip(int value) const {
+#if wxCHECK_VERSION(3, 1, 0)
+		return FromDIP(value);
+#else
+		return value;
+#endif
+	}
 	wxString Title() const {
 		return page == StyleEditorPage::Furigana ? _("Furigana") : page == StyleEditorPage::Vertical ? _("Vertical layout") : _("Multi-border");
 	}
@@ -77,10 +84,13 @@ class PropertyDialog final : public wxDialog {
 		if (row.choice) return std::to_string(row.choice->GetSelection());
 		if (row.color) return row.color->GetColor().GetAssOverrideFormatted();
 		double first, second = 0;
-		if (!row.first->GetValue().ToDouble(&first) || !std::isfinite(first) ||
+		auto number = [](wxTextCtrl *input, double& value) {
+			return (input->GetValue().ToDouble(&value) || ParseStyleNumber(from_wx(input->GetValue()), value)) && std::isfinite(value);
+		};
+		if (!number(row.first, first) ||
 			((row.field.kind == Kind::Number || row.field.kind == Kind::Alpha) && first < 0) ||
 			(row.field.kind == Kind::Alpha && (first > 255 || first != std::floor(first))) ||
-			(row.second && (!row.second->GetValue().ToDouble(&second) || !std::isfinite(second)))) {
+			(row.second && !number(row.second, second))) {
 			if (validate) throw std::invalid_argument("number");
 			return "";
 		}
@@ -131,7 +141,7 @@ class PropertyDialog final : public wxDialog {
 		rows.clear();
 		body->Clear(true);
 		auto values = working.Values(style, wrap);
-		auto form = new wxFlexGridSizer(3, 5, 8);
+		auto form = new wxFlexGridSizer(3, Dip(5), Dip(8));
 		form->AddGrowableCol(2);
 		for (auto field : Fields()) {
 			auto row = std::make_unique<Row>();
@@ -150,7 +160,7 @@ class PropertyDialog final : public wxDialog {
 					row->first->Reparent(panel);
 					row->second = new wxTextCtrl(panel, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxTE_RIGHT);
 					auto pair = new wxBoxSizer(wxHORIZONTAL);
-					pair->Add(row->first, 1, wxRIGHT, 4); pair->Add(row->second, 1);
+					pair->Add(row->first, 1, wxRIGHT, Dip(4)); pair->Add(row->second, 1);
 					panel->SetSizer(pair); row->input = panel;
 				} else row->input = row->first;
 			}
@@ -178,7 +188,7 @@ class PropertyDialog final : public wxDialog {
 			linked->SetValue(Read(*rows[x], false) == Read(*rows[x + 1], false) && rows[x]->originally_assigned == rows[x + 1]->originally_assigned);
 			linked->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) { LinkAxes(); });
 			rows[x]->first->Bind(wxEVT_TEXT, [this](wxCommandEvent&) { LinkAxes(); });
-			body->Add(linked, 0, wxTOP, 8);
+			body->Add(linked, 0, wxTOP, Dip(8));
 			LinkAxes();
 		}
 		Layout();
@@ -195,16 +205,16 @@ public:
 				if (!Save()) { layers->SetSelection(layer - 1); return; }
 				layer = layers->GetSelection() + 1; Build();
 			});
-			main->Add(layers, 0, wxALL | wxEXPAND, 10);
+			main->Add(layers, 0, wxALL | wxEXPAND, Dip(10));
 		}
 		body = new wxBoxSizer(wxVERTICAL);
-		main->Add(body, 1, wxALL | wxEXPAND, 10);
+		main->Add(body, 1, wxALL | wxEXPAND, Dip(10));
 		auto hint = new wxStaticText(this, wxID_ANY, page == StyleEditorPage::Borders
 			? _("Color alone does not enable a layer. Manual gradients remain in effect; these colors are solid fallbacks.")
 			: _("Defaults apply before dialogue overrides. Changes remain pending until the Style Editor is applied."));
 		hint->Wrap(GetTextExtent("MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM").x);
-		main->Add(hint, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 10);
-		main->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxALL | wxEXPAND, 10);
+		main->Add(hint, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, Dip(10));
+		main->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxALL | wxEXPAND, Dip(10));
 		SetSizer(main); Build(); Fit(); SetMinSize(GetSize());
 		Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { if (Save()) EndModal(wxID_OK); }, wxID_OK);
 		CenterOnParent();

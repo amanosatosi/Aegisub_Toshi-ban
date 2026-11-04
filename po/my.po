@@ -10180,3 +10180,259 @@ msgstr "အသံအချိန်ညှိခြင်း"
 #: ../packages/desktop/aegisub.appdata.xml.in.in:44
 msgid "Aegisub Group"
 msgstr "Aegisub Group"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Furigana"
+msgstr "ဖတ်သံစာ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Vertical layout"
+msgstr "ဒေါင်လိုက်စာစီခြင်း"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Multi-border"
+msgstr "အနားသတ်အလွှာများ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Disabled"
+msgstr "မသုံးပါ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Enabled"
+msgstr "သုံးမည်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Reading scale X (%)"
+msgstr "ဖတ်သံစာ အလျားချုံ့ချဲ့နှုန်း (%)"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Reading scale Y (%)"
+msgstr "ဖတ်သံစာ အမြင့်ချုံ့ချဲ့နှုန်း (%)"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Reading spacing"
+msgstr "ဖတ်သံစာလုံး အကွာအဝေး"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Reading style"
+msgstr "ဖတ်သံစာ ပုံစံ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Normal (0)"
+msgstr "ပုံမှန် (0)"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Compatible normal (1)"
+msgstr "ပုံမှန်နှင့် ကိုက်ညီသောပုံစံ (1)"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Manga X-fit (2)"
+msgstr "မန်ဂါပုံစံ အလျားညှိခြင်း (2)"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Reading offset X, Y"
+msgstr "ဖတ်သံစာ အလျား၊ အမြင့် ရွှေ့ပမာဏ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Automatic reading gap"
+msgstr "ဖတ်သံစာ အကွာအဝေးကို အလိုအလျောက်ညှိရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Outward reading placement"
+msgstr "ဖတ်သံစာကို အပြင်ဘက်သို့ နေရာချရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Reading clearance"
+msgstr "ဖတ်သံစာအတွက် နေရာလွတ်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Compact"
+msgstr "နေရာကျစ်လျစ်စွာ သုံးရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Reserve block space"
+msgstr "စာစုအတွက် နေရာချန်ရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Strict interline"
+msgstr "စာကြောင်းကြား နေရာအပြည့်ချန်ရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Native vertical layout"
+msgstr "ဒေါင်လိုက်စာစီစနစ်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Vertical unit policy"
+msgstr "ဒေါင်လိုက်စာလုံး စီစဉ်ပုံ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Automatic by script"
+msgstr "အရေးအသားအမျိုးအစားအလိုက် အလိုအလျောက်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "CJK cells"
+msgstr "တရုတ်၊ ဂျပန်၊ ကိုရီးယား စာလုံးကွက်ပုံစံ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Latin optical"
+msgstr "လက်တင်စာလုံး အမြင်ညှိပုံစံ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Myanmar optical"
+msgstr "မြန်မာစာလုံး အမြင်ညှိပုံစံ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Column direction"
+msgstr "စာတိုင် ရွေ့သည့်ဘက်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Advance left"
+msgstr "ဘယ်ဘက်သို့ ရွှေ့ရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Advance right"
+msgstr "ညာဘက်သို့ ရွှေ့ရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Vertical unit spacing"
+msgstr "ဒေါင်လိုက်စာလုံး အကွာအဝေး"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Column spacing"
+msgstr "စာတိုင် အကွာအဝေး"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Border size X"
+msgstr "အလျားဘက် အနားသတ်အထူ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Border size Y"
+msgstr "အမြင့်ဘက် အနားသတ်အထူ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Border color"
+msgstr "အနားသတ်အရောင်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Border alpha (0–255)"
+msgstr "အနားသတ် ဖောက်ထွင်းမြင်ရမှု (0–255)"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Blur"
+msgstr "ဝါးစေမှု"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Edge blur"
+msgstr "အစွန်းဝါးစေမှု"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Waiting karaoke color"
+msgstr "မဆိုရသေးသော ကာရာအိုကေအပိုင်း၏ အနားသတ်အရောင်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Enter a finite number in the allowed range. Sizes and scales cannot be negative; alpha must be an integer from 0 to 255."
+msgstr "သတ်မှတ်အပိုင်းအခြားအတွင်းရှိ ကိန်းဂဏန်းကို ထည့်ပါ။ အရွယ်အစားနှင့် ချုံ့ချဲ့နှုန်းသည် အနုတ်ကိန်း မဖြစ်ရပါ။ ဖောက်ထွင်းမြင်ရမှုသည် 0 မှ 255 အထိ ကိန်းပြည့် ဖြစ်ရပါမည်။"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Invalid style value"
+msgstr "ပုံစံတန်ဖိုး မမှန်ပါ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Override"
+msgstr "ကိုယ်တိုင်သတ်မှတ်ရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Unchecked uses the style or native default. Checked writes an explicit Mangetsu value."
+msgstr "အမှန်မခြစ်ထားလျှင် မူလပုံစံ သို့မဟုတ် စနစ်၏ မူလတန်ဖိုးကို သုံးမည်။ အမှန်ခြစ်ထားလျှင် Mangetsu တန်ဖိုးကို သီးသန့်သတ်မှတ်မည်။"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Use the same reading scale on both axes"
+msgstr "ဖတ်သံစာ၏ အလျားနှင့်အမြင့်ကို တူညီစွာ ချုံ့ချဲ့ရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Use the same border size on both axes"
+msgstr "အလျားနှင့်အမြင့်ဘက် အနားသတ်အထူကို တူညီစွာသုံးရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Border layer"
+msgstr "အနားသတ်အလွှာ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Color alone does not enable a layer. Manual gradients remain in effect; these colors are solid fallbacks."
+msgstr "အရောင်တစ်ခုတည်း သတ်မှတ်ရုံဖြင့် အလွှာကို မဖွင့်ပေးပါ။ ကိုယ်တိုင်ရေးထားသော ရောင်ပြေးများကို ဆက်သုံးမည်။ ဤအရောင်များကို အရန်တစ်ရောင်တည်းအဖြစ် သုံးမည်။"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Defaults apply before dialogue overrides. Changes remain pending until the Style Editor is applied."
+msgstr "ဤမူလတန်ဖိုးများကို စာကြောင်းအတွင်း tag များမတိုင်မီ သုံးမည်။ ပုံစံတည်းဖြတ်ဝင်းဒိုးတွင် အသုံးချပြီးမှသာ ပြင်ဆင်ချက်များ အတည်ဖြစ်မည်။"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Furigana…"
+msgstr "ဖတ်သံစာ…"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Vertical…"
+msgstr "ဒေါင်လိုက်…"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Multi-border…"
+msgstr "အနားသတ်အလွှာများ…"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Wrap Mode"
+msgstr "စာကြောင်းချိုးပုံ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Inherit Script"
+msgstr "စခရစ်၏ သတ်မှတ်ချက်ကို သုံးရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Smart"
+msgstr "အညီအမျှ အလိုက်သင့်ချိုးရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "End-of-line"
+msgstr "စာကြောင်းအဆုံးတွင် ချိုးရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "No automatic wrap"
+msgstr "အလိုအလျောက် စာကြောင်းမချိုးပါ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Alternative smart"
+msgstr "အခြားအညီအမျှ ချိုးပုံကို သုံးရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Style catalogs store ordinary ASS style fields only. Edit Mangetsu defaults in the current script."
+msgstr "ပုံစံသိုလှောင်ခန်းတွင် ပုံမှန် ASS ပုံစံတန်ဖိုးများကိုသာ သိမ်းနိုင်ပါသည်။ Mangetsu မူလတန်ဖိုးများကို လက်ရှိစခရစ်တွင် ပြင်ဆင်ပါ။"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Style catalogs cannot store Mangetsu defaults. Copy only the ordinary ASS style fields? The script's metadata will be kept."
+msgstr "ပုံစံသိုလှောင်ခန်းတွင် Mangetsu မူလတန်ဖိုးများကို မသိမ်းနိုင်ပါ။ ပုံမှန် ASS ပုံစံတန်ဖိုးများကိုသာ ကူးမလား။ စခရစ်ရှိ မက်တာဒေတာကို ဆက်လက်ထိန်းသိမ်းထားမည်။"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Copy style to catalog"
+msgstr "ပုံစံကို သိုလှောင်ခန်းသို့ ကူးရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "The selected subtitle renderer could not be initialized."
+msgstr "ရွေးထားသော စာတန်းထိုးပုံဖော်စနစ်ကို စတင်မရပါ။"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Mangetsu style preview requires a current Mangetsu library. Install or update mangetsu.dll."
+msgstr "Mangetsu ပုံစံကို အကြိုကြည့်ရန် လက်ရှိ Mangetsu စနစ်ဖိုင် လိုအပ်ပါသည်။ mangetsu.dll ကို ထည့်သွင်းပါ သို့မဟုတ် အပ်ဒိတ်လုပ်ပါ။"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "The subtitle renderer could not render this preview."
+msgstr "စာတန်းထိုးပုံဖော်စနစ်က ဤအကြိုကြည့်ပုံကို မဖော်ပြနိုင်ပါ။"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Preview unavailable"
+msgstr "အကြိုကြည့်ပုံ မရပါ"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Show Mangetsu Metadata"
+msgstr "Mangetsu မက်တာဒေတာကို ပြရန်"
+
+#: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
+msgid "Show the initial Mangetsu style and Actor Colorcoding comments"
+msgstr "အစပိုင်းရှိ Mangetsu ပုံစံနှင့် ဇာတ်ကောင်အရောင် သတ်မှတ်ချက် comment များကို ပြရန်"

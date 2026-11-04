@@ -366,6 +366,10 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	PreviewBox->Add(PreviewBottomSizer, 0, wxEXPAND | wxBOTTOM, 0);
 
 	// Buttons
+	auto gap = 4;
+#if wxCHECK_VERSION(3, 1, 0)
+	gap = FromDIP(gap);
+#endif
 	auto ButtonSizer = new wxBoxSizer(wxHORIZONTAL);
 	mangetsu_actions = new wxBoxSizer(wxHORIZONTAL);
 	auto add_properties = [&](wxString const& label, mangetsu::StyleEditorPage page) {
@@ -376,13 +380,13 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 				UpdateMangetsuControls(); UpdatePreview();
 			}
 		});
-		mangetsu_actions->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
+		mangetsu_actions->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
 		mangetsu_controls.push_back(button);
 	};
 	add_properties(_("Furigana…"), mangetsu::StyleEditorPage::Furigana);
 	add_properties(_("Vertical…"), mangetsu::StyleEditorPage::Vertical);
 	add_properties(_("Multi-border…"), mangetsu::StyleEditorPage::Borders);
-	mangetsu_actions->Add(new wxStaticText(this, wxID_ANY, _("Wrap Mode")), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, 4);
+	mangetsu_actions->Add(new wxStaticText(this, wxID_ANY, _("Wrap Mode")), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, gap);
 	wxString wrapping[] = {_("Inherit Script"), _("Smart"), _("End-of-line"), _("No automatic wrap"), _("Alternative smart")};
 	WrapMode = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, 5, wrapping);
 	WrapMode->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
@@ -393,9 +397,9 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	});
 	mangetsu_controls.push_back(WrapMode);
 	mangetsu_actions->Add(WrapMode, 0, wxALIGN_CENTER_VERTICAL);
-	ButtonSizer->Add(mangetsu_actions, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, 5);
+	ButtonSizer->Add(mangetsu_actions, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, gap);
 	ButtonSizer->AddStretchSpacer(1);
-	ButtonSizer->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxAPPLY | wxHELP), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, 5);
+	ButtonSizer->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxAPPLY | wxHELP), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, gap);
 	mangetsu_actions->ShowItems(OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu");
 
 	// Left side sizer

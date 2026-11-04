@@ -33,6 +33,8 @@ jobs:
         run: python tests/python/test_release_preparation.py
       - name: Check asynchronous startup contracts
         run: python tests/python/test_startup_loading.py
+      - name: Check packaged GUI test syntax
+        run: python -m py_compile tests/python/startup_smoke.py tests/python/mangetsu_style_ui.py
       - name: Check subtitle-relative readout fade menu wiring
         run: python tests/python/test_fade_controls.py
       - name: Check Shift-drag audio boundary wiring
@@ -69,7 +71,7 @@ jobs:
           meson setup build -Dbuildtype=debugoptimized -Dopencv=disabled -Dwith_mangetsu=true
           meson compile -C build gtest-main libassmod_copy mangetsu_copy
       - name: Check pixel correctness, ownership and 600-event stress paths
-        run: meson test -C build --no-rebuild --verbose "gtest main" --test-args=--gtest_filter=CustomSubtitle*:BundledRenderers/*
+        run: meson test -C build --no-rebuild --verbose "gtest main" --test-args=--gtest_filter=CustomSubtitle*:BundledRenderers/*:MangetsuStyleMetadata.*
       - name: Check Matroska text packet import and libass serialization
         run: meson test -C build --no-rebuild --verbose "gtest main" --test-args=--gtest_filter=Matroska*
 
@@ -395,7 +397,7 @@ jobs:
         if: matrix.config.os == 'windows-latest'
         timeout-minutes: 5
         shell: pwsh
-        run: python tests/python/startup_smoke.py --portable build/aegisub-portable --output build/startup-smoke
+        run: python tests/python/startup_smoke.py --portable build/aegisub-portable --output build/startup-smoke ${{ contains(matrix.config.name, 'wx master') && '--mangetsu-ui-dark' || '' }}
 
       - name: Upload startup timing and GUI regression logs
         uses: actions/upload-artifact@v4
@@ -405,6 +407,8 @@ jobs:
           path: |
             build/startup-smoke/measurements.json
             build/startup-smoke/*/log/*.json
+            build/startup-smoke/*/*.png
+            build/startup-smoke/*/style-ui-result.txt
           if-no-files-found: warn
 
       - name: Verify DependencyControl installer migration and portable payload

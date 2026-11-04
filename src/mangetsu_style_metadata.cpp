@@ -26,6 +26,16 @@ std::string Hex(unsigned value, int width) {
 }
 bool Color(std::string text, unsigned max, std::string& result) {
 	text = Trim(text);
+	if (!text.empty() && text[0] == '$') {
+		auto name = text.substr(1);
+		std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return c >= 'A' && c <= 'Z' ? c + 'a' - 'A' : c; });
+		if (max != 255 && (name == "white" || name == "siro" || name == "shiro")) { result = Hex(0xFFFFFF, 6); return true; }
+		if (max != 255 && (name == "black" || name == "kuro")) { result = Hex(0, 6); return true; }
+		if (max == 255 && !name.empty() && name.find_first_not_of("0123456789") == name.npos) {
+			try { auto n = std::stoul(name); if (n <= 255) { result = Hex(static_cast<unsigned>(n), 2); return true; } } catch (...) { }
+		}
+		return false;
+	}
 	if (text.size() >= 2 && text[0] == '&' && (text[1] == 'H' || text[1] == 'h')) text.erase(0, 2);
 	if (!text.empty() && text.back() == '&') text.pop_back();
 	if (text.empty() || text.find_first_not_of("0123456789abcdefABCDEF") != text.npos) return false;
@@ -54,11 +64,27 @@ StyleValues Defaults(AssStyle const& style, int wrap) {
 	return v;
 }
 struct Token { size_t start, end; std::string text; };
+// Only append inside a complete, unambiguous final override block. Malformed
+// hand-written text stays byte-for-byte intact; put the new assignment in a
+// separate metadata declaration instead.
+bool Appendable(std::string const& text) {
+	bool open = false;
+	int parentheses = 0;
+	if (text.empty() || text.back() != '}') return false;
+	for (char c : text) {
+		if (c == '{') { if (open) return false; open = true; parentheses = 0; }
+		else if (c == '}') { if (!open || parentheses) return false; open = false; }
+		else if (open && c == '(') ++parentheses;
+		else if (open && c == ')') { if (!parentheses) return false; --parentheses; }
+	}
+	return !open;
+}
 std::vector<Token> Tokens(std::string const& text) {
 	std::vector<Token> result;
 	for (size_t open = text.find('{'); open != text.npos; open = text.find('{', open)) {
 		auto close = text.find('}', open + 1);
 		if (close == text.npos) break; // Leave malformed blocks untouched.
+		if (text.find('{', open + 1) < close) { open = close + 1; continue; }
 		for (auto pos = text.find('\\', open + 1); pos < close;) {
 			auto end = pos + 1;
 			int depth = 0;
@@ -143,6 +169,9 @@ std::map<std::string, StyleValue> Assign(Token const& token, StyleValues const& 
 				if (field == "furi" || field == "furiap" || field == "furiplaceauto") number = number != 0;
 				if (field == "furichangepos") number = number == 2 ? 2 : number != 0;
 			} else if (!Number(arg, base, signed_value, number)) return {};
+			// Native Mangetsu limits at the referenced renderer revision.
+			if (field.find("bblur") != field.npos) number = std::min(number, 100.0);
+			if (field.find("bbe") != field.npos) number = std::min(std::floor(number + 0.5), 127.0);
 			value = key == "furis" && field == "furisy" ? result.at("furisx").value : StyleNumber(number);
 		}
 		result[field] = {value, true};
@@ -234,7 +263,7 @@ std::vector<std::string> StyleMetadataDraft::Texts(AssStyle const& style, int wr
 		append += '\\' + key + (key == "furipos" ? '(' + *entry.second + ')' : *entry.second);
 	}
 	if (!append.empty()) {
-		if (!result.empty() && !result.back().empty() && result.back().back() == '}' && result.back().find('{') != std::string::npos)
+		if (!result.empty() && Appendable(result.back()))
 			result.back().insert(result.back().size() - 1, append);
 		else result.push_back('{' + append + '}');
 	}

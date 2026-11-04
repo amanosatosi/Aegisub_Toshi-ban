@@ -214,7 +214,7 @@ void BaseGrid::UpdateMaps() {
 	for (auto& line : context->ass->Events) {
 		if (hidden.count(&line)) continue;
 		bool folded = false;
-		for (auto parent = line.Fold.parent; parent; parent = parent->Fold.parent)
+		for (auto parent = line.Fold.getFoldOpener(); parent; parent = parent->Fold.getFoldOpener())
 			if (parent->Fold.isFolded() && !hidden.count(parent)) { folded = true; break; }
 		// A hidden metadata fold header must not make ordinary dialogue
 		// inaccessible. Its stored collapse state is left untouched.
@@ -229,7 +229,7 @@ void BaseGrid::UpdateMaps() {
 }
 
 int BaseGrid::VisibleRow(AssDialogue const *line) const {
-	for (; line; line = line->Fold.parent) {
+	for (; line; line = line->Fold.getFoldOpener()) {
 		auto it = visible_index.find(line);
 		if (it != visible_index.end()) return it->second;
 	}

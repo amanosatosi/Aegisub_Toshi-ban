@@ -28,8 +28,10 @@ comment in this block refreshes the preview even when visible dialogue is unchan
 Unknown style targets remain intact so Mangetsu can ignore them without changing
 Default. ASS files retain the comments on save; other renderers ignore them.
 
-This adds rendering compatibility only. Author declarations as comment rows in
-the grid; no Style Editor controls are added. See the
+When Mangetsu is selected, **View → Show Mangetsu Metadata** exposes the initial
+metadata comments for manual editing; they are hidden by default. The existing
+Style Editor also provides compact Furigana, Vertical, Multi-border and Wrap Mode
+controls. See [editing Mangetsu style defaults](mangetsu-style-editor.md) and the
 [upstream style-extension reference](https://github.com/amanosatosi/libassmod/blob/mangetsu/docs/style-extensions.md)
 for supported tags and ordering rules. Older Mangetsu DLLs need to be replaced
 with a version containing style-extension support.

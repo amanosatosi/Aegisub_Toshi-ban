@@ -163,6 +163,8 @@ src/dialog_selected_choices.cpp
 src/dialog_selection.cpp
 src/dialog_shift_times.cpp
 src/dialog_spellchecker.cpp
+src/dialog_mangetsu_style.cpp
+src/dialog_mangetsu_style.h
 src/dialog_style_editor.cpp
 src/dialog_style_editor.h
 src/dialog_style_manager.cpp

@@ -138,8 +138,8 @@ void SubtitlesPreview::UpdateBitmap() {
 			if (provider_name == "Mangetsu" && !provider->SupportsMangetsuStyleMetadata()) {
 				preview_error = _("Mangetsu style preview requires a current Mangetsu library. Install or update mangetsu.dll.");
 			} else {
-			provider->LoadSubtitles(sub_file.get());
-			provider->DrawSubtitles(frame, 0.1);
+				provider->LoadSubtitles(sub_file.get());
+				provider->DrawSubtitles(frame, 0.1);
 			}
 		}
 		catch (...) { preview_error = _("The subtitle renderer could not render this preview."); }
@@ -172,15 +172,13 @@ void SubtitlesPreview::OnSize(wxSizeEvent &evt) {
 	try {
 		if (!progress)
 			progress = agi::make_unique<DialogProgress>(this);
-		if (!provider)
+		if (!provider && provider_name.empty()) {
+			provider_name = OPT_GET("Subtitle/Provider")->GetString();
 			provider = SubtitlesProviderFactory::GetProvider(progress.get());
-		provider_name = OPT_GET("Subtitle/Provider")->GetString();
+		}
 	}
 	catch (...) {
-		wxMessageBox(
-			"Could not get any subtitles provider for the preview box. Make "
-			"sure that you have a provider installed.",
-			"No subtitles provider", wxOK | wxICON_ERROR | wxCENTER);
+		preview_error = _("The selected subtitle renderer could not be initialized.");
 	}
 
 	sub_file->SetScriptInfo("PlayResX", std::to_string(w));

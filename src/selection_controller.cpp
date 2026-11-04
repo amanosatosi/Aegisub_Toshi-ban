@@ -54,7 +54,9 @@ void SelectionController::SetSelectedSet(Selection new_selection) {
 }
 
 void SelectionController::SetActiveLine(AssDialogue *new_line) {
+	auto previous = selection;
 	FilterMetadata(selection, new_line);
+	if (selection != previous) AnnounceSelectedSetChanged();
 	if (new_line != active_line) {
 		active_line = new_line;
 		if (active_line)

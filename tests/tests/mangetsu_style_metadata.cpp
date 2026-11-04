@@ -2,6 +2,7 @@
 #include "mangetsu_style_metadata.h"
 #include "ass_dialogue.h"
 #include "ass_file.h"
+#include "ass_parser.h"
 #include "ass_style.h"
 #include <gtest/gtest.h>
 
@@ -113,4 +114,62 @@ TEST(MangetsuStyleMetadata, ChildCopiesAndUnchangedDefaultsDoNotWriteTheDocument
 	auto values = StyleMetadataDraft(file, style).Values(style, 0);
 	EXPECT_EQ(values.at("10bsx").value, "0"); EXPECT_FALSE(values.at("10bsx").assigned);
 	EXPECT_TRUE(values.at("10bc").assigned);
+}
+
+TEST(MangetsuStyleMetadata, AllTenLayersResolveNativeLimitsAndIndependentChannels) {
+	AssFile file; auto& style = AddStyle(file);
+	std::string text = "{";
+	for (int n = 1; n <= 10; ++n) {
+		auto key = std::to_string(n);
+		text += '\\' + key + "bs3\\" + key + "bsx+2\\" + key + "bc$white\\" + key + "ba$128\\" + key + "bsc$kuro\\" + key + "bblur500\\" + key + "bbe3.6";
+	}
+	Add(file, text + '}');
+	auto values = StyleMetadataDraft(file, style).Values(style, 0);
+	for (int n = 1; n <= 10; ++n) {
+		auto key = std::to_string(n);
+		EXPECT_EQ(values.at(key + "bsx").value, "5"); EXPECT_EQ(values.at(key + "bsy").value, "3");
+		EXPECT_EQ(values.at(key + "bc").value, "&HFFFFFF&"); EXPECT_EQ(values.at(key + "ba").value, "&H80&");
+		EXPECT_EQ(values.at(key + "bsc").value, "&H000000&");
+		EXPECT_EQ(values.at(key + "bblur").value, "100"); EXPECT_EQ(values.at(key + "bbe").value, "4");
+	}
+}
+
+TEST(MangetsuStyleMetadata, MalformedBlocksCannotSwallowNewAssignments) {
+	for (std::string text : {"{\\grd(unclosed}", "{{\\furis90}", "{\\furisbad", "{\\t(\\q1)}trailing"}) {
+		SCOPED_TRACE(text);
+		AssFile file; auto& style = AddStyle(file); Add(file, text);
+		StyleMetadataDraft draft(file, style); draft.Set("q", "2");
+		auto texts = draft.Texts(style, 0);
+		ASSERT_EQ(texts.size(), 2u); EXPECT_EQ(texts.front(), text); EXPECT_EQ(texts.back(), "{\\q2}");
+		EXPECT_EQ(draft.Values(style, 0).at("q").value, "2");
+	}
+}
+
+TEST(MangetsuStyleMetadata, CanonicalNumbersRejectNonfiniteAndTrailingJunk) {
+	double value;
+	for (auto text : {"nan", "inf", "-inf", "1e999", "12junk", "1,2", ""}) EXPECT_FALSE(mangetsu::ParseStyleNumber(text, value));
+	EXPECT_TRUE(mangetsu::ParseStyleNumber("-2.5", value)); EXPECT_EQ(value, -2.5);
+	EXPECT_TRUE(mangetsu::ParseStyleNumber("1e2", value)); EXPECT_EQ(value, 100);
+}
+
+TEST(MangetsuStyleMetadata, AssSerializationAndReparsePreserveMetadataOrderAndValues) {
+	AssFile file; auto& style = AddStyle(file);
+	Add(file, "{\\furis70\\grd(45,&HFFFFFF&,&H000000&)}");
+	Add(file, "{\\1c&HFFFFFF&}", "Default", "mangetsu-colorcoding", true, "Nene");
+	Add(file, "{\\vc(&HFFFFFF&,&H000000&,&HFFFFFF&,&H000000&)}");
+	Add(file, "ordinary", "Default", "", false);
+	StyleMetadataDraft draft(file, style); draft.Set("q", "3"); draft.Set("10bc", "&H123456&");
+	ASSERT_TRUE(draft.Apply(file, &style, style.name, style, false));
+	AssFile reopened;
+	AssParser parser(&reopened, 1);
+	parser.AddLine("[V4+ Styles]"); parser.AddLine(style.GetEntryData()); parser.AddLine("[Events]");
+	std::vector<std::string> expected;
+	for (auto const& line : file.Events) { auto data = line.GetEntryData(); expected.push_back(data); parser.AddLine(data); }
+	std::vector<std::string> actual;
+	for (auto const& line : reopened.Events) actual.push_back(line.GetEntryData());
+	EXPECT_EQ(actual, expected); ASSERT_EQ(reopened.Styles.size(), 1u);
+	auto values = StyleMetadataDraft(reopened, reopened.Styles.front()).Values(reopened.Styles.front(), 0);
+	EXPECT_EQ(values.at("q").value, "3"); EXPECT_EQ(values.at("furisx").value, "70");
+	EXPECT_EQ(values.at("10bsx").value, "0"); EXPECT_EQ(values.at("10bc").value, "&H123456&");
+	EXPECT_EQ(mangetsu::InitialMetadata(reopened).size(), 3u);
 }

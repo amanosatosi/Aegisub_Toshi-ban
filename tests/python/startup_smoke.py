@@ -29,7 +29,7 @@ def visible_warning_dialog(handles, get_title, get_class, is_visible):
                  and get_title(h) == "Aegisub Warning"), None)
 
 
-def run(portable, output):
+def run(portable, output, mangetsu_ui_dark=False):
     user = C.WinDLL("user32", use_last_error=True)
     callback = C.WINFUNCTYPE(W.BOOL, W.HWND, W.LPARAM)
     for name, args, result in (
@@ -46,6 +46,8 @@ def run(portable, output):
         ("PostMessageW", [W.HWND, W.UINT, W.WPARAM, W.LPARAM], W.BOOL),
         ("SendMessageTimeoutW", [W.HWND, W.UINT, W.WPARAM, W.LPARAM, W.UINT, W.UINT, C.POINTER(C.c_size_t)], W.LPARAM),
         ("IsWindowVisible", [W.HWND], W.BOOL),
+        ("IsWindowEnabled", [W.HWND], W.BOOL),
+        ("GetDlgCtrlID", [W.HWND], C.c_int),
         ("GetParent", [W.HWND], W.HWND),
         ("GetWindowRect", [W.HWND, C.POINTER(W.RECT)], W.BOOL),
     ):
@@ -128,7 +130,7 @@ def run(portable, output):
             selected = "Mangetsu"
             (profile / "mangetsu.dll").unlink()
         config = {
-            "App": {"First Start": False, "Language": "en_US", "Dark Mode": scenario == "cancel",
+            "App": {"First Start": False, "Language": "en_US", "Dark Mode": scenario == "cancel" or (scenario == "Mangetsu" and mangetsu_ui_dark),
                     "Auto": {"Check For Updates": False}, "Mangetsu Renderer Offer Seen": True},
             "Subtitle": {"Provider": selected},
             "Video": {"Script Resolution Mismatch": 0},
@@ -136,6 +138,12 @@ def run(portable, output):
                                     "Include": str(profile / "automation" / "include")}},
         }
         (profile / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        fixture = None
+        if scenario == "Mangetsu":
+            config["Tool"] = {"Preferences": {"Page": 11}, "Style Editor": {"Preview Text": "မြန်မာ <漢字|かんじ> 日本語"}}
+            (profile / "config.json").write_text(json.dumps(config), encoding="utf-8")
+            from mangetsu_style_ui import prepare
+            fixture = prepare(profile, autoload)
         if scenario in ("success", "scripts"):
             (autoload / "000-fast.lua").write_text("aegisub.register_macro('Smoke First', '', function() end)", encoding="utf-8")
         if scenario == "success":
@@ -188,7 +196,7 @@ aegisub.register_filter('Duplicate filter', 'staged export filter', 100, functio
             (second / "shared.lua").write_text(conflicting_script("second"), encoding="utf-8")
         env = dict(os.environ, CI="true", AEGISUB_STARTUP_SMOKE_DIR=str(profile), AEGISUB_AUTOMATION_WORKERS="4")
         started = time.monotonic()
-        process = subprocess.Popen([str(profile / "aegisub.exe")], cwd=profile, env=env)
+        process = subprocess.Popen([str(profile / "aegisub.exe")] + ([str(fixture)] if fixture else []), cwd=profile, env=env)
         try:
             frame = wait(lambda: visible_main_frame(windows(process.pid), user.GetMenu, user.IsWindowVisible), "visible main frame")
             assert user.IsWindowVisible(frame), "Main frame must be visible"
@@ -277,7 +285,10 @@ aegisub.register_filter('Duplicate filter', 'staged export filter', 100, functio
                 send(frame, 0)
             else:
                 wait(lambda: "startup/automation" in logs(), "empty autoload completion")
-                assert not any(text(h, True).lower() == "msctls_progress32" and user.IsWindowVisible(h) for h in windows(process.pid, frame)), "No progress bar for empty directories"
+                if scenario == "Mangetsu":
+                    wait(lambda: not progress_control(frame), "UI audit macro finishes loading", seconds=8)
+                else:
+                    assert not progress_control(frame), "No progress bar for empty directories"
                 invoke(frame, "Use Dummy Video...")
                 dialog = wait(lambda: next((h for h in windows(process.pid) if "dummy video options" in text(h).lower()), None), "dummy video dialog")
                 ok = wait(lambda: next((h for h in windows(process.pid, dialog) if text(h).replace("&", "") == "OK"), None), "dummy video OK")
@@ -296,6 +307,8 @@ aegisub.register_filter('Duplicate filter', 'staged export filter', 100, functio
                     assert "Mangetsu loaded from" not in logs()
                 elif scenario == "Mangetsu":
                     assert "Mangetsu loaded from" in logs() and "libassmod loaded from" not in logs()
+                    from mangetsu_style_ui import exercise
+                    exercise(profile, process.pid, frame, user, windows, text, wait, send, entries, invoke, rect)
                 else:
                     assert "libassmod loaded from" in logs() and "Mangetsu loaded from" not in logs()
                 if scenario in ("empty", "missing"):
@@ -339,5 +352,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--portable", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--mangetsu-ui-dark", action="store_true")
     args = parser.parse_args()
-    run(args.portable.resolve(), args.output.resolve())
+    run(args.portable.resolve(), args.output.resolve(), args.mangetsu_ui_dark)
