@@ -33,6 +33,7 @@
 
 #include "../ass_dialogue.h"
 #include "../ass_file.h"
+#include "../mangetsu_style_metadata.h"
 #include "../ass_karaoke.h"
 #include "../ass_style.h"
 #include "../audio_controller.h"
@@ -2971,19 +2972,21 @@ static void combine_drop(AssDialogue *, AssDialogue *) { }
 
 static AssDialogue *get_adjacent_line(agi::Context const *c, AssDialogue *line, int step) {
 	if (!line || step == 0) return line;
+	auto hidden = mangetsu::HiddenMetadata(*c->ass, OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu", OPT_GET("Subtitle/Grid/Show Mangetsu Metadata")->GetBool());
 	auto it = c->ass->iterator_to(*line);
 	if (step > 0) {
 		while (step-- > 0) {
-			++it;
-			if (it == c->ass->Events.end())
-				return nullptr;
+			do {
+				if (++it == c->ass->Events.end()) return nullptr;
+			} while (hidden.count(&*it));
 		}
 	}
 	else {
 		while (step++ < 0) {
-			if (it == c->ass->Events.begin())
-				return nullptr;
-			--it;
+			do {
+				if (it == c->ass->Events.begin()) return nullptr;
+				--it;
+			} while (hidden.count(&*it));
 		}
 	}
 	return &*it;

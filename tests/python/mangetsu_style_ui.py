@@ -25,7 +25,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 Comment: 0,0:00:00.00,0:00:00.00,Default,Nene,0,0,0,mangetsu-colorcoding,{\1c&HFFFFFF&}
 Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,mangetsu-style,{\furis70\q2\grd(45,&HFF0000&,&H0000FF&)}
 Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,mangetsu-style,{\vc(&HFFFFFF&,&H000000&,&HFFFFFF&,&H000000&)}
-Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,note,Ordinary comment
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,note,Ordinary comment 70
 Dialogue: 0,0:00:00.00,0:00:04.00,Default,Nene,0,0,0,,မြန်မာ <漢字|かんじ> 日本語
 """, encoding="utf-8")
     (autoload / "style-ui.lua").write_text(r"""
@@ -180,6 +180,24 @@ $graphics.Dispose(); $bitmap.Dispose()
     hidden = snapshot()
     assert "ACTIVE|mangetsu-" not in hidden and "SELECTED|mangetsu-" not in hidden
     assert [s for s in initial.splitlines() if s.startswith("LINE|")] == [s for s in hidden.splitlines() if s.startswith("LINE|")]
+    sorts = [command for name, command in entries(user.GetMenu(frame)) if name == "Actor Name"]
+    assert len(sorts) == 2
+    user.PostMessageW(frame, 0x111, sorts[0], 0)  # Sort all; preserve the ordered metadata header.
+    ordered = snapshot()
+    assert [s for s in ordered.splitlines() if s.startswith("LINE|")][:3] == [s for s in initial.splitlines() if s.startswith("LINE|")][:3]
+    invoke(frame, "Find and Replace...")
+    replace = dialog("Replace")
+    fields = sorted([h for h in children(replace) if "combobox" in text(h, True).lower()], key=lambda h: rect(h)[1])
+    assert len(fields) == 2
+    set_text(fields[0], "70")
+    set_text(fields[1], "71")
+    click(replace, "Replace all")
+    message = wait(lambda: next((h for h in windows(pid) if h not in (frame, replace) and user.IsWindowVisible(h) and named(h, "OK")), None), "replacement result")
+    close(message, "OK")
+    close(replace)
+    replaced = snapshot()
+    assert "Ordinary comment 71" in replaced, "Ordinary comments remain editable"
+    assert "\\furis70" in replaced and "\\furis71" not in replaced, "Hidden metadata is excluded from Replace All"
 
     manager, style = editor()
     controls = [named(style, n)[0] for n in ("Furigana…", "Vertical…", "Multi-border…", "OK", "Cancel", "Apply", "Help")]
@@ -283,4 +301,4 @@ $graphics.Dispose(); $bitmap.Dispose()
     close(style)
     close_manager(manager)
     assert "\\furis80" in snapshot(), "Renderer switching preserves saved metadata"
-    (profile / "style-ui-result.txt").write_text("metadata visibility, transactions, layout, copy/delete/rename, undo/redo, save, renderer switch: passed\n", encoding="utf-8")
+    (profile / "style-ui-result.txt").write_text("metadata visibility, sort, replace, transactions, layout, copy/delete/rename, undo/redo, save, renderer switch: passed\n", encoding="utf-8")

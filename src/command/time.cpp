@@ -39,6 +39,8 @@
 #include "../dialogs.h"
 #include "../include/aegisub/context.h"
 #include "../libresrc/libresrc.h"
+#include "../mangetsu_style_metadata.h"
+#include "../options.h"
 #include "../project.h"
 #include "../selection_controller.h"
 #include "../video_controller.h"
@@ -75,10 +77,12 @@ struct validate_adjoinable : public Command {
 
 void adjoin_lines(agi::Context *c, bool set_start) {
 	auto const& sel = c->selectionController->GetSelectedSet();
+	auto hidden = mangetsu::HiddenMetadata(*c->ass, OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu", OPT_GET("Subtitle/Grid/Show Mangetsu Metadata")->GetBool());
 	AssDialogue *prev = nullptr;
 	size_t seen = 0;
 	bool prev_sel = false;
 	for (auto& diag : c->ass->Events) {
+		if (hidden.count(&diag)) continue;
 		bool cur_sel = !!sel.count(&diag);
 		if (prev) {
 			// One row selections act as if the previous or next line was selected

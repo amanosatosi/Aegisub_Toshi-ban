@@ -21,6 +21,7 @@
 #include "ass_info.h"
 #include "ass_style.h"
 #include "ass_style_storage.h"
+#include "mangetsu_metadata.h"
 #include "async_video_provider.h"
 #include "options.h"
 #include "project.h"
@@ -184,6 +185,17 @@ void AssFile::Sort(CompFunc comp, std::set<AssDialogue*> const& limit) {
 }
 
 void AssFile::Sort(EntryList<AssDialogue> &lst, CompFunc comp, std::set<AssDialogue*> const& limit) {
+	// These declarations are an ordered header, not timed dialogue. Moving
+	// them through an ordinary comment/event silently disables their defaults.
+	auto first_event = lst.begin();
+	while (first_event != lst.end() && mangetsu::IsMetadataComment(*first_event)) ++first_event;
+	if (first_event != lst.begin()) {
+		EntryList<AssDialogue> metadata;
+		metadata.splice(metadata.begin(), lst, lst.begin(), first_event);
+		Sort(lst, comp, limit);
+		lst.splice(lst.begin(), metadata);
+		return;
+	}
 	if (limit.empty()) {
 		lst.sort(comp);
 		return;

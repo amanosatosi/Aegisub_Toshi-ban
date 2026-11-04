@@ -239,10 +239,11 @@ static void insert_subtitle_at_video(agi::Context *c, bool after) {
 	int video_ms = c->videoController->TimeAtFrame(c->videoController->GetFrameN(), agi::vfr::START);
 	def->Start = video_ms;
 	def->End = video_ms + OPT_GET("Timing/Default Duration")->GetInt();
-	def->Style = c->selectionController->GetActiveLine()->Style;
+	auto active = c->selectionController->GetActiveLine();
+	if (active) def->Style = active->Style;
 
-	auto pos = c->ass->iterator_to(*c->selectionController->GetActiveLine());
-	if (after) ++pos;
+	auto pos = active ? c->ass->iterator_to(*active) : c->ass->Events.end();
+	if (active && after) ++pos;
 
 	c->ass->Events.insert(pos, *def);
 	c->ass->Commit(_("line insertion"), AssFile::COMMIT_DIAG_ADDREM);
@@ -258,6 +259,7 @@ struct subtitle_insert_after final : public validate_nonempty_selection {
 
 	void operator()(agi::Context *c) override {
 		AssDialogue *active_line = c->selectionController->GetActiveLine();
+		if (!active_line) { cmd::call("grid/line/next/create", c); return; }
 
 		auto new_line = new AssDialogue;
 		new_line->Style = active_line->Style;
@@ -303,6 +305,7 @@ struct subtitle_insert_before final : public validate_nonempty_selection {
 
 	void operator()(agi::Context *c) override {
 		AssDialogue *active_line = c->selectionController->GetActiveLine();
+		if (!active_line) { cmd::call("grid/line/next/create", c); return; }
 
 		auto new_line = new AssDialogue;
 		new_line->Style = active_line->Style;

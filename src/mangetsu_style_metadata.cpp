@@ -136,7 +136,7 @@ std::map<std::string, StyleValue> Assign(Token const& token, StyleValues const& 
 	else if (key.size() >= 3 && key.substr(key.size() - 2) == "bs") fields = {key + 'x', key + 'y'};
 	std::map<std::string, StyleValue> result;
 	if (key == "furipos") {
-		if (arg.empty()) return {{key, {defaults.at(key).value, true}}};
+		if (arg.empty()) return {{key, {defaults.at(key).value, false}}};
 		auto comma = arg.find(',');
 		if (comma == arg.npos || arg.find(',', comma + 1) != arg.npos) return {};
 		auto prior = current.at(key).value;
@@ -284,8 +284,11 @@ bool StyleMetadataDraft::Apply(AssFile& file, AssStyle const *source, std::strin
 	bool modified = false;
 	for (size_t i = 0; i < texts.size(); ++i) {
 		if (i < targets.size()) {
-			if (targets[i]->Text != texts[i] || targets[i]->Style != name) {
-				targets[i]->Text = texts[i]; targets[i]->Style = name; modified = true;
+			bool rename = source && source->name != name;
+			if (targets[i]->Text != texts[i] || (rename && targets[i]->Style != name)) {
+				targets[i]->Text = texts[i];
+				if (rename) targets[i]->Style = name;
+				modified = true;
 			}
 		} else {
 			auto line = new AssDialogue;

@@ -40,6 +40,13 @@ TEST(MangetsuStyleMetadata, StrictTargetsAndInitialSharedBlock) {
 	EXPECT_EQ(mangetsu::InitialMetadata(file).size(), 3u);
 	EXPECT_EQ(StyleMetadataDraft(file, last).Values(last, 0).at("furisx").value, "70");
 }
+TEST(MangetsuStyleMetadata, UnchangedStyleRetainsOriginalTargetSpelling) {
+	AssFile file; auto& style = AddStyle(file); auto& line = Add(file, "{\\furis70}", "***default");
+	StyleMetadataDraft draft(file, style);
+	EXPECT_FALSE(draft.Apply(file, &style, style.name, style, false));
+	draft.Set("q", "2"); EXPECT_TRUE(draft.Apply(file, &style, style.name, style, false));
+	EXPECT_EQ(line.Style.get(), "***default");
+}
 TEST(MangetsuStyleMetadata, PresentationHidesOnlyInitialMetadataAndNeverMutatesRows) {
 	AssFile file; AddStyle(file);
 	auto& style = Add(file, "{\\furis70}");
@@ -150,6 +157,15 @@ TEST(MangetsuStyleMetadata, CanonicalNumbersRejectNonfiniteAndTrailingJunk) {
 	for (auto text : {"nan", "inf", "-inf", "1e999", "12junk", "1,2", ""}) EXPECT_FALSE(mangetsu::ParseStyleNumber(text, value));
 	EXPECT_TRUE(mangetsu::ParseStyleNumber("-2.5", value)); EXPECT_EQ(value, -2.5);
 	EXPECT_TRUE(mangetsu::ParseStyleNumber("1e2", value)); EXPECT_EQ(value, 100);
+}
+TEST(MangetsuStyleMetadata, BareOffsetsRestoreAutomaticPlacementInsteadOfExplicitZero) {
+	AssFile file; auto& style = AddStyle(file);
+	Add(file, "{\\furipos(3,4)\\furipos}");
+	StyleMetadataDraft draft(file, style);
+	EXPECT_FALSE(draft.Values(style, 0).at("furipos").assigned);
+	draft.Set("furipos", "0,0");
+	EXPECT_TRUE(draft.Values(style, 0).at("furipos").assigned);
+	EXPECT_EQ(draft.Texts(style, 0).back(), "{\\furipos(0,0)}");
 }
 
 TEST(MangetsuStyleMetadata, AssSerializationAndReparsePreserveMetadataOrderAndValues) {

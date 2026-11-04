@@ -5,6 +5,8 @@ The View menu then offers **Show Mangetsu Metadata**, independent of tag display
 mode. It is off by default. Only recognized comments in the initial, contiguous
 metadata block are hidden. Ordinary and late comments remain visible. Changing
 this preference changes the grid and selection, never the ASS document.
+Hidden declarations are excluded from ordinary Find/Replace and adjoining timing
+operations. Sorting keeps the initial metadata header in its authored order.
 
 The familiar Style Editor retains its content. Its single bottom row adds
 **Furigana…**, **Vertical…**, **Multi-border…**, and **Wrap Mode** on the left,

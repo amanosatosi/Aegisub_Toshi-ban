@@ -376,7 +376,7 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 		auto button = new wxButton(this, wxID_ANY, label);
 		button->Bind(wxEVT_BUTTON, [this, page](wxCommandEvent&) {
 			UpdateWorkStyle();
-			if (mangetsu::EditStyleProperties(this, metadata, *work, c->ass->GetScriptInfoAsInt("WrapStyle"), page)) {
+			if (mangetsu::EditStyleProperties(this, metadata, *work, this->c->ass->GetScriptInfoAsInt("WrapStyle"), page)) {
 				UpdateMangetsuControls(); UpdatePreview();
 			}
 		});
@@ -390,7 +390,7 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	wxString wrapping[] = {_("Inherit Script"), _("Smart"), _("End-of-line"), _("No automatic wrap"), _("Alternative smart")};
 	WrapMode = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, 5, wrapping);
 	WrapMode->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
-		if (store) return;
+		if (this->store) return;
 		UpdateWorkStyle();
 		metadata.Set("q", WrapMode->GetSelection() == 0 ? std::nullopt : std::optional<std::string>(std::to_string(WrapMode->GetSelection() - 1)));
 		UpdatePreview();
