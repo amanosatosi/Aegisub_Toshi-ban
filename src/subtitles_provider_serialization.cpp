@@ -20,20 +20,8 @@
 #include "ass_file.h"
 #include "ass_info.h"
 #include "ass_style.h"
-#include <boost/algorithm/string/trim.hpp>
+#include "mangetsu_metadata.h"
 #include <cstring>
-
-namespace {
-	static bool is_mangetsu_actor_colorcoding_metadata_comment(AssDialogue const& line) {
-		std::string effect = line.Effect.get();
-		boost::trim(effect);
-
-		return line.Comment
-			&& !line.Actor.get().empty()
-			&& effect == "mangetsu-colorcoding";
-	}
-
-}
 
 void SubtitlesProvider::LoadSubtitles(AssFile *subs, int time) {
 	PrepareSubtitles(subs, time);
@@ -69,7 +57,7 @@ void SubtitlesProvider::LoadSubtitles(AssFile *subs, int time) {
 	push_header("[Events]\n");
 	push_header("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
 	for (auto const& line : subs->Events) {
-		if (is_mangetsu_actor_colorcoding_metadata_comment(line))
+		if (mangetsu::IsMetadataComment(line))
 			push_line(line.GetEntryData());
 		else
 			break;

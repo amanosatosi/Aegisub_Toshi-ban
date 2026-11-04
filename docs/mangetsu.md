@@ -8,6 +8,32 @@ The currently supported Mangetsu source is:
 
 https://github.com/amanosatosi/libassmod/tree/mangetsu
 
+## Style defaults
+
+With a current Mangetsu library, existing `mangetsu-style` comments are forwarded
+to the renderer together with Actor Colorcoding comments. Keep both kinds in one
+contiguous block immediately after the Events Format line, before other comments
+or dialogue:
+
+```ass
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,mangetsu-style,{\furis70}
+Dialogue: 0,0:00:01.00,0:00:05.00,Default,,0,0,0,,<A|reading>
+```
+
+The Style field chooses the target; an Actor is not required. Mangetsu handles
+merging declarations, inheritance, resets and supported properties. Editing a
+comment in this block refreshes the preview even when visible dialogue is unchanged.
+Unknown style targets remain intact so Mangetsu can ignore them without changing
+Default. ASS files retain the comments on save; other renderers ignore them.
+
+This adds rendering compatibility only. Author declarations as comment rows in
+the grid; no Style Editor controls are added. See the
+[upstream style-extension reference](https://github.com/amanosatosi/libassmod/blob/mangetsu/docs/style-extensions.md)
+for supported tags and ordering rules. Older Mangetsu DLLs need to be replaced
+with a version containing style-extension support.
+
 ## Build And Package
 
 Build/package the `mangetsu` branch of `libassmod` as a shared library, then

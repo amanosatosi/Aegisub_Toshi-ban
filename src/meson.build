@@ -124,6 +124,7 @@ aegisub_src = files(
     'mangetsu_gradient_placement.cpp',
     'mangetsu_gradient_scope.cpp',
     'mangetsu_chat_style.cpp',
+    'mangetsu_metadata.cpp',
     'menu.cpp',
     'mkv_wrap.cpp',
     'mkv_subtitle_packet.cpp',
