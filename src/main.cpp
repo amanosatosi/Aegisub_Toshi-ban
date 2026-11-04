@@ -521,6 +521,7 @@ void AegisubApp::OnUnhandledException() {
 }
 
 void AegisubApp::OnFatalException() {
+	LOG_E("crash/fatal") << "Windows fatal exception handler entered";
 	UnhandledException(true);
 }
 
@@ -557,6 +558,7 @@ int AegisubApp::OnRun() {
 
 	// Report errors
 	if (!error.empty()) {
+		LOG_E("crash/unhandled") << error;
 		crash_writer::Write(error);
 		OnUnhandledException();
 	}
