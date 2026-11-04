@@ -137,11 +137,11 @@ def run(portable, output, mangetsu_ui_dark=False):
             "Path": {"Automation": {"Autoload": str(autoload) + "|" + str(autoload),
                                     "Include": str(profile / "automation" / "include")}},
         }
-        (profile / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        (profile / "config.json").write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
         fixture = None
         if scenario == "Mangetsu":
             config["Tool"] = {"Preferences": {"Page": 11}, "Style Editor": {"Preview Text": "မြန်မာ <漢字|かんじ> 日本語"}}
-            (profile / "config.json").write_text(json.dumps(config), encoding="utf-8")
+            (profile / "config.json").write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
             from mangetsu_style_ui import prepare
             fixture = prepare(profile, autoload)
         if scenario in ("success", "scripts"):
@@ -183,7 +183,7 @@ aegisub.register_macro 'Smoke Moon', '', ->
             second = profile / "second-autoload"
             second.mkdir(exist_ok=True)
             config["Path"]["Automation"]["Autoload"] = str(autoload) + "|" + str(second) + "|" + str(autoload)
-            (profile / "config.json").write_text(json.dumps(config), encoding="utf-8")
+            (profile / "config.json").write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
             def conflicting_script(marker, slow=False):
                 return ("local deadline=os.clock()+2; while os.clock()<deadline do end; " if slow else "") + f"""
 aegisub.register_macro('Duplicate', '', function()
@@ -284,7 +284,7 @@ aegisub.register_filter('Duplicate filter', 'staged export filter', 100, functio
                 wait(lambda: progress_control(frame), "four infinite initializers started")
                 send(frame, 0)
             else:
-                wait(lambda: "startup/automation" in logs(), "empty autoload completion")
+                wait(lambda: re.search(r'"section"\s*:\s*"startup/automation"', logs()), "autoload completion after initialization")
                 if scenario == "Mangetsu":
                     wait(lambda: not progress_control(frame), "UI audit macro finishes loading", seconds=8)
                 else:
