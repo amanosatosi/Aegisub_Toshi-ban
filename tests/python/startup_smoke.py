@@ -196,7 +196,9 @@ aegisub.register_filter('Duplicate filter', 'staged export filter', 100, functio
             (second / "shared.lua").write_text(conflicting_script("second"), encoding="utf-8")
         env = dict(os.environ, CI="true", AEGISUB_STARTUP_SMOKE_DIR=str(profile), AEGISUB_AUTOMATION_WORKERS="4")
         started = time.monotonic()
-        process = subprocess.Popen([str(profile / "aegisub.exe")] + ([str(fixture)] if fixture else []), cwd=profile, env=env)
+        console = (profile / "console.txt").open("w", encoding="utf-8")
+        process = subprocess.Popen([str(profile / "aegisub.exe")] + ([str(fixture)] if fixture else []), cwd=profile, env=env,
+                                   stdout=console, stderr=subprocess.STDOUT)
         try:
             frame = wait(lambda: visible_main_frame(windows(process.pid), user.GetMenu, user.IsWindowVisible), "visible main frame")
             assert user.IsWindowVisible(frame), "Main frame must be visible"
@@ -357,6 +359,7 @@ aegisub.register_filter('Duplicate filter', 'staged export filter', 100, functio
             if process.poll() is None:
                 process.kill()
                 process.wait()
+            console.close()
     print(json.dumps(measurements, indent=2))
 
 

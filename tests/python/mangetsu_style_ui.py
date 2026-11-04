@@ -126,7 +126,7 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
     def snapshot():
         target = profile / "style-ui-snapshot"
         target.unlink(missing_ok=True)
-        invoke(frame, "Style UI Snapshot")
+        command("Style UI Snapshot")
         return wait(lambda: target.read_text(encoding="utf-8") if target.exists() and target.stat().st_size else None, "metadata snapshot")
 
     def capture(hwnd, name):
@@ -170,19 +170,33 @@ $graphics.Dispose(); $bitmap.Dispose()
                 return
         raise AssertionError("Style missing: " + name)
 
+    def command_id(identifier):
+        # These commands require no user input. Wait for the complete native
+        # handler, including LuaThreadedCall's modal loop and selection update.
+        # A file written inside a macro is not a completion notification: posting
+        # another WM_COMMAND then can bypass the disabled frame and reenter Lua.
+        wait(lambda: user.IsWindowEnabled(frame), "main frame ready for command")
+        result = C.c_size_t()
+        assert user.SendMessageTimeoutW(frame, 0x111, identifier, 0, 2, 30000, C.byref(result)), "Native command failed or application exited"
+
+    def command(caption):
+        matches = [identifier for name, identifier in entries(user.GetMenu(frame)) if name == caption]
+        assert len(matches) == 1, (caption, matches)
+        command_id(matches[0])
+
     initial = snapshot()
     assert "SELECTED|mangetsu-" not in initial and "ACTIVE|mangetsu-" not in initial
     assert sum(line.startswith("LINE|mangetsu-") for line in initial.splitlines()) == 3
-    invoke(frame, "Show Mangetsu Metadata")
-    invoke(frame, "Select style metadata")
+    command("Show Mangetsu Metadata")
+    command("Select style metadata")
     assert "ACTIVE|mangetsu-style" in snapshot()
-    invoke(frame, "Show Mangetsu Metadata")
+    command("Show Mangetsu Metadata")
     hidden = snapshot()
     assert "ACTIVE|mangetsu-" not in hidden and "SELECTED|mangetsu-" not in hidden
     assert [s for s in initial.splitlines() if s.startswith("LINE|")] == [s for s in hidden.splitlines() if s.startswith("LINE|")]
     sorts = [command for name, command in entries(user.GetMenu(frame)) if name == "Actor Name"]
     assert len(sorts) == 2
-    user.PostMessageW(frame, 0x111, sorts[0], 0)  # Sort all; preserve the ordered metadata header.
+    command_id(sorts[0])  # Sort all; preserve the ordered metadata header.
     ordered = snapshot()
     assert [s for s in ordered.splitlines() if s.startswith("LINE|")][:3] == [s for s in initial.splitlines() if s.startswith("LINE|")][:3]
     invoke(frame, "Find and Replace...")
@@ -259,8 +273,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     def history(prefix):
         matches = [(label, command) for label, command in entries(user.GetMenu(frame)) if label.startswith(prefix)]
         assert len(matches) == 1, matches
-        user.PostMessageW(frame, 0x111, matches[0][1], 0)
-        time.sleep(0.2)
+        command_id(matches[0][1])
 
     history("Undo")
     assert "\\furis70" in snapshot(), "One undo restores ordinary style and metadata"
@@ -289,7 +302,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     wait(lambda: not user.IsWindowVisible(style), "renamed Style Editor closes")
     close_manager(manager)
     assert "LINE|mangetsu-style|UI Sign|" in snapshot()
-    invoke(frame, "Save Subtitles")
+    command("Save Subtitles")
     wait(lambda: "\\furis80" in (profile / "style-ui.ass").read_text(encoding="utf-8-sig"), "committed metadata saved")
     saved = (profile / "style-ui.ass").read_text(encoding="utf-8-sig")
     assert "WrapStyle: 0" in saved and "mangetsu-colorcoding" in saved

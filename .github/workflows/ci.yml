@@ -409,6 +409,11 @@ jobs:
             build/startup-smoke/*/log/*.json
             build/startup-smoke/*/*.png
             build/startup-smoke/*/style-ui-result.txt
+            build/startup-smoke/*/crashlog.txt
+            build/startup-smoke/*/console.txt
+            build/startup-smoke/*/config.json
+            build/startup-smoke/*/style-ui-snapshot
+            build/startup-smoke/*/recovered/*.ass
           if-no-files-found: warn
 
       - name: Verify DependencyControl installer migration and portable payload
