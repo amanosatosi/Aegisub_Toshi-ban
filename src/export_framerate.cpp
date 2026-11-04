@@ -28,6 +28,7 @@
 // Aegisub Project http://www.aegisub.org/
 
 #include "export_framerate.h"
+#include "mangetsu_metadata.h"
 
 #include "ass_dialogue.h"
 #include "ass_file.h"
@@ -192,7 +193,10 @@ void AssTransformFramerateFilter::TransformTimeTags(std::string const& name, Ass
 
 void AssTransformFramerateFilter::TransformFrameRate(AssFile *subs) {
 	if (!Input.IsLoaded() || !Output.IsLoaded()) return;
+	bool initial_metadata = true;
 	for (auto& curDialogue : subs->Events) {
+		if (initial_metadata && mangetsu::IsMetadataComment(curDialogue)) continue;
+		initial_metadata = false;
 		line = &curDialogue;
 		newK = 0;
 		oldK = 0;

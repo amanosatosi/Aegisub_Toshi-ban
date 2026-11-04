@@ -30,6 +30,9 @@ and malformed text, transforms, image tags, and manual gradients are retained.
 Gradient first-valid-source precedence is not rewritten. Actor Colorcoding
 declarations remain independent. Preview/render serialization sends both kinds
 of metadata in their original interleaved initial-block order.
+The built-in Fix Styles and Transform Framerate export filters leave this
+initial header intact; subtitle preparation only reads attachments. ASS saving
+and exporting serialize the model's event order directly.
 
 Current-script New, Copy, Rename and Delete manage associated style declarations.
 External Style Manager catalogs store ordinary ASS fields only: extended editors
@@ -63,3 +66,5 @@ and test 125–200% Windows display scaling, nested folds around initial metadat
 very long localized labels, malformed hand-authored declarations and Burmese/
 Japanese font fallback with representative installed fonts. These checks are
 not substitutes for native and GUI test results.
+Also export ASS with Transform Framerate enabled and confirm the initial
+metadata comments remain byte-identical while ordinary event timings change.
