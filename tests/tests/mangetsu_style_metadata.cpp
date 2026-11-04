@@ -140,6 +140,16 @@ TEST(MangetsuStyleMetadata, AllTenLayersResolveNativeLimitsAndIndependentChannel
 		EXPECT_EQ(values.at(key + "bblur").value, "100"); EXPECT_EQ(values.at(key + "bbe").value, "4");
 	}
 }
+TEST(MangetsuStyleMetadata, ExtraBorderPaintAndWaitingDefaultsFollowTheActiveOutline) {
+	AssFile file; auto& style = AddStyle(file);
+	Add(file, "{\\1bc&H123456&\\1ba&H40&\\2bc&HFFFFFF&\\2bc\\2ba&H80&\\2ba\\10bc&H654321&}");
+	auto values = StyleMetadataDraft(file, style).Values(style, 0);
+	EXPECT_FALSE(values.at("2bc").assigned); EXPECT_EQ(values.at("2bc").value, "&H123456&");
+	EXPECT_FALSE(values.at("2ba").assigned); EXPECT_EQ(values.at("2ba").value, "&H40&");
+	EXPECT_FALSE(values.at("2bsc").assigned); EXPECT_EQ(values.at("2bsc").value, "&H123456&");
+	EXPECT_FALSE(values.at("10ba").assigned); EXPECT_EQ(values.at("10ba").value, "&H40&");
+	EXPECT_FALSE(values.at("10bsc").assigned); EXPECT_EQ(values.at("10bsc").value, "&H654321&");
+}
 
 TEST(MangetsuStyleMetadata, MalformedBlocksCannotSwallowNewAssignments) {
 	for (std::string text : {"{\\grd(unclosed}", "{{\\furis90}", "{\\furisbad", "{\\t(\\q1)}trailing"}) {

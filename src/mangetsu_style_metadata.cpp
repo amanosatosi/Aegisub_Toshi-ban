@@ -148,7 +148,9 @@ std::map<std::string, StyleValue> Assign(Token const& token, StyleValues const& 
 	}
 	for (auto const& field : fields) {
 		if (arg.empty()) {
-			result[field] = {defaults.at(field).value, field.find("bsc") == field.npos && field.find("bblur") == field.npos && field.find("bbe") == field.npos};
+			bool inherited_paint = field.find("bsc") != field.npos || field.find("bblur") != field.npos || field.find("bbe") != field.npos;
+			if (field.size() >= 3 && field != "1bc" && field != "1ba" && (field.back() == 'c' || field.substr(field.size() - 2) == "ba")) inherited_paint = true;
+			result[field] = {defaults.at(field).value, !inherited_paint};
 			continue;
 		}
 		bool color = field.back() == 'c';
@@ -273,6 +275,14 @@ StyleValues StyleMetadataDraft::Values(AssStyle const& style, int wrap) const {
 	auto defaults = Defaults(style, wrap), current = defaults;
 	for (auto const& source : Texts(style, wrap)) for (auto const& token : Tokens(source))
 		for (auto const& entry : Assign(token, defaults, current)) current[entry.first] = entry.second;
+	// Extra layers inherit the active outline's independent color/alpha
+	// channels. An unset waiting color follows the layer's active solid paint.
+	for (int n = 1; n <= 10; ++n) {
+		auto key = std::to_string(n);
+		if (n > 1) for (auto channel : {"bc", "ba"})
+			if (!current.at(key + channel).assigned) current[key + channel].value = current.at(std::string("1") + channel).value;
+		if (!current.at(key + "bsc").assigned) current[key + "bsc"].value = current.at(key + "bc").value;
+	}
 	return current;
 }
 bool StyleMetadataDraft::Apply(AssFile& file, AssStyle const *source, std::string const& name, AssStyle const& style, bool copy) const {
