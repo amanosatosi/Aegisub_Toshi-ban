@@ -319,6 +319,17 @@ aegisub.register_filter('Duplicate filter', 'staged export filter', 100, functio
                     wait(lambda: "Mangetsu loaded from" in logs() and "libassmod loaded from" in logs(), "UI discovery retries failed availability")
                     user.PostMessageW(preferences, 0x10, 0, 0)
 
+            # Do not close a fast empty-profile launch before its native event
+            # loop gets an idle opportunity. This is logged by the real app idle
+            # handler and timed with steady_clock, not synthesized by the test.
+            wait(lambda: "First responsive idle event" in logs(), "responsive event-loop idle before shutdown")
+            timings = {}
+            for stage in ("First visible frame", "Application initialization", "First responsive idle event"):
+                match = re.search(re.escape(stage) + r": ([0-9.eE+-]+) ms since OnInit", logs())
+                assert match, "Missing measured startup timing: " + stage
+                timings[stage] = float(match.group(1))
+            assert timings["First responsive idle event"] >= max(timings["First visible frame"], timings["Application initialization"]), "Idle must follow a visible frame and completed initialization"
+            send(frame, 0)
             user.PostMessageW(frame, 0x10, 0, 0)
             # An edit/save prompt, if a platform's Scintilla undo semantics differ.
             deadline = time.monotonic() + 10
@@ -329,7 +340,8 @@ aegisub.register_filter('Duplicate filter', 'staged export filter', 100, functio
                             user.PostMessageW(child, 0xF5, 0, 0)
                 time.sleep(0.05)
             assert process.poll() == 0, "Shutdown crashed or hung"
-            measurements.append({"scenario": scenario, "observed_visible_and_responsive_ms": visible_ms})
+            measurements.append({"scenario": scenario, "observed_visible_and_responsive_ms": visible_ms,
+                                 "logged_first_responsive_idle_ms": timings["First responsive idle event"]})
             (output / "measurements.json").write_text(json.dumps(measurements, indent=2), encoding="utf-8")
             assert "First responsive idle event" in logs()
             if scenario == "missing":

@@ -59,6 +59,7 @@ class AegisubApp : public wxApp {
 	void OpenFiles(wxArrayStringsAdapter filenames);
 
 	std::vector<FrameMain *> frames;
+	bool startup_initialized = false;
 	bool restart_on_exit = false;
 	// wxWidgets' native dark mode is selected only during startup.
 	bool dark_mode_at_startup = false;

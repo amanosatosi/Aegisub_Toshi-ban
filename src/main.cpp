@@ -316,11 +316,14 @@ bool AegisubApp::OnInit() {
 		// Open main frame
 		StartupLog("Create main window");
 		NewProjectContext();
-		// Start only after the event loop has had an opportunity to paint and
-		// service the frame. The manager constructor performs no file or Lua work.
+		// Observe application idle: MSW need not dispatch idle to each frame.
+		// Ignore nested initialization loops; this must be a genuine idle after
+		// OnInit, with a visible editor. No timer or posted callback emits timing.
 		Bind(wxEVT_IDLE, [this, pending = true](wxIdleEvent& event) mutable {
-			if (pending && !frames.empty()) {
+			if (pending && startup_initialized && !frames.empty() && frames.front()->IsShownOnScreen()) {
 				pending = false;
+				LogStartupTiming("First responsive idle event");
+				// The manager constructor performs no file or Lua work.
 				config::global_scripts->Reload();
 				CallAfter([this] {
 					if (frames.empty() || config::opt->Has(MangetsuRendererOfferKey)) return;
@@ -388,6 +391,8 @@ bool AegisubApp::OnInit() {
 
 	StartupLog("Initialization complete");
 	LogStartupTiming("Application initialization");
+	startup_initialized = true;
+	wxWakeUpIdle(); // Request delivery once the native message queue becomes idle.
 	return true;
 }
 

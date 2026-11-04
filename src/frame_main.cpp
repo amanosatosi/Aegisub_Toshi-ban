@@ -348,10 +348,6 @@ FrameMain::FrameMain()
 	SetDisplayMode(1, 1);
 
 	LOG_I("startup/timing") << "Main-window construction: " << StartupMilliseconds(construction_start) << " ms";
-	Bind(wxEVT_IDLE, [first_idle = true](wxIdleEvent& event) mutable {
-		if (first_idle) { first_idle = false; LogStartupTiming("First responsive idle event"); }
-		event.Skip();
-	});
 	StartupLog("Leaving FrameMain constructor");
 }
 
