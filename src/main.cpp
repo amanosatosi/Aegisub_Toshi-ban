@@ -318,9 +318,10 @@ bool AegisubApp::OnInit() {
 		NewProjectContext();
 		// Observe application idle: MSW need not dispatch idle to each frame.
 		// Ignore nested initialization loops; this must be a genuine idle after
-		// OnInit, with a visible editor. No timer or posted callback emits timing.
+		// OnInit, with a live editor. Minimized windows must still start autoload.
+		// No timer or posted callback emits timing.
 		Bind(wxEVT_IDLE, [this, pending = true](wxIdleEvent& event) mutable {
-			if (pending && startup_initialized && !frames.empty() && frames.front()->IsShownOnScreen()) {
+			if (pending && startup_initialized && !frames.empty()) {
 				pending = false;
 				LogStartupTiming("First responsive idle event");
 				// The manager constructor performs no file or Lua work.
