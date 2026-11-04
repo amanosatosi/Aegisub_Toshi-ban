@@ -18,6 +18,9 @@
 
 #include "ass_dialogue.h"
 #include "ass_file.h"
+#include "base_grid.h"
+#include "mangetsu_style_metadata.h"
+#include "options.h"
 #include "include/aegisub/context.h"
 #include "subs_controller.h"
 
@@ -25,12 +28,33 @@
 
 SelectionController::SelectionController(agi::Context *c) : context(c) { }
 
+void SelectionController::FilterMetadata(Selection& selected, AssDialogue *&active) const {
+	if (OPT_GET("Subtitle/Provider")->GetString() != "Mangetsu" || OPT_GET("Subtitle/Grid/Show Mangetsu Metadata")->GetBool()) return;
+	auto hidden = mangetsu::HiddenMetadata(*context->ass, true, false);
+	for (auto it = selected.begin(); it != selected.end();) {
+		if (hidden.count(*it)) it = selected.erase(it); else ++it;
+	}
+	if (hidden.count(active)) {
+		active = selected.empty() ? nullptr : *selected.begin();
+		if (!active) for (auto& line : context->ass->Events) if (!hidden.count(&line)) { active = &line; break; }
+		if (active && selected.empty()) selected.insert(active);
+	}
+}
+
+void SelectionController::RefreshMetadataVisibility() {
+	SetSelectionAndActive(selection, active_line);
+}
+
 void SelectionController::SetSelectedSet(Selection new_selection) {
+	auto active = active_line;
+	FilterMetadata(new_selection, active);
+	if (active != active_line) { SetSelectionAndActive(std::move(new_selection), active); return; }
 	selection = std::move(new_selection);
 	AnnounceSelectedSetChanged();
 }
 
 void SelectionController::SetActiveLine(AssDialogue *new_line) {
+	FilterMetadata(selection, new_line);
 	if (new_line != active_line) {
 		active_line = new_line;
 		if (active_line)
@@ -40,6 +64,7 @@ void SelectionController::SetActiveLine(AssDialogue *new_line) {
 }
 
 void SelectionController::SetSelectionAndActive(Selection new_selection, AssDialogue *new_line) {
+	FilterMetadata(new_selection, new_line);
 	bool active_line_changed = new_line != active_line;
 	selection = std::move(new_selection);
 	active_line = new_line;
@@ -59,6 +84,10 @@ std::vector<AssDialogue *> SelectionController::GetSortedSelection() const {
 
 void SelectionController::PrevLine() {
 	if (!active_line) return;
+	if (context->subsGrid) {
+		if (auto line = context->subsGrid->NextVisibleLine(active_line, -1)) SetSelectionAndActive({line}, line);
+		return;
+	}
 	auto it = context->ass->iterator_to(*active_line);
 	if (it != context->ass->Events.begin()) {
 		--it;
@@ -68,6 +97,10 @@ void SelectionController::PrevLine() {
 
 void SelectionController::NextLine() {
 	if (!active_line) return;
+	if (context->subsGrid) {
+		if (auto line = context->subsGrid->NextVisibleLine(active_line, 1)) SetSelectionAndActive({line}, line);
+		return;
+	}
 	auto it = context->ass->iterator_to(*active_line);
 	if (++it != context->ass->Events.end())
 		SetSelectionAndActive({&*it}, &*it);

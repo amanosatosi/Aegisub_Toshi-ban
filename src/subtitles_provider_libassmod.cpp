@@ -109,6 +109,7 @@ using AssSetTagImageRGBAFunc = int (*)(ASS_Renderer *, const char *, ASS_TagImag
 #endif
 
 struct LibassModApi : custom_subtitles::RenderApi {
+	int (*ass_process_mangetsu_metadata_line)(ASS_Track*, const char*, const char*, const char*, const char*, int, int) = nullptr;
 	LibassModHandle handle = nullptr;
 	AssLibraryInitFunc ass_library_init = nullptr;
 	AssLibraryDoneFunc ass_library_done = nullptr;
@@ -317,6 +318,7 @@ bool LoadLibassModApi(AssCompatBackend &backend, std::string &error) {
 	LoadOptionalSymbol(backend, "ass_set_tag_image_rgba", api.ass_set_tag_image_rgba);
 #endif
 	LoadOptionalSymbol(backend, "ass_composite_images_bgra", api.ass_composite_images_bgra);
+	LoadOptionalSymbol(backend, "ass_process_mangetsu_metadata_line", api.ass_process_mangetsu_metadata_line);
 	LoadOptionalSymbol(backend, "ass_render_frame_rgba", api.ass_render_frame_rgba);
 	LoadOptionalSymbol(backend, "ass_free_images_rgba", api.ass_free_images_rgba);
 	LoadOptionalSymbol(backend, "ass_render_frame_auto", api.ass_render_frame_auto);
@@ -935,6 +937,9 @@ public:
 	}
 
 	void DrawSubtitles(VideoFrame &dst, double time) override;
+	bool SupportsMangetsuStyleMetadata() const override {
+		return &backend == &mangetsu_backend && backend.api.ass_process_mangetsu_metadata_line;
+	}
 
 	void Reinitialize() override {
 		// No need to reinit if we're not even done with the initial init

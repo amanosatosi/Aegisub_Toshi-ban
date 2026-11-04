@@ -28,6 +28,7 @@
 // Aegisub Project http://www.aegisub.org/
 
 #include "base_grid.h"
+#include "mangetsu_style_metadata.h"
 
 #include "include/aegisub/context.h"
 #include "include/aegisub/hotkey.h"
@@ -113,6 +114,8 @@ BaseGrid::BaseGrid(wxWindow* parent, agi::Context *context)
 
 		OPT_SUB("Subtitle/Grid/Highlight Subtitles in Frame", &BaseGrid::OnHighlightVisibleChange, this),
 		OPT_SUB("Subtitle/Grid/Hide Overrides", [&](agi::OptionValue const&) { Refresh(false); }),
+		OPT_SUB("Subtitle/Grid/Show Mangetsu Metadata", [&] { UpdateMaps(); context->selectionController->RefreshMetadataVisibility(); }),
+		OPT_SUB("Subtitle/Provider", [&] { UpdateMaps(); context->selectionController->RefreshMetadataVisibility(); }),
 	});
 
 	Bind(wxEVT_CONTEXT_MENU, &BaseGrid::OnContextMenu, this);
@@ -131,8 +134,10 @@ BEGIN_EVENT_TABLE(BaseGrid,wxWindow)
 END_EVENT_TABLE()
 
 void BaseGrid::OnSubtitlesCommit(int type) {
-	if (type == AssFile::COMMIT_NEW || type & AssFile::COMMIT_ORDER || type & AssFile::COMMIT_DIAG_ADDREM || type & AssFile::COMMIT_FOLD)
+	if (type == AssFile::COMMIT_NEW || type & (AssFile::COMMIT_ORDER | AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_FOLD | AssFile::COMMIT_DIAG_META))
 		UpdateMaps();
+	if (type != AssFile::COMMIT_NEW && (type & AssFile::COMMIT_DIAG_META) && !(type & AssFile::COMMIT_DIAG_ADDREM))
+		context->selectionController->RefreshMetadataVisibility();
 
 	if (type & AssFile::COMMIT_DIAG_META || type & AssFile::COMMIT_DIAG_TIME) {
 		SetColumnWidths();
@@ -200,16 +205,46 @@ void BaseGrid::UpdateStyle() {
 void BaseGrid::UpdateMaps() {
 	index_line_map.clear();
 	vis_index_line_map.clear();
+	visible_index.clear();
 
 	for (auto& curdiag : context->ass->Events)
 		index_line_map.push_back(&curdiag);
 
-	for (AssDialogue *curdiag = &*context->ass->Events.begin(); curdiag != nullptr; curdiag = curdiag->Fold.getNextVisible())
-		vis_index_line_map.push_back(&*curdiag);
+	auto hidden = mangetsu::HiddenMetadata(*context->ass, OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu", OPT_GET("Subtitle/Grid/Show Mangetsu Metadata")->GetBool());
+	for (auto& line : context->ass->Events) {
+		if (hidden.count(&line)) continue;
+		bool folded = false;
+		for (auto parent = line.Fold.parent; parent; parent = parent->Fold.parent)
+			if (parent->Fold.isFolded() && !hidden.count(parent)) { folded = true; break; }
+		// A hidden metadata fold header must not make ordinary dialogue
+		// inaccessible. Its stored collapse state is left untouched.
+		if (folded) continue;
+		visible_index[&line] = static_cast<int>(vis_index_line_map.size());
+		vis_index_line_map.push_back(&line);
+	}
 
 	SetColumnWidths();
 	AdjustScrollbar();
 	Refresh(false);
+}
+
+int BaseGrid::VisibleRow(AssDialogue const *line) const {
+	for (; line; line = line->Fold.parent) {
+		auto it = visible_index.find(line);
+		if (it != visible_index.end()) return it->second;
+	}
+	return -1;
+}
+
+AssDialogue *BaseGrid::NextVisibleLine(AssDialogue const *line, int direction) const {
+	if (!line || vis_index_line_map.empty()) return nullptr;
+	auto it = std::lower_bound(vis_index_line_map.begin(), vis_index_line_map.end(), line->Row,
+		[](AssDialogue const *a, int row) { return a->Row < row; });
+	if (direction > 0) {
+		if (it != vis_index_line_map.end() && *it == line) ++it;
+		return it == vis_index_line_map.end() ? nullptr : *it;
+	}
+	return it == vis_index_line_map.begin() ? nullptr : *--it;
 }
 
 void BaseGrid::OnActiveLineChanged(AssDialogue *new_active) {
@@ -224,7 +259,7 @@ void BaseGrid::OnActiveLineChanged(AssDialogue *new_active) {
 }
 
 void BaseGrid::MakeRowVisible(int row) {
-	MakeVisRowVisible(GetDialogue(row)->Fold.getVisibleRow());
+	if (auto line = GetDialogue(row)) if (auto visible = VisibleRow(line); visible >= 0) MakeVisRowVisible(visible);
 }
 
 void BaseGrid::MakeVisRowVisible(int row) {
@@ -424,10 +459,10 @@ void BaseGrid::OnPaint(wxPaintEvent &) {
 		dc.DrawLine(w, 0, w, maxH);
 	}
 
-	if (active_line && active_line->Fold.getVisibleRow() >= yPos && active_line->Fold.getVisibleRow() < yPos + nDraw) {
+	if (active_line && VisibleRow(active_line) >= yPos && VisibleRow(active_line) < yPos + nDraw) {
 		dc.SetPen(wxPen(to_wx(OPT_GET("Colour/Subtitle Grid/Active Border")->GetColor())));
 		dc.SetBrush(*wxTRANSPARENT_BRUSH);
-		dc.DrawRectangle(0, (active_line->Fold.getVisibleRow() - yPos + 1) * lineHeight, w, lineHeight + 1);
+		dc.DrawRectangle(0, (VisibleRow(active_line) - yPos + 1) * lineHeight, w, lineHeight + 1);
 	}
 }
 
@@ -688,6 +723,7 @@ void BaseGrid::OnCharHook(wxKeyEvent &event) {
 }
 
 void BaseGrid::OnKeyDown(wxKeyEvent &event) {
+	if (!GetVisRows()) { event.Skip(); return; }
 	int w,h;
 	GetClientSize(&w, &h);
 
@@ -724,7 +760,7 @@ void BaseGrid::OnKeyDown(wxKeyEvent &event) {
 
 	auto active_line = context->selectionController->GetActiveLine();
 	int old_extend = extendRow;
-	int next = mid(0, (active_line ? active_line->Fold.getVisibleRow() : 0) + dir * step, GetVisRows() - 1);
+	int next = mid(0, std::max(0, VisibleRow(active_line)) + dir * step, GetVisRows() - 1);
 	context->selectionController->SetActiveLine(GetVisDialogue(next));
 
 	// Move selection

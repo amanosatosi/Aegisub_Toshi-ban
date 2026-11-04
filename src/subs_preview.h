@@ -33,6 +33,8 @@
 ///
 
 #include <memory>
+#include <string>
+#include <vector>
 #include <wx/window.h>
 #include <wx/bitmap.h>
 
@@ -60,6 +62,9 @@ class SubtitlesPreview final : public wxWindow {
 	AssDialogue* line;
 
 	std::unique_ptr<DialogProgress> progress;
+	std::string provider_name;
+	wxString preview_error;
+	std::string preview_text;
 
 	/// Regenerate the bitmap
 	void UpdateBitmap();
@@ -69,6 +74,9 @@ class SubtitlesPreview final : public wxWindow {
 	void OnPaint(wxPaintEvent &);
 
 public:
+	// Sets pending metadata without touching the real document or initializing
+	// another renderer. The next SetStyle/SetText renders this snapshot.
+	void SetMangetsuMetadata(std::vector<std::string> const& texts, int script_wrap);
 	/// Set the style to use
 	void SetStyle(AssStyle const& style);
 	/// Set the text to display

@@ -35,6 +35,8 @@
 #include "ass_dialogue.h"
 #include "ass_file.h"
 #include "ass_style.h"
+#include "options.h"
+#include "compat.h"
 #include "dialog_progress.h"
 #include "subs_preview.h"
 #include "include/aegisub/subtitles_provider.h"
@@ -73,6 +75,23 @@ SubtitlesPreview::SubtitlesPreview(wxWindow *parent, wxSize size, int winStyle, 
 SubtitlesPreview::~SubtitlesPreview() {
 }
 
+void SubtitlesPreview::SetMangetsuMetadata(std::vector<std::string> const& texts, int script_wrap) {
+	for (auto it = sub_file->Events.begin(); it != sub_file->Events.end();) {
+		auto current = it++;
+		if (&*current != line) delete &*current;
+	}
+	if (OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu") {
+		for (auto const& text : texts) {
+			auto declaration = new AssDialogue;
+			declaration->Comment = true; declaration->Style = "Default";
+			declaration->Effect = "mangetsu-style"; declaration->Text = text;
+			sub_file->Events.insert(sub_file->Events.iterator_to(*line), *declaration);
+		}
+		sub_file->SetScriptInfo("WrapStyle", std::to_string(script_wrap));
+		line->Text = preview_text;
+	} else line->Text = "{\\q2}" + preview_text;
+}
+
 void SubtitlesPreview::SetStyle(AssStyle const& new_style) {
 	if (provider && style->font != new_style.font)
 		provider->Reinitialize();
@@ -86,7 +105,8 @@ void SubtitlesPreview::SetStyle(AssStyle const& new_style) {
 }
 
 void SubtitlesPreview::SetText(std::string const& text) {
-	std::string new_text = "{\\q2}" + text;
+	preview_text = text;
+	std::string new_text = (OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu" ? "" : "{\\q2}") + text;
 	if (new_text != line->Text) {
 		line->Text = new_text;
 		UpdateBitmap();
@@ -103,17 +123,28 @@ void SubtitlesPreview::SetColour(agi::Color col) {
 
 void SubtitlesPreview::UpdateBitmap() {
 	if (!vid) return;
+	if (provider_name != OPT_GET("Subtitle/Provider")->GetString()) {
+		provider.reset(); provider_name = OPT_GET("Subtitle/Provider")->GetString();
+		try { provider = SubtitlesProviderFactory::GetProvider(progress.get()); }
+		catch (...) { preview_error = _("The selected subtitle renderer could not be initialized."); }
+	}
 
 	VideoFrame frame;
 	vid->GetFrame(0, frame);
 
 	if (provider) {
+		preview_error.clear();
 		try {
+			if (provider_name == "Mangetsu" && !provider->SupportsMangetsuStyleMetadata()) {
+				preview_error = _("Mangetsu style preview requires a current Mangetsu library. Install or update mangetsu.dll.");
+			} else {
 			provider->LoadSubtitles(sub_file.get());
 			provider->DrawSubtitles(frame, 0.1);
+			}
 		}
-		catch (...) { }
+		catch (...) { preview_error = _("The subtitle renderer could not render this preview."); }
 	}
+	SetToolTip(preview_error);
 
 	// Convert frame to bitmap
 	*bmp = static_cast<wxBitmap>(GetImage(frame));
@@ -121,7 +152,13 @@ void SubtitlesPreview::UpdateBitmap() {
 }
 
 void SubtitlesPreview::OnPaint(wxPaintEvent &) {
-	wxPaintDC(this).DrawBitmap(*bmp, 0, 0);
+	wxPaintDC dc(this);
+	if (preview_error.empty()) dc.DrawBitmap(*bmp, 0, 0);
+	else {
+		dc.SetBackground(wxBrush(GetBackgroundColour())); dc.Clear();
+		dc.SetTextForeground(GetForegroundColour());
+		dc.DrawLabel(_("Preview unavailable"), GetClientRect(), wxALIGN_CENTER);
+	}
 }
 
 void SubtitlesPreview::OnSize(wxSizeEvent &evt) {
@@ -137,6 +174,7 @@ void SubtitlesPreview::OnSize(wxSizeEvent &evt) {
 			progress = agi::make_unique<DialogProgress>(this);
 		if (!provider)
 			provider = SubtitlesProviderFactory::GetProvider(progress.get());
+		provider_name = OPT_GET("Subtitle/Provider")->GetString();
 	}
 	catch (...) {
 		wxMessageBox(

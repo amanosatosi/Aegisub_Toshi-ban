@@ -35,6 +35,7 @@
 #include "compat.h"
 #include "dialog_manager.h"
 #include "dialog_style_editor.h"
+#include "mangetsu_style_metadata.h"
 #include "dialogs.h"
 #include "format.h"
 #include "help_button.h"
@@ -504,6 +505,14 @@ void DialogStyleManager::OnCatalogDelete() {
 void DialogStyleManager::OnCopyToStorage() {
 	wxArrayInt selections;
 	int n = CurrentList->GetSelections(selections);
+	for (int i = 0; i < n; ++i) {
+		auto source = styleMap.at(selections[i]);
+		if (!mangetsu::StyleMetadataDraft(*c->ass, *source).Texts(*source, c->ass->GetScriptInfoAsInt("WrapStyle")).empty()) {
+			if (wxMessageBox(_("Style catalogs cannot store Mangetsu defaults. Copy only the ordinary ASS style fields? The script's metadata will be kept."),
+				_("Copy style to catalog"), wxYES_NO | wxNO_DEFAULT | wxICON_INFORMATION, this) != wxYES) return;
+			break;
+		}
+	}
 	wxArrayString copied;
 	copied.reserve(n);
 	for (int i = 0; i < n; i++) {
@@ -661,10 +670,28 @@ void DialogStyleManager::OnCurrentDelete() {
 	int n = CurrentList->GetSelections(selections);
 
 	if (confirm_delete(n, this, _("Confirm delete from current")) == wxYES) {
+		Selection removed;
+		for (auto line : mangetsu::InitialMetadata(*c->ass)) {
+			if (line->Effect != "mangetsu-style") continue;
+			for (int i = 0; i < n; ++i) if (mangetsu::ResolveMetadataStyle(*c->ass, line->Style) == styleMap.at(selections[i])) removed.insert(line);
+		}
+		if (!removed.empty()) {
+			auto selected = c->selectionController->GetSelectedSet();
+			for (auto line : removed) selected.erase(line);
+			auto active = c->selectionController->GetActiveLine();
+			if (removed.count(active)) {
+				active = nullptr;
+				for (auto& line : c->ass->Events) if (!removed.count(&line)) { active = &line; break; }
+			}
+			if (selected.empty() && active) selected.insert(active);
+			c->selectionController->SetSelectionAndActive(std::move(selected), active);
+		}
+		bool metadata_removed = false;
 		for (int i = 0; i < n; i++) {
+			metadata_removed |= mangetsu::RemoveStyleMetadata(*c->ass, *styleMap.at(selections[i]));
 			delete styleMap.at(selections[i]);
 		}
-		c->ass->Commit(_("style delete"), AssFile::COMMIT_STYLES);
+		c->ass->Commit(_("style delete"), AssFile::COMMIT_STYLES | (metadata_removed ? AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_DIAG_FULL : 0));
 	}
 }
 
