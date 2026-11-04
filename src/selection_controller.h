@@ -45,7 +45,7 @@ class SelectionController {
 
 	Selection selection; ///< Currently selected lines
 	AssDialogue *active_line = nullptr; ///< The currently active line or 0 if none
-	void FilterMetadata(Selection& selected, AssDialogue *&active) const;
+	bool FilterMetadata(Selection& selected, AssDialogue *&active) const;
 
 public:
 	void RefreshMetadataVisibility();

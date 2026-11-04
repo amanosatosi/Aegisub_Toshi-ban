@@ -10330,8 +10330,8 @@ msgid "Waiting karaoke color"
 msgstr "မဆိုရသေးသော ကာရာအိုကေအပိုင်း၏ အနားသတ်အရောင်"
 
 #: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
-msgid "Enter a finite number in the allowed range. Sizes and scales cannot be negative; alpha must be an integer from 0 to 255."
-msgstr "သတ်မှတ်အပိုင်းအခြားအတွင်းရှိ ကိန်းဂဏန်းကို ထည့်ပါ။ အရွယ်အစားနှင့် ချုံ့ချဲ့နှုန်းသည် အနုတ်ကိန်း မဖြစ်ရပါ။ ဖောက်ထွင်းမြင်ရမှုသည် 0 မှ 255 အထိ ကိန်းပြည့် ဖြစ်ရပါမည်။"
+msgid "Enter a finite number in the allowed range. Sizes and scales cannot be negative; alpha must be an integer from 0 to 255. Blur cannot exceed 100; edge blur cannot exceed 127."
+msgstr "သတ်မှတ်အပိုင်းအခြားအတွင်းရှိ ကိန်းဂဏန်းကို ထည့်ပါ။ အရွယ်အစားနှင့် ချုံ့ချဲ့နှုန်းသည် အနုတ်ကိန်း မဖြစ်ရပါ။ ဖောက်ထွင်းမြင်ရမှုသည် 0 မှ 255 အထိ ကိန်းပြည့် ဖြစ်ရပါမည်။ အမှုန်ဝါးပမာဏသည် 100 ထက် မကျော်ရပါ။ အစွန်းဝါးပမာဏသည် 127 ထက် မကျော်ရပါ။"
 
 #: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
 msgid "Invalid style value"

@@ -90,6 +90,8 @@ class PropertyDialog final : public wxDialog {
 		if (!number(row.first, first) ||
 			((row.field.kind == Kind::Number || row.field.kind == Kind::Alpha) && first < 0) ||
 			(row.field.kind == Kind::Alpha && (first > 255 || first != std::floor(first))) ||
+			(row.field.key.find("bblur") != std::string::npos && first > 100) ||
+			(row.field.key.find("bbe") != std::string::npos && first > 127) ||
 			(row.second && !number(row.second, second))) {
 			if (validate) throw std::invalid_argument("number");
 			return "";
@@ -118,7 +120,7 @@ class PropertyDialog final : public wxDialog {
 			std::string value;
 			try { if (assigned) value = Read(row, true); }
 			catch (...) {
-				wxMessageBox(_("Enter a finite number in the allowed range. Sizes and scales cannot be negative; alpha must be an integer from 0 to 255."), _("Invalid style value"), wxOK | wxICON_ERROR, this);
+				wxMessageBox(_("Enter a finite number in the allowed range. Sizes and scales cannot be negative; alpha must be an integer from 0 to 255. Blur cannot exceed 100; edge blur cannot exceed 127."), _("Invalid style value"), wxOK | wxICON_ERROR, this);
 				row.input->SetFocus(); return false;
 			}
 			if (assigned != row.originally_assigned || (assigned && value != row.original))

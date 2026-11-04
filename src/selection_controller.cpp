@@ -28,17 +28,19 @@
 
 SelectionController::SelectionController(agi::Context *c) : context(c) { }
 
-void SelectionController::FilterMetadata(Selection& selected, AssDialogue *&active) const {
-	if (OPT_GET("Subtitle/Provider")->GetString() != "Mangetsu" || OPT_GET("Subtitle/Grid/Show Mangetsu Metadata")->GetBool()) return;
+bool SelectionController::FilterMetadata(Selection& selected, AssDialogue *&active) const {
+	if (OPT_GET("Subtitle/Provider")->GetString() != "Mangetsu" || OPT_GET("Subtitle/Grid/Show Mangetsu Metadata")->GetBool()) return false;
 	auto hidden = mangetsu::HiddenMetadata(*context->ass, true, false);
+	bool changed = false;
 	for (auto it = selected.begin(); it != selected.end();) {
-		if (hidden.count(*it)) it = selected.erase(it); else ++it;
+		if (hidden.count(*it)) { it = selected.erase(it); changed = true; } else ++it;
 	}
 	if (hidden.count(active)) {
 		active = selected.empty() ? nullptr : *selected.begin();
 		if (!active) for (auto& line : context->ass->Events) if (!hidden.count(&line)) { active = &line; break; }
-		if (active && selected.empty()) selected.insert(active);
+		if (active && selected.empty()) { selected.insert(active); changed = true; }
 	}
+	return changed;
 }
 
 void SelectionController::RefreshMetadataVisibility() {
@@ -54,9 +56,7 @@ void SelectionController::SetSelectedSet(Selection new_selection) {
 }
 
 void SelectionController::SetActiveLine(AssDialogue *new_line) {
-	auto previous = selection;
-	FilterMetadata(selection, new_line);
-	if (selection != previous) AnnounceSelectedSetChanged();
+	if (FilterMetadata(selection, new_line)) AnnounceSelectedSetChanged();
 	if (new_line != active_line) {
 		active_line = new_line;
 		if (active_line)
