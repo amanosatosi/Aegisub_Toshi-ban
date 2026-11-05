@@ -6,6 +6,7 @@ import ctypes as C
 import os
 import subprocess
 import time
+import unicodedata
 
 
 def prepare(profile, autoload):
@@ -58,11 +59,17 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
     def label(h):
         return text(h).replace("&", "")
 
+    def normalized_label(value):
+        # Win32/wx can display native mnemonic markers and different
+        # ellipsis glyphs while keeping the same user-visible command.
+        return unicodedata.normalize("NFKC", value.replace("&", "")).replace("…", "...").strip().casefold()
+
     def children(parent):
         return [h for h in windows(pid, parent) if user.IsWindowVisible(h)]
 
     def named(parent, caption):
-        return [h for h in children(parent) if label(h) == caption]
+        target = normalized_label(caption)
+        return [h for h in children(parent) if normalized_label(label(h)) == target]
 
     def click(parent, caption, rightmost=False):
         handles = wait(lambda: named(parent, caption), caption + " control")
@@ -242,7 +249,7 @@ $graphics.Dispose(); $bitmap.Dispose()
                                   + "Screenshot failed: " + repr(capture_error) + "\n", encoding="utf-8")
         raise AssertionError(f"Style Editor is missing visible controls {missing}; "
                              f"native child inventory: {inventory}") from exc
-    wrap = next(h for h in children(style) if choices(h) == ["Inherit Script", "Smart", "End-of-line", "No automatic wrap", "Alternative smart"])
+    wrap = wait(lambda: next((h for h in children(style) if choices(h) == ["Inherit Script", "Smart", "End-of-line", "No automatic wrap", "Alternative smart"]), None), "Wrap Mode native choice")
     centers = [sum(rect(h)[1::2]) / 2 for h in controls + [wrap]]
     assert max(centers) - min(centers) < 5, "All eight controls must share one bottom row"
     assert rect(controls[2])[2] <= rect(wrap)[0] < min(rect(h)[0] for h in controls[3:]), "Wrap belongs to left group"
@@ -288,7 +295,10 @@ $graphics.Dispose(); $bitmap.Dispose()
     wrap = next(h for h in children(style) if "Inherit Script" in choices(h))
     choose(wrap, 1)  # q0; metadata only, not Script Info WrapStyle
     click(style, "Apply")
-    time.sleep(0.3)
+    # Applying is asynchronous (BM_CLICK) and can rebuild the metadata-backed
+    # choice on Windows; do not race the pending Cancel with an in-flight commit.
+    wait(lambda: user.IsWindowEnabled(style) and send(wrap, 0x147) == 1,
+         "Apply commits q0 and returns control to the style dialog")
     choose(wrap, 0)  # Pending reset must be discarded by Cancel after Apply.
     close(style)
     close_manager(manager)
