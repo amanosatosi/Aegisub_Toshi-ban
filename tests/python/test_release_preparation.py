@@ -90,6 +90,41 @@ class ReleasePreparation(unittest.TestCase):
         self.assertNotIn("Mangetsu Renderer Offer Seen", read("src/libresrc/default_config.json"))
         self.assertNotIn("Mangetsu Renderer Offer Seen", read("packages/win_installer/portable/config.json"))
 
+    def test_built_packages_are_uploaded_after_unrelated_ci_test_failures(self):
+        workflow = read(".github/workflows/ci.yml")
+
+        def step(name):
+            match = re.search(
+                r"(?ms)^      - name: " + re.escape(name) + r"\n(.*?)(?=^      - name: |\Z)",
+                workflow,
+            )
+            self.assertIsNotNone(match, "Missing CI step: " + name)
+            return match.group(1)
+
+        self.assertIn("id: compiled", step("Build"))
+        for name, identifier in (
+            ("Generate Windows installer", "installer_package"),
+            ("Generate Windows portable installer", "portable_package"),
+            ("Generate AppImage", "appimage_package"),
+        ):
+            body = step(name)
+            self.assertIn("id: " + identifier, body)
+            self.assertIn("!cancelled()", body)
+            self.assertIn("steps.compiled.outcome == 'success'", body)
+
+        for name, dependency in (
+            ("Upload artifacts - win_installer", "installer_package"),
+            ("Upload artifacts - portable.zip", "portable_package"),
+            ("Upload artifacts - Linux AppImage", "appimage_package"),
+        ):
+            body = step(name)
+            self.assertIn("!cancelled()", body)
+            self.assertIn("steps." + dependency + ".outcome == 'success'", body)
+            self.assertIn("if-no-files-found: error", body)
+
+        self.assertIn("if: always() && matrix.config.os == 'windows-latest'",
+                      step("Upload startup timing and GUI regression logs"))
+
     def test_updater_has_one_repository_and_no_legacy_service(self):
         source = read("src/dialog_version_check.cpp")
         self.assertIn("FindApplicationUpdates(DownloadApplicationUpdateJson, GetGitHash()", source)

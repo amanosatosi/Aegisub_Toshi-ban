@@ -362,6 +362,7 @@ jobs:
           -SourceRoot "${{ github.workspace }}"
 
       - name: Build
+        id: compiled
         run: meson compile -C build
       
       - name: Run test (Windows)
@@ -383,14 +384,17 @@ jobs:
 
       # Windows artifacts
       - name: Generate Windows installer
-        if: matrix.config.os == 'windows-latest'
+        id: installer_package
+        # Package compiled binaries even when Meson/GUI tests fail.
+        if: ${{ !cancelled() && matrix.config.os == 'windows-latest' && steps.compiled.outcome == 'success' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run:
           meson compile win-installer -C build
 
       - name: Generate Windows portable installer
-        if: matrix.config.os == 'windows-latest'
+        id: portable_package
+        if: ${{ !cancelled() && matrix.config.os == 'windows-latest' && steps.compiled.outcome == 'success' }}
         run: cd build && ninja win-portable
 
       - name: Exercise responsive startup, rescans, cancellation and lazy renderers
@@ -417,7 +421,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Verify DependencyControl installer migration and portable payload
-        if: matrix.config.os == 'windows-latest'
+        if: ${{ !cancelled() && matrix.config.os == 'windows-latest' && steps.installer_package.outcome == 'success' && steps.portable_package.outcome == 'success' }}
         shell: pwsh
         run: >-
           .\tools\verify-dependencycontrol-package.ps1
@@ -425,7 +429,7 @@ jobs:
           -SourceRoot "${{ github.workspace }}"
 
       - name: Load packaged DependencyControl with Aegisub Automation runtime
-        if: matrix.config.os == 'windows-latest'
+        if: ${{ !cancelled() && matrix.config.os == 'windows-latest' && steps.portable_package.outcome == 'success' }}
         shell: pwsh
         run: |
           $env:AEGISUB_DEPCTRL_INCLUDE_DIR = "${{ github.workspace }}\build\aegisub-portable\automation\include"
@@ -434,7 +438,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Packaged DependencyControl failed to load in Aegisub runtime.' }
 
       - name: Verify packaged Mangetsu Karaoke Templater include
-        if: matrix.config.os == 'windows-latest'
+        if: ${{ !cancelled() && matrix.config.os == 'windows-latest' && steps.installer_package.outcome == 'success' && steps.portable_package.outcome == 'success' }}
         shell: pwsh
         run: |
           $module = "automation\include\mangetsu-karaskel.lua"
@@ -451,7 +455,7 @@ jobs:
           }
 
       - name: Verify bundled ASSDraw packages
-        if: matrix.config.os == 'windows-latest'
+        if: ${{ !cancelled() && matrix.config.os == 'windows-latest' && steps.installer_package.outcome == 'success' && steps.portable_package.outcome == 'success' }}
         shell: pwsh
         run: >-
           .\tools\verify-assdraw-package.ps1
@@ -459,7 +463,7 @@ jobs:
           -SourceRoot "${{ github.workspace }}"
 
       - name: Verify Windows provider DLL packaging
-        if: matrix.config.os == 'windows-latest'
+        if: ${{ !cancelled() && matrix.config.os == 'windows-latest' && steps.portable_package.outcome == 'success' }}
         shell: pwsh
         run: |
           if (-not (Test-Path "build\libassmod.dll")) {
@@ -516,7 +520,7 @@ jobs:
 
       - name: Upload artifacts - win_installer
         uses: actions/upload-artifact@v4
-        if: matrix.config.os == 'windows-latest'
+        if: ${{ !cancelled() && matrix.config.os == 'windows-latest' && steps.installer_package.outcome == 'success' }}
         with:
           name: ${{ matrix.config.name }} - installer
           path: build/Aegisub-*.exe
@@ -524,16 +528,18 @@ jobs:
       
       - name: Upload artifacts - portable.zip
         uses: actions/upload-artifact@v4
-        if: matrix.config.os == 'windows-latest'
+        if: ${{ !cancelled() && matrix.config.os == 'windows-latest' && steps.portable_package.outcome == 'success' }}
         with:
           name: ${{ matrix.config.name }} - portable
           path: build/aegisub-portable-64.zip
+          if-no-files-found: error
       
 
 
       # Linux artifacts (AppImage)
       - name: Generate AppImage
-        if: matrix.config.appimage
+        id: appimage_package
+        if: ${{ !cancelled() && matrix.config.appimage && steps.compiled.outcome == 'success' }}
         run: |
           mkdir -p appimage/appdir
           meson install -C build --destdir=../appimage/appdir
@@ -549,7 +555,7 @@ jobs:
 
       - name: Upload artifacts - Linux AppImage
         uses: actions/upload-artifact@v4
-        if: matrix.config.appimage
+        if: ${{ !cancelled() && matrix.config.appimage && steps.appimage_package.outcome == 'success' }}
         with:
           name: ${{ matrix.config.name }}
           path: appimage/*.AppImage
