@@ -77,6 +77,14 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
         assert user.IsWindowEnabled(h), caption + " must be enabled"
         user.PostMessageW(h, 0xF5, 0, 0)  # BM_CLICK (async, may enter a modal loop)
 
+    def click_sync(parent, caption):
+        # Only for non-modal handlers such as Apply. Unlike BM_CLICK posted
+        # asynchronously, SendMessageTimeout waits for the native handler.
+        handles = wait(lambda: named(parent, caption), caption + " control")
+        h = handles[0]
+        assert user.IsWindowEnabled(h), caption + " must be enabled"
+        send(h, 0xF5)
+
     def dialog(caption):
         return wait(lambda: next((h for h in windows(pid) if text(h) == caption and user.IsWindowVisible(h)), None), caption)
 
@@ -108,8 +116,9 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
 
     def choose(h, index):
         send(h, 0x14E, index)  # CB_SETCURSEL
-        user.PostMessageW(user.GetParent(h), 0x111, user.GetDlgCtrlID(h) | (1 << 16), h)
-        time.sleep(0.1)
+        # Notify the owning dialog synchronously. Asynchronous selection
+        # events otherwise race the immediately following Apply/Cancel.
+        send(user.GetParent(h), 0x111, user.GetDlgCtrlID(h) | (1 << 16), h)
 
     def row(parent, caption):
         title = wait(lambda: named(parent, caption), caption + " label")[0]
@@ -294,11 +303,8 @@ $graphics.Dispose(); $bitmap.Dispose()
     close(border, "OK")
     wrap = next(h for h in children(style) if "Inherit Script" in choices(h))
     choose(wrap, 1)  # q0; metadata only, not Script Info WrapStyle
-    click(style, "Apply")
-    # Applying is asynchronous (BM_CLICK) and can rebuild the metadata-backed
-    # choice on Windows; do not race the pending Cancel with an in-flight commit.
-    wait(lambda: user.IsWindowEnabled(style) and send(wrap, 0x147) == 1,
-         "Apply commits q0 and returns control to the style dialog")
+    click_sync(style, "Apply")
+    assert user.IsWindowVisible(style), "Apply leaves Style Editor open"
     choose(wrap, 0)  # Pending reset must be discarded by Cancel after Apply.
     close(style)
     close_manager(manager)
