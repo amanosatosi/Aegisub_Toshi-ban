@@ -73,7 +73,7 @@ class DisplayInitializationFailure(RuntimeError):
 def _sample_once(executable, collection, include, folder, workers, profiling=False):
     home = folder / "home"
     profile = home / ".aegisub"
-    profile.mkdir(parents=True)
+    profile.mkdir(parents=True, exist_ok=True)
     config = {
         "App": {"First Start": False, "Language": "en_US", "Auto": {"Check For Updates": False},
                 "Mangetsu Renderer Offer Seen": True},
