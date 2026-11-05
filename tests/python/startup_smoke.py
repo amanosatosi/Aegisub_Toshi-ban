@@ -46,6 +46,8 @@ def run(portable, output, mangetsu_ui_dark=False):
         ("PostMessageW", [W.HWND, W.UINT, W.WPARAM, W.LPARAM], W.BOOL),
         ("SendMessageTimeoutW", [W.HWND, W.UINT, W.WPARAM, W.LPARAM, W.UINT, W.UINT, C.POINTER(C.c_size_t)], W.LPARAM),
         ("IsWindowVisible", [W.HWND], W.BOOL),
+        ("IsWindow", [W.HWND], W.BOOL),
+        ("IsChild", [W.HWND, W.HWND], W.BOOL),
         ("IsWindowEnabled", [W.HWND], W.BOOL),
         ("GetDlgCtrlID", [W.HWND], C.c_int),
         ("GetParent", [W.HWND], W.HWND),

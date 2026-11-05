@@ -34,7 +34,9 @@ jobs:
       - name: Check asynchronous startup contracts
         run: python tests/python/test_startup_loading.py
       - name: Check packaged GUI test syntax
-        run: python -m py_compile tests/python/startup_smoke.py tests/python/mangetsu_style_ui.py
+        run: python -m py_compile tests/python/startup_smoke.py tests/python/mangetsu_style_ui.py tests/python/native_gui_snapshot.py
+      - name: Check native GUI control lifecycle regressions
+        run: python tests/python/test_native_gui_snapshot.py
       - name: Check subtitle-relative readout fade menu wiring
         run: python tests/python/test_fade_controls.py
       - name: Check Shift-drag audio boundary wiring

@@ -3,10 +3,11 @@
 Only public UI and an ordinary Automation macro are used; no product test hooks.
 """
 import ctypes as C
+from ctypes import wintypes as W
 import os
 import subprocess
-import time
 import unicodedata
+from native_gui_snapshot import Control, StaleWindow, control_snapshot, editor_row
 
 
 def prepare(profile, autoload):
@@ -64,30 +65,106 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
         # ellipsis glyphs while keeping the same user-visible command.
         return unicodedata.normalize("NFKC", value.replace("&", "")).replace("…", "...").strip().casefold()
 
-    def children(parent):
-        return [h for h in windows(pid, parent) if user.IsWindowVisible(h)]
+    def identity(hwnd):
+        owner = W.DWORD()
+        thread = user.GetWindowThreadProcessId(hwnd, C.byref(owner))
+        if not thread or owner.value != pid or not user.IsWindow(hwnd):
+            raise StaleWindow(f"Window {hwnd} no longer belongs to the application")
+        return owner.value, thread, user.GetDlgCtrlID(hwnd), user.GetParent(hwnd)
 
-    def named(parent, caption):
-        target = normalized_label(caption)
-        return [h for h in children(parent) if normalized_label(label(h)) == target]
+    def rect(hwnd):
+        identity(hwnd)
+        value = W.RECT()
+        if not user.GetWindowRect(hwnd, C.byref(value)):
+            if C.get_last_error() == 1400 or not user.IsWindow(hwnd):
+                raise StaleWindow(f"Window {hwnd} disappeared during GetWindowRect")
+            raise C.WinError(C.get_last_error())
+        return value.left, value.top, value.right, value.bottom
+
+    def send(hwnd, message, wparam=0, lparam=0, timeout=1000):
+        identity(hwnd)
+        result = C.c_size_t()
+        if not user.SendMessageTimeoutW(hwnd, message, wparam, lparam, 2, timeout, C.byref(result)):
+            if C.get_last_error() == 1400 or not user.IsWindow(hwnd):
+                raise StaleWindow(f"Window {hwnd} disappeared during message {message:#x}")
+            raise AssertionError(f"Native message {message:#x} failed or timed out for {hwnd}")
+        return result.value
+
+    def scan(parent):
+        def describe(hwnd):
+            stamp = identity(hwnd)
+            if not user.IsChild(parent, hwnd):
+                raise StaleWindow("Control moved to another parent")
+            if not user.IsWindowVisible(hwnd):
+                return None
+            bounds = rect(hwnd)
+            if bounds[2] <= bounds[0] or bounds[3] <= bounds[1]:
+                return None  # Newly constructed, not laid out yet.
+            return Control(hwnd, label(hwnd), text(hwnd, True), bounds,
+                           bool(user.IsWindowEnabled(hwnd)), stamp)
+
+        def current(control):
+            return (identity(control.hwnd) == control.identity and user.IsChild(parent, control.hwnd)
+                    and user.IsWindowVisible(control.hwnd) and label(control.hwnd) == control.label
+                    and text(control.hwnd, True) == control.kind and rect(control.hwnd) == control.bounds)
+
+        return control_snapshot(windows(pid, parent), describe, current)
+
+    def inventory(parent):
+        # The wrapper also represents a valid empty snapshot without extending
+        # the caller's timeout or nesting a second polling loop inside a read.
+        return wait(lambda: (s,) if (s := scan(parent)) is not None else None,
+                    "stable native control inventory")[0]
+
+    def required(parent, captions, seconds=30):
+        def ready():
+            snapshot = scan(parent)
+            if snapshot is None:
+                return None
+            result = []
+            for caption in captions:
+                matches = [c for c in snapshot if normalized_label(c.label) == normalized_label(caption)]
+                if len(matches) != 1:
+                    return None
+                result.append(matches[0])
+            return result
+        return wait(ready, "complete native controls: " + ", ".join(captions), seconds=seconds)
+
+    def controls_of_kind(parent, kind, count=None):
+        def ready():
+            snapshot = scan(parent)
+            if snapshot is None:
+                return None
+            matches = [c for c in snapshot if c.kind.lower() == kind]
+            return matches if matches and (count is None or len(matches) == count) else None
+        return wait(ready, "complete native " + kind + " controls")
+
+    def button(parent, caption, rightmost=False):
+        def ready():
+            if not user.IsWindowEnabled(parent):
+                return None
+            snapshot = scan(parent)
+            if snapshot is None:
+                return None
+            matches = [c for c in snapshot if c.kind.lower() == "button" and c.enabled
+                       and normalized_label(c.label) == normalized_label(caption)]
+            if matches:
+                return max(matches, key=lambda c: c.bounds[0]).hwnd if rightmost else matches[0].hwnd
+            return None
+        return wait(ready, caption + " enabled native button")
 
     def click(parent, caption, rightmost=False):
-        handles = wait(lambda: named(parent, caption), caption + " control")
-        h = max(handles, key=lambda w: rect(w)[0]) if rightmost else handles[0]
-        assert user.IsWindowEnabled(h), caption + " must be enabled"
-        user.PostMessageW(h, 0xF5, 0, 0)  # BM_CLICK (async, may enter a modal loop)
+        h = button(parent, caption, rightmost)
+        assert user.PostMessageW(h, 0xF5, 0, 0), "Native button disappeared before click"
 
     def click_sync(parent, caption):
         # Only for non-modal handlers such as Apply. Unlike BM_CLICK posted
         # asynchronously, SendMessageTimeout waits for the native handler.
-        handles = wait(lambda: named(parent, caption), caption + " control")
-        h = handles[0]
-        assert user.IsWindowEnabled(h), caption + " must be enabled"
-        result = C.c_size_t()
-        assert user.SendMessageTimeoutW(h, 0xF5, 0, 0, 2, 30000, C.byref(result)), "Native Apply handler timed out"
+        send(button(parent, caption), 0xF5, timeout=30000)
 
     def dialog(caption):
-        return wait(lambda: next((h for h in windows(pid) if text(h) == caption and user.IsWindowVisible(h)), None), caption)
+        return wait(lambda: next((h for h in windows(pid) if normalized_label(text(h)) == normalized_label(caption)
+                                  and user.IsWindowVisible(h) and user.IsWindowEnabled(h)), None), caption)
 
     def close(parent, caption="Cancel"):
         click(parent, caption)
@@ -115,36 +192,51 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
             values.append(buf.value)
         return values
 
+    def choice_control(parent, predicate):
+        def ready():
+            snapshot = scan(parent)
+            if snapshot is None:
+                return None
+            try:
+                for control in snapshot:
+                    if (control.kind.lower() == "combobox" and predicate(choices(control.hwnd))
+                            and identity(control.hwnd) == control.identity):
+                        return control.hwnd
+            except StaleWindow:
+                return None
+            return None
+        return wait(ready, "complete native choice control")
+
     def choose(h, index):
         send(h, 0x14E, index)  # CB_SETCURSEL
         # Notify the owning dialog synchronously. Asynchronous selection
         # events otherwise race the immediately following Apply/Cancel.
-        result = C.c_size_t()
-        assert user.SendMessageTimeoutW(user.GetParent(h), 0x111, user.GetDlgCtrlID(h) | (1 << 16), h, 2, 30000, C.byref(result)), "Native choice event timed out"
+        send(user.GetParent(h), 0x111, user.GetDlgCtrlID(h) | (1 << 16), h, timeout=30000)
 
     def row(parent, caption):
         # Switching the border layer destroys and recreates the whole native
         # form. A label may appear before its checkbox/input: treat the trio
         # as one atomic readiness condition, not three separate lookups.
-        def complete_row():
-            visible = children(parent)
-            for title in named(parent, caption):
-                y = sum(rect(title)[1::2]) / 2
-                aligned = [h for h in visible if abs(sum(rect(h)[1::2]) / 2 - y) < 12]
-                overrides = [h for h in aligned if normalized_label(label(h)) == "override"]
-                inputs = [h for h in aligned if text(h, True).lower() in ("edit", "combobox")]
-                if overrides and inputs:
-                    nearest = lambda h: abs(sum(rect(h)[1::2]) / 2 - y)
-                    return min(overrides, key=nearest), min(inputs, key=lambda h: rect(h)[0])
-            return None
+        return wait(lambda: editor_row(scan(parent), caption, normalized_label),
+                    caption + " complete native editor row")
 
-        return wait(complete_row, caption + " complete native editor row")
+    def wait_row_value(parent, caption, value, assigned):
+        def ready():
+            handles = editor_row(scan(parent), caption, normalized_label)
+            if handles is None:
+                return None
+            try:
+                return get_text(handles[1]) == value and bool(send(handles[0], 0xF0)) == assigned
+            except StaleWindow:
+                return None
+        return wait(ready, caption + " value after completed form switch")
 
     def assign(parent, caption, value, choice=False):
         override, field = row(parent, caption)
         if not send(override, 0xF0):  # BM_GETCHECK
-            user.PostMessageW(override, 0xF5, 0, 0)
-            wait(lambda: user.IsWindowEnabled(field), caption + " override enabled")
+            send(override, 0xF5, timeout=30000)
+            override, field = row(parent, caption)  # Reacquire after the callback.
+            assert user.IsWindowEnabled(field), caption + " override enabled"
         if choice:
             choose(field, value)
         else:
@@ -181,19 +273,20 @@ $graphics.Dispose(); $bitmap.Dispose()
         return manager, dialog("Style Editor")
 
     def close_manager(manager):
-        user.PostMessageW(manager, 0x10, 0, 0)
+        wait(lambda: user.IsWindowEnabled(manager), "Styles Manager ready to close")
+        assert user.PostMessageW(manager, 0x10, 0, 0)
         wait(lambda: not user.IsWindowVisible(manager), "Styles Manager closes")
 
     def select_style(manager, name):
-        lists = [h for h in children(manager) if text(h, True).lower() == "listbox"]
-        current = max(lists, key=lambda h: rect(h)[0])
+        lists = controls_of_kind(manager, "listbox")
+        current = max(lists, key=lambda c: c.bounds[0]).hwnd
         for index in range(send(current, 0x18B)):  # LB_GETCOUNT
             buf = C.create_unicode_buffer(2048)
             send(current, 0x189, index, C.addressof(buf))  # LB_GETTEXT
             if buf.value == name:
                 send(current, 0x185, 0, -1)  # LB_SETSEL: clear, then select
                 send(current, 0x185, 1, index)
-                user.PostMessageW(user.GetParent(current), 0x111, user.GetDlgCtrlID(current) | (1 << 16), current)
+                send(user.GetParent(current), 0x111, user.GetDlgCtrlID(current) | (1 << 16), current, timeout=30000)
                 return
         raise AssertionError("Style missing: " + name)
 
@@ -203,8 +296,7 @@ $graphics.Dispose(); $bitmap.Dispose()
         # A file written inside a macro is not a completion notification: posting
         # another WM_COMMAND then can bypass the disabled frame and reenter Lua.
         wait(lambda: user.IsWindowEnabled(frame), "main frame ready for command")
-        result = C.c_size_t()
-        assert user.SendMessageTimeoutW(frame, 0x111, identifier, 0, 2, 30000, C.byref(result)), "Native command failed or application exited"
+        send(frame, 0x111, identifier, timeout=30000)
 
     def command(caption):
         matches = [identifier for name, identifier in entries(user.GetMenu(frame)) if name == caption]
@@ -228,12 +320,18 @@ $graphics.Dispose(); $bitmap.Dispose()
     assert [s for s in ordered.splitlines() if s.startswith("LINE|")][:3] == [s for s in initial.splitlines() if s.startswith("LINE|")][:3]
     invoke(frame, "Find and Replace...")
     replace = dialog("Replace")
-    fields = sorted([h for h in children(replace) if "combobox" in text(h, True).lower()], key=lambda h: rect(h)[1])
-    assert len(fields) == 2
-    set_text(fields[0], "70")
-    set_text(fields[1], "71")
+    fields = sorted(controls_of_kind(replace, "combobox", 2), key=lambda c: c.bounds[1])
+    set_text(fields[0].hwnd, "70")
+    set_text(fields[1].hwnd, "71")
     click(replace, "Replace all")
-    message = wait(lambda: next((h for h in windows(pid) if h not in (frame, replace) and user.IsWindowVisible(h) and named(h, "OK")), None), "replacement result")
+    def replacement_result():
+        for hwnd in windows(pid):
+            if hwnd not in (frame, replace) and user.IsWindowVisible(hwnd) and user.IsWindowEnabled(hwnd):
+                snapshot = scan(hwnd)
+                if snapshot and any(normalized_label(c.label) == "ok" for c in snapshot):
+                    return hwnd
+        return None
+    message = wait(replacement_result, "replacement result")
     close(message, "OK")
     close(replace)
     replaced = snapshot()
@@ -246,20 +344,16 @@ $graphics.Dispose(); $bitmap.Dispose()
     # absent button: report which one is missing and retain a UI screenshot.
     expected = ("Furigana…", "Vertical…", "Multi-border…", "OK", "Cancel", "Apply", "Help")
     try:
-        controls = wait(
-            lambda: [named(style, n)[0] for n in expected] if all(named(style, n) for n in expected) else None,
-            "all Style Editor bottom-row controls",
-            seconds=10,
-        )
+        controls = required(style, expected, seconds=10)
     except AssertionError as exc:
-        inventory = [(label(h), text(h, True), user.IsWindowVisible(h), rect(h))
-                     for h in windows(pid, style)]
-        missing = [n for n in expected if not named(style, n)]
+        # A diagnostic must not raise the same stale-HWND error it reports.
+        native_dump = scan(style)
+        missing = [n for n in expected if native_dump is None or not any(
+            normalized_label(c.label) == normalized_label(n) for c in native_dump)]
         diagnostic = profile / "style-ui-result.txt"
         diagnostic.write_text(
-            "Missing Style Editor controls: " + repr(missing) + "\\n"
-            + "All child HWNDs (caption, class, visible, rect):\\n"
-            + "\\n".join(map(repr, inventory)) + "\\n",
+            "Missing Style Editor controls: " + repr(missing) + "\n"
+            + "Native control snapshot:\n" + repr(native_dump) + "\n",
             encoding="utf-8",
         )
         try:
@@ -268,11 +362,12 @@ $graphics.Dispose(); $bitmap.Dispose()
             diagnostic.write_text(diagnostic.read_text(encoding="utf-8")
                                   + "Screenshot failed: " + repr(capture_error) + "\n", encoding="utf-8")
         raise AssertionError(f"Style Editor is missing visible controls {missing}; "
-                             f"native child inventory: {inventory}") from exc
-    wrap = wait(lambda: next((h for h in children(style) if choices(h) == ["Inherit Script", "Smart", "End-of-line", "No automatic wrap", "Alternative smart"]), None), "Wrap Mode native choice")
-    centers = [sum(rect(h)[1::2]) / 2 for h in controls + [wrap]]
+                             f"native child inventory: {native_dump}") from exc
+    wrap = choice_control(style, lambda values: values == ["Inherit Script", "Smart", "End-of-line", "No automatic wrap", "Alternative smart"])
+    layout = {c.hwnd: c.bounds for c in inventory(style)}
+    centers = [sum(layout[h][1::2]) / 2 for h in [c.hwnd for c in controls] + [wrap]]
     assert max(centers) - min(centers) < 5, "All eight controls must share one bottom row"
-    assert rect(controls[2])[2] <= rect(wrap)[0] < min(rect(h)[0] for h in controls[3:]), "Wrap belongs to left group"
+    assert layout[controls[2].hwnd][2] <= layout[wrap][0] < min(layout[c.hwnd][0] for c in controls[3:]), "Wrap belongs to left group"
     assert send(wrap, 0x147) == 3, "Existing q2 must be selected"  # CB_GETCURSEL
     capture(style, "style-editor")
     click(style, "Furigana…")
@@ -303,9 +398,11 @@ $graphics.Dispose(); $bitmap.Dispose()
     close(vertical, "OK")
     click(style, "Multi-border…")
     border = dialog("Multi-border")
-    assert named(border, "Border alpha (0–255)"), "The en dash in Border alpha must render correctly on Windows"
-    click(border, "10")
-    wait(lambda: get_text(row(border, "Border size X")[1]) == "0" and not send(row(border, "Border size X")[0], 0xF0), "layer ten form finishes switching")
+    required(border, ("Border alpha (0–255)",))
+    # A radio handler saves the old layer, destroys its controls and builds
+    # the new form. Fence that entire operation before any new HWND lookup.
+    click_sync(border, "10")
+    wait_row_value(border, "Border size X", "0", False)
     assign(border, "Border size X", "-1")
     click(border, "OK")
     close(dialog("Invalid style value"), "OK")
@@ -313,7 +410,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     assign(border, "Border size X", "3")
     capture(border, "multi-border")
     close(border, "OK")
-    wrap = next(h for h in children(style) if "Inherit Script" in choices(h))
+    wrap = choice_control(style, lambda values: "Inherit Script" in values)
     choose(wrap, 1)  # q0; metadata only, not Script Info WrapStyle
     click_sync(style, "Apply")
     assert user.IsWindowVisible(style), "Apply leaves Style Editor open"
@@ -335,8 +432,8 @@ $graphics.Dispose(); $bitmap.Dispose()
     history("Redo")
     assert "\\furis80" in snapshot()
     manager, style = editor(copy=True)
-    edits = [h for h in children(style) if text(h, True).lower() == "edit"]
-    set_text(min(edits, key=lambda h: (rect(h)[1], rect(h)[0])), "UI Copy")
+    edits = controls_of_kind(style, "edit")
+    set_text(min(edits, key=lambda c: (c.bounds[1], c.bounds[0])).hwnd, "UI Copy")
     close(style, "OK")
     close_manager(manager)
     assert "LINE|mangetsu-style|UI Copy|" in snapshot(), "Copy includes inherited metadata"
@@ -350,8 +447,8 @@ $graphics.Dispose(); $bitmap.Dispose()
     assert "LINE|mangetsu-style|UI Copy|" not in snapshot(), "Delete removes only copied declarations"
 
     manager, style = editor()
-    edits = [h for h in children(style) if text(h, True).lower() == "edit"]
-    set_text(min(edits, key=lambda h: (rect(h)[1], rect(h)[0])), "UI Sign")
+    edits = controls_of_kind(style, "edit")
+    set_text(min(edits, key=lambda c: (c.bounds[1], c.bounds[0])).hwnd, "UI Sign")
     click(style, "OK")
     close(dialog("Update script?"), "Yes")
     wait(lambda: not user.IsWindowVisible(style), "renamed Style Editor closes")
@@ -364,12 +461,13 @@ $graphics.Dispose(); $bitmap.Dispose()
 
     invoke(frame, "Options...")
     preferences = dialog("Preferences")
-    renderer = wait(lambda: next((h for h in children(preferences) if {"Mangetsu", "libass"}.issubset(choices(h))), None), "renderer dropdown")
+    renderer = choice_control(preferences, lambda values: {"Mangetsu", "libass"}.issubset(values))
     choose(renderer, choices(renderer).index("libass"))
     close(preferences, "OK")
     wait(lambda: not any(name == "Show Mangetsu Metadata" for name, _ in entries(user.GetMenu(frame))), "renderer switch hides metadata menu")
     manager, style = editor()
-    assert not any(named(style, name) for name in ("Furigana…", "Vertical…", "Multi-border…", "Wrap Mode"))
+    hidden_names = {normalized_label(n) for n in ("Furigana…", "Vertical…", "Multi-border…", "Wrap Mode")}
+    assert not any(normalized_label(c.label) in hidden_names for c in inventory(style))
     capture(style, "style-editor-libass")
     close(style)
     close_manager(manager)
