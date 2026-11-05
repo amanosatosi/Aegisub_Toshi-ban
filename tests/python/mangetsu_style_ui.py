@@ -52,6 +52,11 @@ aegisub.register_macro('Select style metadata', '', function(subs)
         if subs[i].class == 'dialogue' and subs[i].effect == 'mangetsu-style' then return {i}, i end
     end
 end)
+aegisub.register_macro('Select actor metadata', '', function(subs)
+    for i = 1, #subs do
+        if subs[i].class == 'dialogue' and subs[i].effect == 'mangetsu-colorcoding' then return {i}, i end
+    end
+end)
 """, encoding="utf-8")
     return fixture
 
@@ -312,14 +317,17 @@ $graphics.Dispose(); $bitmap.Dispose()
         command_id(matches[0])
 
     initial = snapshot()
-    assert "SELECTED|mangetsu-" not in initial and "ACTIVE|mangetsu-" not in initial
+    assert "SELECTED|mangetsu-colorcoding" in initial and "ACTIVE|mangetsu-colorcoding" in initial
     assert sum(line.startswith("LINE|mangetsu-") for line in initial.splitlines()) == 3
+    command("Select actor metadata")
+    assert "ACTIVE|mangetsu-colorcoding" in snapshot(), "Actor Colorcoding rows stay visible and selectable"
     command("Show Mangetsu Metadata")
     command("Select style metadata")
     assert "ACTIVE|mangetsu-style" in snapshot()
     command("Show Mangetsu Metadata")
     hidden = snapshot()
-    assert "ACTIVE|mangetsu-" not in hidden and "SELECTED|mangetsu-" not in hidden
+    assert "ACTIVE|mangetsu-style" not in hidden and "SELECTED|mangetsu-style" not in hidden
+    assert "ACTIVE|mangetsu-colorcoding" in hidden, "Hiding style metadata leaves actor declarations visible"
     assert [s for s in initial.splitlines() if s.startswith("LINE|")] == [s for s in hidden.splitlines() if s.startswith("LINE|")]
     sorts = [command for name, command in entries(user.GetMenu(frame)) if name == "Actor Name"]
     assert len(sorts) == 2
@@ -344,7 +352,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     close(replace)
     replaced = snapshot()
     assert "Ordinary comment 71" in replaced, "Ordinary comments remain editable"
-    assert "\\furis70" in replaced and "\\furis71" not in replaced, "Hidden metadata is excluded from Replace All"
+    assert "\\furis70" in replaced and "\\furis71" not in replaced, "Hidden style metadata is excluded from Replace All"
 
     manager, style = editor()
     # wxWidgets may publish a native dialog window before all children have

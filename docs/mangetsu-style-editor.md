@@ -3,8 +3,9 @@
 Choose **Mangetsu** under Preferences → Advanced → Video → Subtitles provider.
 The View menu then offers **Show Mangetsu Metadata**, independent of tag display
 mode. It is off by default. Only recognized comments in the initial, contiguous
-metadata block are hidden. Ordinary and late comments remain visible. Changing
-this preference changes the grid and selection, never the ASS document.
+metadata block are hidden. Actor Colorcoding declarations, ordinary comments,
+and late comments remain visible. Changing this preference changes the grid and
+selection, never the ASS document.
 Hidden declarations are excluded from ordinary Find/Replace and adjoining timing
 operations. Sorting keeps the initial metadata header in its authored order.
 
@@ -24,7 +25,15 @@ or inline dialogue overrides. The preview renders pending metadata, without the
 ordinary preview's forced q2 override. A missing/outdated renderer displays an
 error instead of presenting fallback output as a Mangetsu preview.
 
-Metadata declarations retain source order. Supported scalar assignments are
+On load and after edits, the initial metadata block is stably ordered with
+Mangetsu Style declarations first, followed by Actor Colorcoding declarations.
+Their order within each type remains intact, and Actor Colorcoding retains its
+renderer priority regardless of physical order. Importing styles from another
+ASS file copies declarations for the selected styles when present, and imports
+all Actor Colorcoding declarations, including its applied-styles whitelist.
+External Style Manager catalogs store ordinary ASS fields only.
+
+Metadata declarations retain source order within each type. Supported scalar assignments are
 edited structurally; axis aliases are split only when one axis changes. Unknown
 and malformed text, transforms, image tags, and manual gradients are retained.
 Gradient first-valid-source precedence is not rewritten. Actor Colorcoding
@@ -32,7 +41,7 @@ declarations remain independent. Preview/render serialization sends both kinds
 of metadata in their original interleaved initial-block order.
 The built-in Fix Styles and Transform Framerate export filters leave this
 initial header intact; subtitle preparation only reads attachments. ASS saving
-and exporting serialize the model's event order directly.
+and exporting serialize a style-first view of the initial metadata block.
 
 Current-script New, Copy, Rename and Delete manage associated style declarations.
 External Style Manager catalogs store ordinary ASS fields only: extended editors

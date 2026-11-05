@@ -53,11 +53,55 @@ TEST(MangetsuStyleMetadata, PresentationHidesOnlyInitialMetadataAndNeverMutatesR
 	auto& actor = Add(file, "{\\1c&HFFFFFF&}", "Default", "mangetsu-colorcoding", true, "Nene");
 	auto& ordinary = Add(file, "ordinary", "Default", "note"); auto& late = Add(file, "{\\furis20}");
 	auto hidden = mangetsu::HiddenMetadata(file, true, false);
-	EXPECT_EQ(hidden.size(), 2u); EXPECT_EQ(hidden.count(&style), 1u); EXPECT_EQ(hidden.count(&actor), 1u);
+	EXPECT_EQ(hidden.size(), 1u); EXPECT_EQ(hidden.count(&style), 1u); EXPECT_EQ(hidden.count(&actor), 0u);
 	EXPECT_EQ(hidden.count(&ordinary), 0u); EXPECT_EQ(hidden.count(&late), 0u);
 	EXPECT_TRUE(mangetsu::HiddenMetadata(file, true, true).empty());
 	EXPECT_TRUE(mangetsu::HiddenMetadata(file, false, false).empty());
 	EXPECT_EQ(file.Events.size(), 4u); EXPECT_EQ(style.Row, 0); EXPECT_EQ(late.Row, 3);
+}
+
+TEST(MangetsuStyleMetadata, StableNormalizationKeepsTypesAndInitialBlockContents) {
+	AssFile file; AddStyle(file, "Default"); AddStyle(file, "Sign");
+	auto& actor1 = Add(file, "{\\1c&H111111&}", "Default", "mangetsu-colorcoding", true, "Nene");
+	auto& style1 = Add(file, "{\\furis70}", "Default");
+	auto& whitelist = Add(file, "{Default}{Sign}", "mangetsu-colorcode-applied-styles", "mangetsu-colorcoding", true, "mangetsu-colorcode-applied-styles");
+	auto& actor2 = Add(file, "{\\1c&H222222&}", "Default", "mangetsu-colorcoding", true, "Mika");
+	auto& style2 = Add(file, "{\\q2}", "Sign");
+	auto& ordinary = Add(file, "ordinary", "Default", "note");
+	auto& late = Add(file, "{\\q0}");
+	style1.Row = 1; style2.Row = 4;
+	file.Properties.active_row = 0;
+	ASSERT_TRUE(mangetsu::NormalizeInitialMetadata(file));
+	EXPECT_EQ(file.Properties.active_row, 2);
+	auto lines = mangetsu::InitialMetadata(file);
+	ASSERT_EQ(lines.size(), 5u);
+	EXPECT_EQ(lines[0], &style1); EXPECT_EQ(lines[1], &style2);
+	EXPECT_EQ(lines[2], &actor1); EXPECT_EQ(lines[3], &whitelist); EXPECT_EQ(lines[4], &actor2);
+	EXPECT_FALSE(mangetsu::NormalizeInitialMetadata(file));
+	EXPECT_EQ(ordinary.Row, -1); EXPECT_EQ(late.Row, -1);
+}
+
+TEST(MangetsuStyleMetadata, ExternalImportCopiesSelectedStylesAndAllActorDeclarations) {
+	AssFile source, destination;
+	auto& source_default = AddStyle(source, "Default"); AddStyle(destination, "Default");
+	AddStyle(source, "Sign"); AddStyle(destination, "Sign");
+	Add(source, "{\\furis70\\grd(10,&HFFFFFF&,&H000000&)}", "Default");
+	Add(source, "{\\furis30}", "Sign");
+	Add(source, "{\\1c&H111111&}", "Default", "mangetsu-colorcoding", true, "Nene");
+	Add(source, "{Default}{Sign}", "mangetsu-colorcode-applied-styles", "mangetsu-colorcoding", true, "mangetsu-colorcode-applied-styles");
+	Add(source, "{\\1c&H222222&}", "Default", "mangetsu-colorcoding", true, "Mika");
+	Add(source, "late", "Default", "note");
+	Add(destination, "{\\q0}", "Default");
+	Add(destination, "old actor", "Default", "mangetsu-colorcoding", true, "Old");
+	ASSERT_TRUE(mangetsu::ImportMetadata(destination, source, {source_default.name}));
+	auto lines = mangetsu::InitialMetadata(destination);
+	ASSERT_EQ(lines.size(), 5u);
+	EXPECT_NE(lines[0]->Text.get().find("\\furis70"), std::string::npos);
+	EXPECT_EQ(lines[1]->Actor.get(), "Old");
+	EXPECT_EQ(lines[2]->Actor.get(), "Nene");
+	EXPECT_EQ(lines[3]->Actor.get(), "mangetsu-colorcode-applied-styles");
+	EXPECT_FALSE(mangetsu::ImportMetadata(destination, source, {source_default.name}));
+	EXPECT_EQ(mangetsu::InitialMetadata(destination).size(), 5u);
 }
 TEST(MangetsuStyleMetadata, RelativeNumbersAndCommonAxisAliasesAreResolvedOnce) {
 	AssFile file; auto& style = AddStyle(file);
