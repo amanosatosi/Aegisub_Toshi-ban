@@ -123,13 +123,22 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
         assert user.SendMessageTimeoutW(user.GetParent(h), 0x111, user.GetDlgCtrlID(h) | (1 << 16), h, 2, 30000, C.byref(result)), "Native choice event timed out"
 
     def row(parent, caption):
-        title = wait(lambda: named(parent, caption), caption + " label")[0]
-        y = sum(rect(title)[1::2]) / 2
-        aligned = [h for h in children(parent) if abs(sum(rect(h)[1::2]) / 2 - y) < 9]
-        override = next(h for h in aligned if label(h) == "Override")
-        inputs = [h for h in aligned if text(h, True).lower() in ("edit", "combobox")]
-        assert inputs, (caption, [(label(h), text(h, True)) for h in aligned])
-        return override, sorted(inputs, key=lambda h: rect(h)[0])[0]
+        # Switching the border layer destroys and recreates the whole native
+        # form. A label may appear before its checkbox/input: treat the trio
+        # as one atomic readiness condition, not three separate lookups.
+        def complete_row():
+            visible = children(parent)
+            for title in named(parent, caption):
+                y = sum(rect(title)[1::2]) / 2
+                aligned = [h for h in visible if abs(sum(rect(h)[1::2]) / 2 - y) < 12]
+                overrides = [h for h in aligned if normalized_label(label(h)) == "override"]
+                inputs = [h for h in aligned if text(h, True).lower() in ("edit", "combobox")]
+                if overrides and inputs:
+                    nearest = lambda h: abs(sum(rect(h)[1::2]) / 2 - y)
+                    return min(overrides, key=nearest), min(inputs, key=lambda h: rect(h)[0])
+            return None
+
+        return wait(complete_row, caption + " complete native editor row")
 
     def assign(parent, caption, value, choice=False):
         override, field = row(parent, caption)

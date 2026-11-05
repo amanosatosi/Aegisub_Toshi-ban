@@ -90,6 +90,17 @@ class ReleasePreparation(unittest.TestCase):
         self.assertNotIn("Mangetsu Renderer Offer Seen", read("src/libresrc/default_config.json"))
         self.assertNotIn("Mangetsu Renderer Offer Seen", read("packages/win_installer/portable/config.json"))
 
+    def test_windows_mangetsu_style_punctuation_is_unicode_safe(self):
+        # MSVC /utf-8 alone did not prevent wxWidgets' narrow-string
+        # conversion from producing e.g. "Furiganaâ€¦" on Windows CI.
+        source = read("src/dialog_style_editor.cpp")
+        for value in (r'_(L"Furigana\u2026")', r'_(L"Vertical\u2026")',
+                      r'_(L"Multi-border\u2026")'):
+            self.assertIn(value, source)
+        self.assertIn(r'_(L"Border alpha (0\u2013255)")',
+                      read("src/dialog_mangetsu_style.cpp"))
+        self.assertIn("add_project_arguments('/utf-8', language: 'cpp')", read("meson.build"))
+
     def test_built_packages_are_uploaded_after_unrelated_ci_test_failures(self):
         workflow = read(".github/workflows/ci.yml")
 
