@@ -66,7 +66,11 @@ def fixtures(root, source):
         (folder / "ignored.txt").write_text("error('unsupported file loaded')")
 
 
-def sample(executable, collection, include, folder, workers, profiling=False):
+class DisplayInitializationFailure(RuntimeError):
+    """The process could not connect to the test runner's virtual display."""
+
+
+def _sample_once(executable, collection, include, folder, workers, profiling=False):
     home = folder / "home"
     profile = home / ".aegisub"
     profile.mkdir(parents=True)
@@ -88,7 +92,19 @@ def sample(executable, collection, include, folder, workers, profiling=False):
             visible_ms = None
             captured = False
             while time.monotonic() - started < 120:
-                assert process.poll() is None, f"Application exited: {folder}; see console/log artifacts"
+                exit_code = process.poll()
+                if exit_code is not None:
+                    # This is infrastructure, not an Automation worker failure.
+                    # Keep genuine app failures fatal and never retry after
+                    # application logging/initialization has begun.
+                    output = (folder / "console.txt").read_text(encoding="utf-8", errors="replace")
+                    if ("Unable to initialize GTK+, is DISPLAY set properly?" in output
+                            and not records(profile / "log")):
+                        raise DisplayInitializationFailure(
+                            f"GTK could not initialize Xvfb (exit {exit_code}): {folder}")
+                    raise AssertionError(
+                        f"Application exited with code {exit_code}: {folder}; "
+                        f"console tail: {output[-1500:]!r}")
                 stat = Path(f"/proc/{process.pid}/stat").read_text().rsplit(")", 1)[1].split()
                 cpu_ms = (int(stat[11]) + int(stat[12])) * 1000 / os.sysconf("SC_CLK_TCK")
                 status = Path(f"/proc/{process.pid}/status").read_text()
@@ -143,6 +159,32 @@ def sample(executable, collection, include, folder, workers, profiling=False):
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+
+
+def sample(executable, collection, include, folder, workers, profiling=False):
+    """Retry only a pre-initialization GTK/Xvfb failure, never an app crash.
+
+    Each attempt uses a new process and measurement clock. Failed display
+    starts remain in the artifact, outside the successful timing sample.
+    """
+    for attempt in range(3):
+        try:
+            result = _sample_once(executable, collection, include, folder, workers, profiling)
+            result["display_retries"] = attempt
+            return result
+        except DisplayInitializationFailure as exc:
+            failed_console = folder / f"console-display-failure-{attempt + 1}.txt"
+            shutil.copy2(folder / "console.txt", failed_console)
+            print("AUTOMATION_DISPLAY_RETRY " + json.dumps({
+                "sample": folder.name, "attempt": attempt + 1,
+                "reason": str(exc), "console": str(failed_console)
+            }), flush=True)
+            if attempt == 2:
+                raise AssertionError(
+                    f"GTK/Xvfb failed to initialize on all 3 attempts: {folder}; "
+                    f"see retained console-display-failure files") from exc
+            time.sleep(0.25 * (attempt + 1))
+    raise AssertionError(f"Unexpected display retry state: {folder}")
 
 
 def main(args):
