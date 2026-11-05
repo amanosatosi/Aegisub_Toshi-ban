@@ -383,9 +383,9 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 		mangetsu_actions->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
 		mangetsu_controls.push_back(button);
 	};
-	add_properties(_(L"Furigana\u2026"), mangetsu::StyleEditorPage::Furigana);
-	add_properties(_(L"Vertical\u2026"), mangetsu::StyleEditorPage::Vertical);
-	add_properties(_(L"Multi-border\u2026"), mangetsu::StyleEditorPage::Borders);
+	add_properties(_("Furigana…"), mangetsu::StyleEditorPage::Furigana);
+	add_properties(_("Vertical…"), mangetsu::StyleEditorPage::Vertical);
+	add_properties(_("Multi-border…"), mangetsu::StyleEditorPage::Borders);
 	mangetsu_actions->Add(new wxStaticText(this, wxID_ANY, _("Wrap Mode")), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, gap);
 	wxString wrapping[] = {_("Inherit Script"), _("Smart"), _("End-of-line"), _("No automatic wrap"), _("Alternative smart")};
 	WrapMode = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, 5, wrapping);
