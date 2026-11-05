@@ -214,7 +214,34 @@ $graphics.Dispose(); $bitmap.Dispose()
     assert "\\furis70" in replaced and "\\furis71" not in replaced, "Hidden metadata is excluded from Replace All"
 
     manager, style = editor()
-    controls = [named(style, n)[0] for n in ("Furigana…", "Vertical…", "Multi-border…", "OK", "Cancel", "Apply", "Help")]
+    # wxWidgets may publish a native dialog window before all children have
+    # finished showing. Wait for its actual controls, but never ignore an
+    # absent button: report which one is missing and retain a UI screenshot.
+    expected = ("Furigana…", "Vertical…", "Multi-border…", "OK", "Cancel", "Apply", "Help")
+    try:
+        controls = wait(
+            lambda: [named(style, n)[0] for n in expected] if all(named(style, n) for n in expected) else None,
+            "all Style Editor bottom-row controls",
+            seconds=10,
+        )
+    except AssertionError as exc:
+        inventory = [(label(h), text(h, True), user.IsWindowVisible(h), rect(h))
+                     for h in windows(pid, style)]
+        missing = [n for n in expected if not named(style, n)]
+        diagnostic = profile / "style-ui-result.txt"
+        diagnostic.write_text(
+            "Missing Style Editor controls: " + repr(missing) + "\\n"
+            + "All child HWNDs (caption, class, visible, rect):\\n"
+            + "\\n".join(map(repr, inventory)) + "\\n",
+            encoding="utf-8",
+        )
+        try:
+            capture(style, "style-editor-missing-controls")
+        except Exception as capture_error:
+            diagnostic.write_text(diagnostic.read_text(encoding="utf-8")
+                                  + "Screenshot failed: " + repr(capture_error) + "\n", encoding="utf-8")
+        raise AssertionError(f"Style Editor is missing visible controls {missing}; "
+                             f"native child inventory: {inventory}") from exc
     wrap = next(h for h in children(style) if choices(h) == ["Inherit Script", "Smart", "End-of-line", "No automatic wrap", "Alternative smart"])
     centers = [sum(rect(h)[1::2]) / 2 for h in controls + [wrap]]
     assert max(centers) - min(centers) < 5, "All eight controls must share one bottom row"
