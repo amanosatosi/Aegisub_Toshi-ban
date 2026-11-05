@@ -77,7 +77,7 @@ class PropertyDialog final : public wxDialog {
 			{"vsp", _("Vertical unit spacing"), Kind::Signed}, {"vcolsp", _("Column spacing"), Kind::Signed}};
 		auto n = std::to_string(layer);
 		return {{n + "bsx", _("Border size X")}, {n + "bsy", _("Border size Y")},
-			{n + "bc", _("Border color"), Kind::Color}, {n + "ba", _(L"Border alpha (0\u2013255)"), Kind::Alpha},
+			{n + "bc", _("Border color"), Kind::Color}, {n + "ba", _("Border alpha (0–255)"), Kind::Alpha},
 			{n + "bblur", _("Blur")}, {n + "bbe", _("Edge blur")}, {n + "bsc", _("Waiting karaoke color"), Kind::Color}};
 	}
 	std::string Read(Row const& row, bool validate) const {
