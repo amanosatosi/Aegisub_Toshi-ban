@@ -83,7 +83,8 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
         handles = wait(lambda: named(parent, caption), caption + " control")
         h = handles[0]
         assert user.IsWindowEnabled(h), caption + " must be enabled"
-        send(h, 0xF5)
+        result = C.c_size_t()
+        assert user.SendMessageTimeoutW(h, 0xF5, 0, 0, 2, 30000, C.byref(result)), "Native Apply handler timed out"
 
     def dialog(caption):
         return wait(lambda: next((h for h in windows(pid) if text(h) == caption and user.IsWindowVisible(h)), None), caption)
@@ -118,7 +119,8 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
         send(h, 0x14E, index)  # CB_SETCURSEL
         # Notify the owning dialog synchronously. Asynchronous selection
         # events otherwise race the immediately following Apply/Cancel.
-        send(user.GetParent(h), 0x111, user.GetDlgCtrlID(h) | (1 << 16), h)
+        result = C.c_size_t()
+        assert user.SendMessageTimeoutW(user.GetParent(h), 0x111, user.GetDlgCtrlID(h) | (1 << 16), h, 2, 30000, C.byref(result)), "Native choice event timed out"
 
     def row(parent, caption):
         title = wait(lambda: named(parent, caption), caption + " label")[0]
@@ -292,6 +294,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     close(vertical, "OK")
     click(style, "Multi-border…")
     border = dialog("Multi-border")
+    assert named(border, "Border alpha (0–255)"), "The en dash in Border alpha must render correctly on Windows"
     click(border, "10")
     wait(lambda: get_text(row(border, "Border size X")[1]) == "0" and not send(row(border, "Border size X")[0], 0xF0), "layer ten form finishes switching")
     assign(border, "Border size X", "-1")
