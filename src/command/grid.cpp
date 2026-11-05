@@ -334,7 +334,7 @@ struct grid_mangetsu_metadata final : public Command {
 	CMD_NAME("grid/mangetsu_metadata")
 	STR_MENU("Show Mangetsu Metadata")
 	STR_DISP("Show Mangetsu Metadata")
-	STR_HELP("Show the initial Mangetsu style and Actor Colorcoding comments")
+	STR_HELP("Show the initial Mangetsu style metadata comments")
 	CMD_TYPE(COMMAND_TOGGLE | COMMAND_VALIDATE)
 	bool Validate(const agi::Context *) override { return OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu"; }
 	bool IsActive(const agi::Context *) override { return OPT_GET("Subtitle/Grid/Show Mangetsu Metadata")->GetBool(); }

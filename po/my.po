@@ -10434,5 +10434,5 @@ msgid "Show Mangetsu Metadata"
 msgstr "Mangetsu မက်တာဒေတာကို ပြရန်"
 
 #: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
-msgid "Show the initial Mangetsu style and Actor Colorcoding comments"
-msgstr "အစပိုင်းရှိ Mangetsu ပုံစံနှင့် ဇာတ်ကောင်အရောင် သတ်မှတ်ချက် comment များကို ပြရန်"
+msgid "Show the initial Mangetsu style metadata comments"
+msgstr "အစပိုင်းရှိ Mangetsu ပုံစံ မက်တာဒေတာ comment များကို ပြရန်"

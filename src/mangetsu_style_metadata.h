@@ -20,9 +20,17 @@ using StyleValues = std::map<std::string, StyleValue>;
 // Strict ASS event-style matching, including * prefixes and Default only's
 // case normalization. It intentionally differs from AssFile::GetStyle().
 AssStyle const *ResolveMetadataStyle(AssFile const& file, std::string name);
-std::vector<AssDialogue*> InitialMetadata(AssFile const& file);
+std::vector<AssDialogue*> InitialMetadata(AssFile& file);
+std::vector<AssDialogue const*> InitialMetadata(AssFile const& file);
+// Stable within each type; only the initial contiguous block participates.
+std::vector<AssDialogue const*> OrderedInitialMetadata(AssFile const& file);
+int MetadataRowForSave(AssFile const& file, int row);
+bool NormalizeInitialMetadata(AssFile& file);
 std::set<AssDialogue const*> HiddenMetadata(AssFile const& file, bool mangetsu_selected, bool show_metadata);
 bool RemoveStyleMetadata(AssFile& file, AssStyle const& style);
+// Import only the accepted styles' declarations, plus every initial Actor
+// Colorcoding declaration (including its whitelist), in source order.
+bool ImportMetadata(AssFile& destination, AssFile const& source, std::vector<std::string> const& styles);
 
 // A value object: child dialogs edit copies; only the parent's Apply writes
 // the document. Unknown text and gradient sources retain their exact order.

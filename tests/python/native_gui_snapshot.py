@@ -10,6 +10,24 @@ class StaleWindow(RuntimeError):
     """A control disappeared or its HWND was reused during a read."""
 
 
+def notification_wparam(identifier, notification):
+    """MAKEWPARAM: wx auto-generated control IDs may be negative."""
+    return (identifier & 0xFFFF) | ((notification & 0xFFFF) << 16)
+
+
+def enable_editor(lookup, enabled, click):
+    """Observe the editor, not BM_GETCHECK on owner-drawn wx checkboxes."""
+    override, field = lookup()
+    if not enabled(override):
+        raise AssertionError("Override is unavailable (unlink the axes before editing this row)")
+    if not enabled(field):
+        click(override)
+        override, field = lookup()
+    if not enabled(field):
+        raise AssertionError("Override callback did not enable its editor")
+    return field
+
+
 @dataclass(frozen=True)
 class Control:
     hwnd: int

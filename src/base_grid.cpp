@@ -144,6 +144,15 @@ END_EVENT_TABLE()
 void BaseGrid::OnSubtitlesCommit(int type) {
 	if (type == AssFile::COMMIT_NEW || type & (AssFile::COMMIT_ORDER | AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_FOLD | AssFile::COMMIT_DIAG_META))
 		UpdateMaps();
+	if (type != AssFile::COMMIT_NEW && (type & AssFile::COMMIT_ORDER)) {
+		auto active = context->selectionController->GetActiveLine();
+		// An add/remove caller may replace its selection after the commit.
+		if (!active || std::any_of(context->ass->Events.begin(), context->ass->Events.end(),
+			[active](AssDialogue const& line) { return &line == active; })) {
+			OnActiveLineChanged(active);
+			if (active) context->ass->Properties.active_row = active->Row;
+		}
+	}
 	if (type != AssFile::COMMIT_NEW && (type & AssFile::COMMIT_DIAG_META) && !(type & AssFile::COMMIT_DIAG_ADDREM))
 		context->selectionController->RefreshMetadataVisibility();
 

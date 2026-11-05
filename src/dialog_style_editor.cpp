@@ -518,7 +518,7 @@ void DialogStyleEditor::Apply(bool apply, bool close) {
 		}
 		if (!store) {
 			c->ass->Commit(_("style change"), AssFile::COMMIT_STYLES | ((did_rename || metadata_changed) ? AssFile::COMMIT_DIAG_FULL : 0)
-				| (metadata_changed ? AssFile::COMMIT_DIAG_ADDREM : 0));
+				| (metadata_changed ? AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_ORDER : 0));
 			metadata_source = style;
 			metadata = mangetsu::StyleMetadataDraft(*c->ass, *style);
 		}

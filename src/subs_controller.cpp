@@ -26,6 +26,7 @@
 #include "format.h"
 #include "frame_main.h"
 #include "include/aegisub/context.h"
+#include "mangetsu_style_metadata.h"
 #include "options.h"
 #include "project.h"
 #include "selection_controller.h"
@@ -170,6 +171,7 @@ ProjectProperties SubsController::Load(agi::fs::path const& filename, std::strin
 	AssFile temp;
 
 	SubtitleFormat::GetReader(filename, charset)->ReadFile(&temp, filename, context->project->Timecodes(), charset);
+	mangetsu::NormalizeInitialMetadata(temp);
 
 	context->ass->swap(temp);
 	auto props = context->ass->Properties;

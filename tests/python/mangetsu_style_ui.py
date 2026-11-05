@@ -7,7 +7,7 @@ from ctypes import wintypes as W
 import os
 import subprocess
 import unicodedata
-from native_gui_snapshot import Control, StaleWindow, control_snapshot, editor_row
+from native_gui_snapshot import Control, StaleWindow, control_snapshot, editor_row, enable_editor, notification_wparam
 
 
 def prepare(profile, autoload):
@@ -211,7 +211,17 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
         send(h, 0x14E, index)  # CB_SETCURSEL
         # Notify the owning dialog synchronously. Asynchronous selection
         # events otherwise race the immediately following Apply/Cancel.
-        send(user.GetParent(h), 0x111, user.GetDlgCtrlID(h) | (1 << 16), h, timeout=30000)
+        send(user.GetParent(h), 0x111, notification_wparam(user.GetDlgCtrlID(h), 1), h, timeout=30000)
+
+    def enabled_in_dialog(hwnd, parent):
+        # IsWindowEnabled alone ignores a disabled parent panel (offset pairs).
+        while hwnd:
+            if not user.IsWindowEnabled(hwnd):
+                return False
+            if hwnd == parent:
+                return True
+            hwnd = user.GetParent(hwnd)
+        return False
 
     def row(parent, caption):
         # Switching the border layer destroys and recreates the whole native
@@ -226,17 +236,15 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
             if handles is None:
                 return None
             try:
-                return get_text(handles[1]) == value and bool(send(handles[0], 0xF0)) == assigned
+                return (get_text(handles[1]) == value and user.IsWindowEnabled(handles[0])
+                        and enabled_in_dialog(handles[1], parent) == assigned)
             except StaleWindow:
                 return None
         return wait(ready, caption + " value after completed form switch")
 
     def assign(parent, caption, value, choice=False):
-        override, field = row(parent, caption)
-        if not send(override, 0xF0):  # BM_GETCHECK
-            send(override, 0xF5, timeout=30000)
-            override, field = row(parent, caption)  # Reacquire after the callback.
-            assert user.IsWindowEnabled(field), caption + " override enabled"
+        field = enable_editor(lambda: row(parent, caption), lambda h: enabled_in_dialog(h, parent),
+                              lambda h: send(h, 0xF5, timeout=30000))
         if choice:
             choose(field, value)
         else:
@@ -286,7 +294,7 @@ $graphics.Dispose(); $bitmap.Dispose()
             if buf.value == name:
                 send(current, 0x185, 0, -1)  # LB_SETSEL: clear, then select
                 send(current, 0x185, 1, index)
-                send(user.GetParent(current), 0x111, user.GetDlgCtrlID(current) | (1 << 16), current, timeout=30000)
+                send(user.GetParent(current), 0x111, notification_wparam(user.GetDlgCtrlID(current), 1), current, timeout=30000)
                 return
         raise AssertionError("Style missing: " + name)
 

@@ -1,6 +1,6 @@
 """Headless lifecycle regressions; the packaged Windows suite tests real HWNDs."""
 import unittest
-from native_gui_snapshot import Control, StaleWindow, control_snapshot, editor_row
+from native_gui_snapshot import Control, StaleWindow, control_snapshot, editor_row, enable_editor, notification_wparam
 
 
 def normalize(text):
@@ -70,6 +70,48 @@ class NativeControlSnapshots(unittest.TestCase):
             Control(7, "", "Edit", (310, 40, 400, 60), True),
         )
         self.assertEqual(editor_row(controls, "Border size Y", normalize), (5, 6))
+
+    def test_checked_owner_drawn_override_is_not_toggled_off(self):
+        # wx stores this checkbox state internally; native BM_GETCHECK may be
+        # zero even though its editor is already enabled.
+        clicks = []
+        self.assertEqual(enable_editor(lambda: (2, 3), lambda h: True, clicks.append), 3)
+        self.assertEqual(clicks, [])
+
+    def test_inherited_editor_is_enabled_by_exactly_one_click(self):
+        enabled = {2: True, 3: False}
+        clicks = []
+        def click(hwnd):
+            clicks.append(hwnd)
+            enabled[3] = not enabled[3]
+        self.assertEqual(enable_editor(lambda: (2, 3), enabled.get, click), 3)
+        self.assertEqual(clicks, [2])
+
+    def test_override_callback_reacquires_a_rebuilt_editor(self):
+        current = [2, 3]
+        enabled = {2: True, 3: False, 4: True, 5: True}
+        def click(hwnd):
+            current[:] = (4, 5)
+        self.assertEqual(enable_editor(lambda: tuple(current), enabled.get, click), 5)
+
+    def test_linked_axis_cannot_be_enabled_by_synthetic_click(self):
+        clicks = []
+        with self.assertRaisesRegex(AssertionError, "unlink"):
+            enable_editor(lambda: (2, 3), lambda h: False, clicks.append)
+        self.assertEqual(clicks, [])
+
+    def test_failed_override_handler_is_reported_without_replaying_click(self):
+        clicks = []
+        with self.assertRaisesRegex(AssertionError, "did not enable"):
+            enable_editor(lambda: (2, 3), lambda h: h == 2, clicks.append)
+        self.assertEqual(clicks, [2])
+
+    def test_negative_wx_control_id_does_not_overwrite_notification_code(self):
+        for identifier in (-2001, -32700, 1024):
+            for code in (0, 1, 5):
+                packed = notification_wparam(identifier, code)
+                self.assertEqual(packed & 0xFFFF, identifier & 0xFFFF)
+                self.assertEqual(packed >> 16, code)
 
 
 if __name__ == "__main__":

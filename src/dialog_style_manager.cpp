@@ -793,12 +793,14 @@ void DialogStyleManager::OnCurrentImport() {
 	}
 
 	// Loop through selection
+	std::vector<std::string> imported_styles;
 	for (auto const& sel : selections) {
 		auto source_style = temp.GetStyle(styles[sel]);
 		// Check if there is already a style with that name
 		if (c->ass->GetStyle(styles[sel])) {
 			if (replace_all) {
 				styles_modified |= ImportStyle(*c->ass, *source_style, true);
+				imported_styles.push_back(source_style->name);
 				continue;
 			}
 
@@ -809,6 +811,7 @@ void DialogStyleManager::OnCurrentImport() {
 					wxYES_NO);
 				if (answer == wxYES) {
 					styles_modified |= ImportStyle(*c->ass, *source_style, true);
+					imported_styles.push_back(source_style->name);
 				}
 			}
 			continue;
@@ -816,17 +819,42 @@ void DialogStyleManager::OnCurrentImport() {
 
 		// Copy
 		styles_modified |= ImportStyle(*c->ass, *source_style, false);
+		imported_styles.push_back(source_style->name);
 	}
 
-	// Keep runtime project state authoritative rather than importing metadata
+	// Event metadata belongs to the imported styles, not to catalog Style
+	// records. Capture selection IDs before replacing declarations, so visible
+	// selected metadata cannot leave dangling pointers in the editor.
+	std::set<int> selected_ids;
+	for (auto line : c->selectionController->GetSelectedSet()) selected_ids.insert(line->Id);
+	auto old_active = c->selectionController->GetActiveLine();
+	int active_id = old_active ? old_active->Id : -1;
+	bool metadata_modified = mangetsu::ImportMetadata(*c->ass, temp, imported_styles);
+	if (metadata_modified) {
+		Selection selected;
+		AssDialogue *active = nullptr;
+		int row = 0;
+		for (auto& line : c->ass->Events) {
+			line.Row = row++;
+			if (selected_ids.count(line.Id)) selected.insert(&line);
+			if (line.Id == active_id) active = &line;
+		}
+		if (!active && !c->ass->Events.empty()) active = &c->ass->Events.front();
+		if (selected.empty() && active) selected.insert(active);
+		c->selectionController->SetSelectionAndActive(std::move(selected), active);
+	}
+
+	// Keep runtime project paths authoritative rather than importing them
 	// from the subtitle which supplied the styles.
 	if (match_resolution && c->project->VideoProvider())
 		c->project->UpdateVideoRelativePath();
 
 	// Commit the subtitle transformations together after synchronizing project
 	// metadata, so an immediate save/autosave sees the current runtime paths.
-	if (match_resolution || styles_modified) {
+	if (match_resolution || styles_modified || metadata_modified) {
 		int commit_type = styles_modified ? AssFile::COMMIT_STYLES : 0;
+		if (metadata_modified)
+			commit_type |= AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_DIAG_FULL | AssFile::COMMIT_ORDER | AssFile::COMMIT_EXTRADATA;
 		if (match_resolution)
 			commit_type |= AssFile::COMMIT_SCRIPTINFO | AssFile::COMMIT_STYLES | AssFile::COMMIT_DIAG_FULL;
 		c->ass->Commit(match_resolution ? _("style import and resolution resampling") : _("style import"), commit_type);

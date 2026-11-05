@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 
@@ -204,18 +205,110 @@ AssStyle const *ResolveMetadataStyle(AssFile const& file, std::string name) {
 	for (auto it = file.Styles.rbegin(); it != file.Styles.rend(); ++it) if (it->name == name) return &*it;
 	return nullptr;
 }
-std::vector<AssDialogue*> InitialMetadata(AssFile const& file) {
+std::vector<AssDialogue*> InitialMetadata(AssFile& file) {
 	std::vector<AssDialogue*> result;
-	for (auto const& line : file.Events) {
+	for (auto& line : file.Events) {
 		if (!IsMetadataComment(line)) break;
-		result.push_back(const_cast<AssDialogue*>(&line));
+		result.push_back(&line);
 	}
 	return result;
 }
+std::vector<AssDialogue const*> InitialMetadata(AssFile const& file) {
+	std::vector<AssDialogue const*> result;
+	for (auto const& line : file.Events) {
+		if (!IsMetadataComment(line)) break;
+		result.push_back(&line);
+	}
+	return result;
+}
+std::vector<AssDialogue const*> OrderedInitialMetadata(AssFile const& file) {
+	auto result = InitialMetadata(file);
+	std::stable_partition(result.begin(), result.end(), [](AssDialogue const *line) { return line->Effect == "mangetsu-style"; });
+	return result;
+}
+int MetadataRowForSave(AssFile const& file, int row) {
+	auto before = InitialMetadata(file);
+	if (row < 0 || static_cast<size_t>(row) >= before.size()) return row;
+	auto ordered = OrderedInitialMetadata(file);
+	return static_cast<int>(std::find(ordered.begin(), ordered.end(), before[row]) - ordered.begin());
+}
+bool NormalizeInitialMetadata(AssFile& file) {
+	auto before = InitialMetadata(file);
+	auto ordered = before;
+	std::stable_partition(ordered.begin(), ordered.end(), [](AssDialogue const *line) { return line->Effect == "mangetsu-style"; });
+	if (ordered == before) return false;
+	file.Properties.active_row = MetadataRowForSave(file, file.Properties.active_row);
+	auto boundary = std::next(file.Events.iterator_to(*before.back()));
+	// Splice the same objects; selections, IDs, extradata and comment contents
+	// remain intact. Callers commit the order change as part of their edit.
+	for (auto line : ordered) file.Events.splice(boundary, file.Events, file.Events.iterator_to(*line));
+	for (size_t row = 0; row < ordered.size(); ++row) ordered[row]->Row = static_cast<int>(row);
+	return true;
+}
 std::set<AssDialogue const*> HiddenMetadata(AssFile const& file, bool selected, bool show) {
 	if (!selected || show) return {};
-	auto lines = InitialMetadata(file);
-	return {lines.begin(), lines.end()};
+	std::set<AssDialogue const*> hidden;
+	for (auto line : InitialMetadata(file))
+		if (line->Effect == "mangetsu-style") hidden.insert(line);
+	return hidden;
+}
+bool ImportMetadata(AssFile& destination, AssFile const& source, std::vector<std::string> const& styles) {
+	if (&destination == &source) return false;
+	std::set<AssStyle const*> selected;
+	for (auto const& name : styles)
+		if (auto style = ResolveMetadataStyle(source, name)) selected.insert(style);
+	std::vector<AssDialogue const*> style_lines, actor_lines;
+	std::set<AssStyle const*> replaced;
+	for (auto line : InitialMetadata(source)) {
+		if (line->Effect == "mangetsu-colorcoding") actor_lines.push_back(line);
+		else if (selected.count(ResolveMetadataStyle(source, line->Style))) {
+			style_lines.push_back(line);
+			if (auto style = ResolveMetadataStyle(destination, ResolveMetadataStyle(source, line->Style)->name)) replaced.insert(style);
+		}
+	}
+	bool changed = NormalizeInitialMetadata(destination);
+	// Only replace extended defaults when the source actually supplies them.
+	// Unselected styles and all existing Actor Colorcoding entries survive.
+	for (auto line : InitialMetadata(destination))
+		if (line->Effect == "mangetsu-style" && replaced.count(ResolveMetadataStyle(destination, line->Style))) {
+			delete line;
+			changed = true;
+		}
+	auto copy_line = [&](AssDialogue const& source_line, auto where) {
+		auto line = std::make_unique<AssDialogue>(source_line);
+		// Foreign extradata IDs and runtime fold pointers belong to the source.
+		line->Fold = {};
+		std::vector<uint32_t> ids;
+		for (auto const& data : source.GetExtradata(source_line.ExtradataIds))
+			if (data.key != "_aegi_folddata") ids.push_back(destination.AddExtradata(data.key, data.value));
+		line->ExtradataIds = ids;
+		destination.Events.insert(where, *line.release());
+		changed = true;
+	};
+	auto block = InitialMetadata(destination);
+	auto style_end = destination.Events.begin();
+	for (auto line : block) {
+		if (line->Effect != "mangetsu-style") break;
+		style_end = std::next(destination.Events.iterator_to(*line));
+	}
+	for (auto line : style_lines) copy_line(*line, style_end);
+	block = InitialMetadata(destination);
+	auto end = block.empty() ? destination.Events.begin() : std::next(destination.Events.iterator_to(*block.back()));
+	// Keep duplicates within the imported actor sequence: later declarations
+	// can deliberately override earlier ones. Reimporting an identical suffix
+	// needs no additional actor declarations.
+	std::vector<AssDialogue*> actors;
+	for (auto line : block) if (line->Effect == "mangetsu-colorcoding") actors.push_back(line);
+	bool same_suffix = actor_lines.size() <= actors.size();
+	if (same_suffix) for (size_t i = 0; i < actor_lines.size(); ++i) {
+		auto const& existing = *actors[actors.size() - actor_lines.size() + i];
+		auto const& incoming = *actor_lines[i];
+		// Remapped extradata may have different IDs; only deduplicate plain
+		// comment records, without discarding any foreign metadata payload.
+		if (!existing.ExtradataIds.get().empty() || !incoming.ExtradataIds.get().empty() || existing.GetEntryData() != incoming.GetEntryData()) same_suffix = false;
+	}
+	if (!same_suffix) for (auto line : actor_lines) copy_line(*line, end);
+	return changed;
 }
 bool RemoveStyleMetadata(AssFile& file, AssStyle const& style) {
 	bool changed = false;
@@ -287,11 +380,11 @@ StyleValues StyleMetadataDraft::Values(AssStyle const& style, int wrap) const {
 }
 bool StyleMetadataDraft::Apply(AssFile& file, AssStyle const *source, std::string const& name, AssStyle const& style, bool copy) const {
 	auto texts = Texts(style, file.GetScriptInfoAsInt("WrapStyle"));
-	if (copy && texts.empty()) return false;
+	bool modified = NormalizeInitialMetadata(file);
+	if (copy && texts.empty()) return modified;
 	std::vector<AssDialogue*> targets;
 	if (!copy && source) for (auto line : InitialMetadata(file))
 		if (line->Effect == "mangetsu-style" && ResolveMetadataStyle(file, line->Style) == source) targets.push_back(line);
-	bool modified = false;
 	for (size_t i = 0; i < texts.size(); ++i) {
 		if (i < targets.size()) {
 			bool rename = source && source->name != name;
@@ -304,7 +397,11 @@ bool StyleMetadataDraft::Apply(AssFile& file, AssStyle const *source, std::strin
 			auto line = new AssDialogue;
 			line->Comment = true; line->Style = name; line->Effect = "mangetsu-style"; line->Text = texts[i];
 			auto block = InitialMetadata(file);
-			auto where = block.empty() ? file.Events.begin() : std::next(file.Events.iterator_to(*block.back()));
+			auto where = file.Events.begin();
+			for (auto declaration : block) {
+				if (declaration->Effect != "mangetsu-style") break;
+				where = std::next(file.Events.iterator_to(*declaration));
+			}
 			file.Events.insert(where, *line);
 			modified = true;
 		}
