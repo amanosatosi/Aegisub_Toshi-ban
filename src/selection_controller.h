@@ -45,8 +45,10 @@ class SelectionController {
 
 	Selection selection; ///< Currently selected lines
 	AssDialogue *active_line = nullptr; ///< The currently active line or 0 if none
+	bool FilterMetadata(Selection& selected, AssDialogue *&active) const;
 
 public:
+	void RefreshMetadataVisibility();
 	SelectionController(agi::Context *context);
 
 	/// @brief Change the active line

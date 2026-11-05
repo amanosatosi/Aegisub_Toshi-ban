@@ -1,4 +1,5 @@
 #include "motion_track_optimizer.h"
+#include "motion_track_message.h"
 
 #include <algorithm>
 #include <cmath>
@@ -12,14 +13,14 @@ MotionAnalysis OptimizeMotion(std::vector<MotionSample> const& samples,
 	std::vector<double> const& tolerance, MotionEncoding encoding) {
 	MotionAnalysis result;
 	for (double t : tolerance)
-		if (!std::isfinite(t) || t <= 0) throw std::invalid_argument("Invalid motion tolerance");
+		if (!std::isfinite(t) || t <= 0) throw std::invalid_argument(motion_message("Invalid motion tolerance"));
 	for (size_t i = 0; i < samples.size(); ++i) {
 		if (samples[i].values.size() != tolerance.size() || !std::isfinite(samples[i].time))
-			throw std::invalid_argument("Invalid motion sample");
+			throw std::invalid_argument(motion_message("Invalid motion sample"));
 		for (double v : samples[i].values)
-			if (!std::isfinite(v)) throw std::invalid_argument("Invalid motion signal");
+			if (!std::isfinite(v)) throw std::invalid_argument(motion_message("Invalid motion signal"));
 		if (i && (samples[i].time <= samples[i-1].time || samples[i].frame != samples[i-1].frame + 1))
-			throw std::invalid_argument("Motion samples must be consecutive and ordered");
+			throw std::invalid_argument(motion_message("Motion samples must be consecutive and ordered"));
 	}
 	if (samples.empty()) return result;
 	std::set<size_t> knots{0, samples.size()-1};

@@ -36,6 +36,7 @@
 
 #include "ass_file.h"
 #include "ass_dialogue.h"
+#include "mangetsu_metadata.h"
 #include "compat.h"
 
 #include <algorithm>
@@ -52,7 +53,12 @@ void AssFixStylesFilter::ProcessSubs(AssFile *subs) {
 	for (auto& str : styles) boost::to_lower(str);
 	sort(begin(styles), end(styles));
 
+	bool initial_metadata = true;
 	for (auto& diag : subs->Events) {
+		// Mangetsu resolves these targets itself, including * prefixes and
+		// unknown styles which must be ignored rather than changed to Default.
+		if (initial_metadata && mangetsu::IsMetadataComment(diag)) continue;
+		initial_metadata = false;
 		if (!binary_search(begin(styles), end(styles), boost::to_lower_copy(diag.Style.get())))
 			diag.Style = "Default";
 	}

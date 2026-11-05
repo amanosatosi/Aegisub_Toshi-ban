@@ -51,6 +51,7 @@ public:
 	void LoadSubtitles(AssFile *subs, int time = -1);
 	virtual void DrawSubtitles(VideoFrame &dst, double time)=0;
 	virtual void Reinitialize() { }
+	virtual bool SupportsMangetsuStyleMetadata() const { return false; }
 };
 
 namespace agi { class BackgroundRunner; }

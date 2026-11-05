@@ -30,6 +30,8 @@
 #include <memory>
 #include <string>
 #include <wx/dialog.h>
+#include "mangetsu_style_metadata.h"
+#include <libaegisub/signal.h>
 
 class AssStyle;
 class AssStyleStorage;
@@ -37,6 +39,8 @@ class PersistLocation;
 class SubtitlesPreview;
 class wxArrayString;
 class wxCheckBox;
+class wxChoice;
+class wxSizer;
 class wxChildFocusEvent;
 class wxComboBox;
 class wxCommandEvent;
@@ -81,6 +85,14 @@ class DialogStyleEditor final : public wxDialog {
 	wxComboBox *Encoding;
 	wxTextCtrl *PreviewText;
 	SubtitlesPreview *SubsPreview;
+	mangetsu::StyleMetadataDraft metadata;
+	AssStyle const *metadata_source = nullptr;
+	wxSizer *mangetsu_actions = nullptr;
+	wxChoice *WrapMode = nullptr;
+	std::vector<wxWindow*> mangetsu_controls;
+	agi::signal::Connection renderer_changed;
+	void UpdateMangetsuControls();
+	void UpdatePreview();
 
 	void SetBitmapColor(int n,wxColour color);
 	int AlignToControl(int n);

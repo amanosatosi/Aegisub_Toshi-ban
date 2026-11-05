@@ -71,6 +71,14 @@ struct grid_line_next_create final : public Command {
 			tc->Commit();
 
 		AssDialogue *cur = c->selectionController->GetActiveLine();
+		if (!cur) {
+			auto line = new AssDialogue;
+			line->End = OPT_GET("Timing/Default Duration")->GetInt();
+			c->ass->Events.push_back(*line);
+			c->ass->Commit(_("line insertion"), AssFile::COMMIT_DIAG_ADDREM);
+			c->selectionController->SetSelectionAndActive({line}, line);
+			return;
+		}
 		c->selectionController->NextLine();
 		if (cur == c->selectionController->GetActiveLine()) {
 			auto newline = new AssDialogue;
@@ -319,6 +327,19 @@ struct grid_tag_cycle_hiding final : public Command {
 
 		// Set option
 		OPT_SET("Subtitle/Grid/Hide Overrides")->SetInt(tagMode);
+	}
+};
+
+struct grid_mangetsu_metadata final : public Command {
+	CMD_NAME("grid/mangetsu_metadata")
+	STR_MENU("Show Mangetsu Metadata")
+	STR_DISP("Show Mangetsu Metadata")
+	STR_HELP("Show the initial Mangetsu style metadata comments")
+	CMD_TYPE(COMMAND_TOGGLE | COMMAND_VALIDATE)
+	bool Validate(const agi::Context *) override { return OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu"; }
+	bool IsActive(const agi::Context *) override { return OPT_GET("Subtitle/Grid/Show Mangetsu Metadata")->GetBool(); }
+	void operator()(agi::Context *) override {
+		OPT_SET("Subtitle/Grid/Show Mangetsu Metadata")->SetBool(!OPT_GET("Subtitle/Grid/Show Mangetsu Metadata")->GetBool());
 	}
 };
 
@@ -600,6 +621,7 @@ namespace cmd {
 		reg(agi::make_unique<grid_fold_clear_all>());
 		reg(agi::make_unique<grid_tag_cycle_hiding>());
 		reg(agi::make_unique<grid_tags_hide>());
+		reg(agi::make_unique<grid_mangetsu_metadata>());
 		reg(agi::make_unique<grid_tags_show>());
 		reg(agi::make_unique<grid_tags_simplify>());
 	}

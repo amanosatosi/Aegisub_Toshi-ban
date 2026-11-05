@@ -10,6 +10,12 @@ py = import('python').find_installation()
 if host_machine.system() == 'windows'
     add_project_arguments('-DNOMINMAX', language: 'cpp')
     add_project_arguments('-DUNICODE', language: 'cpp')
+    # MSVC otherwise interprets non-ASCII C++ source through the runner's
+    # active Windows code page, corrupting translated wxWidgets UI captions.
+    # Set both source and execution character sets to UTF-8.
+    if meson.get_compiler('cpp').get_id() == 'msvc'
+        add_project_arguments('/utf-8', language: 'cpp')
+    endif
 
     if not get_option('csri').disabled()
         add_global_arguments('-DCSRI_NO_EXPORT', language: 'c')

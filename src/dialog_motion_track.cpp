@@ -945,7 +945,7 @@ DialogMotionTrack::DialogMotionTrack(agi::Context *c)
 		context->project->AddVideoProviderListener([=](AsyncVideoProvider *) { Close(); }),
 		context->project->AddTimecodesListener([=](agi::vfr::Framerate const&) {
 			context_invalid = true;
-			invalid_reason = "Video frame timing changed. Start a new tracking session.";
+			invalid_reason = motion_tracking::motion_message("Video frame timing changed. Start a new tracking session.");
 			UpdateApplyStatus();
 		}),
 		context->selectionController->AddActiveLineListener([=](AssDialogue*) { CheckSession(); }),
@@ -953,7 +953,7 @@ DialogMotionTrack::DialogMotionTrack(agi::Context *c)
 		context->ass->AddCommitListener([=](int type, AssDialogue const*) {
 			if (!applying && (type == AssFile::COMMIT_NEW || (type & AssFile::COMMIT_SCRIPTINFO))) {
 				context_invalid = true;
-				invalid_reason = "Subtitle document or coordinate system changed. Start a new tracking session.";
+				invalid_reason = motion_tracking::motion_message("Subtitle document or coordinate system changed. Start a new tracking session.");
 			}
 			CheckSession();
 		})
@@ -1253,14 +1253,14 @@ void DialogMotionTrack::UpdateTrailControls() {
 }
 
 void DialogMotionTrack::UpdateLabels() {
-	range_label->SetLabel(fmt_wx("Selected line frames: %d - %d", settings.start_frame, settings.end_frame));
-	current_label->SetLabel(fmt_wx("Current: %d", current_frame));
+	range_label->SetLabel(fmt_tl("Selected line frames: %d - %d", settings.start_frame, settings.end_frame));
+	current_label->SetLabel(fmt_tl("Current: %d", current_frame));
 	if (segment_label) {
 		if (handoff_marks.empty()) {
 			segment_label->SetLabel(_("Marks: none"));
 		}
 		else {
-			std::string text = "Marks:";
+			std::string text = from_wx(_("Marks:"));
 			int shown = 0;
 			for (int mark : handoff_marks) {
 				if (shown >= 6) {
@@ -1284,12 +1284,12 @@ void DialogMotionTrack::UpdateCacheStatus() {
 	int cached = frame_cache->CachedCount();
 	int total = frame_cache->TargetCount();
 	if (!frame_cache->BackgroundEnabled()) {
-		cache_status_label->SetLabel(fmt_wx("Frame cache: lazy (%d frames)", total));
+		cache_status_label->SetLabel(fmt_tl("Frame cache: lazy (%d frames)", total));
 		return;
 	}
 
-	cache_status_label->SetLabel(fmt_wx("%s: %d / %d",
-		frame_cache->Complete() ? "Cached frames" : "Caching frames",
+	cache_status_label->SetLabel(fmt_tl("%s: %d / %d",
+		frame_cache->Complete() ? _("Cached frames") : _("Caching frames"),
 		cached,
 		total));
 }
@@ -1987,23 +1987,23 @@ void DialogMotionTrack::UpdateApplyStatus() {
 	}
 	UpdateChannelControls();
 	int reference = context->videoController->GetFrameN();
-	reference_label->SetLabel(fmt_wx("Main video reference: %d",reference));
-	std::string reason = invalid_reason;
-	if (reason.empty() && MainTrack().frames.empty() && ClipTrack().frames.empty()) reason = "Select Subtitle or \\clip, place a tracker square, then press Track Motion.";
+	reference_label->SetLabel(fmt_tl("Main video reference: %d",reference));
+	std::string reason = invalid_reason.empty() ? std::string{} : from_wx(wxGetTranslation(to_wx(invalid_reason)));
+	if (reason.empty() && MainTrack().frames.empty() && ClipTrack().frames.empty()) reason = from_wx(_("Select Subtitle or \\clip, place a tracker square, then press Track Motion."));
 	auto contains = [&](auto const& data, int frame) {
 		auto it = std::lower_bound(data.frames.begin(),data.frames.end(),frame,[](auto const& sample,int f) { return sample.frame < f; });
 		return it != data.frames.end() && it->frame == frame && motion_tracking::IsUsableMotionTrackState(it->state);
 	};
-	if (reason.empty() && !MainTrack().frames.empty() && !contains(MainTrack(),reference)) reason = "Seek the main video to a tracked reference frame.";
+	if (reason.empty() && !MainTrack().frames.empty() && !contains(MainTrack(),reference)) reason = from_wx(_("Seek the main video to a tracked reference frame."));
 	if (reason.empty() && !ClipTrack().frames.empty() && !contains(ClipTrack(),reference))
-		reason = "The clip track does not cover the main video reference frame.";
+		reason = from_wx(_("The clip track does not cover the main video reference frame."));
 	if (reason.empty()) {
 		for (auto const& source : source_identity) {
 			int first = context->videoController->FrameAtTime(agi::Time(source.start),agi::vfr::START);
 			int last = context->videoController->FrameAtTime(agi::Time(source.end),agi::vfr::END);
 			for (int f = first; f <= last; ++f) {
 				if ((!MainTrack().frames.empty() && !contains(MainTrack(),f)) || (!source.clip.empty() && !ClipTrack().frames.empty() && !contains(ClipTrack(),f))) {
-					reason = "Track the full selected subtitle range before Apply."; break;
+					reason = from_wx(_("Track the full selected subtitle range before Apply.")); break;
 				}
 			}
 			if (!reason.empty()) break;
@@ -2018,12 +2018,13 @@ void DialogMotionTrack::UpdateApplyStatus() {
 	}
 	revert_button->Enable(revert && !tracking);
 	main_track_button->Enable(!tracking);
-	std::string status = "Main track: " + std::string(MainTrack().frames.empty() ? "not available" : "available") +
-		"; clip track: " + (ClipTrack().frames.empty() ? "not available" : "available");
+	std::string status = from_wx(fmt_tl("Main track: %s; clip track: %s",
+		MainTrack().frames.empty() ? _("not available") : _("available"),
+		ClipTrack().frames.empty() ? _("not available") : _("available")));
 	if (!apply_summary.empty()) status += "\n" + apply_summary;
 	if (!reason.empty()) status += "\n" + reason;
 	else if (!apply_summary.empty()) { }
-	else status += "\nPosition/style at the main video frame, then Apply.";
+	else status += "\n" + from_wx(_("Position/style at the main video frame, then Apply."));
 	apply_status->SetLabel(to_wx(status));
 }
 
@@ -2086,7 +2087,7 @@ void DialogMotionTrack::TrackMotion() {
 		}
 	}
 	if (!invalid_reason.empty()) {
-		wxMessageBox(to_wx(invalid_reason),_("Motion Track"),wxOK | wxICON_INFORMATION,this);
+		wxMessageBox(wxGetTranslation(to_wx(invalid_reason)),_("Motion Track"),wxOK | wxICON_INFORMATION,this);
 		return;
 	}
 	if (clip && !HasTrackClip()) return;
@@ -2186,7 +2187,7 @@ void DialogMotionTrack::ApplyMotion(bool advanced) {
 	StopPlayback();
 	CheckSession();
 	if (!invalid_reason.empty()) {
-		wxMessageBox(to_wx(invalid_reason),_("Motion Apply"),wxOK | wxICON_INFORMATION,this);
+		wxMessageBox(wxGetTranslation(to_wx(invalid_reason)),_("Motion Apply"),wxOK | wxICON_INFORMATION,this);
 		return;
 	}
 	auto providers = SubtitlesProviderFactory::GetClasses();
@@ -2219,7 +2220,10 @@ void DialogMotionTrack::ApplyMotion(bool advanced) {
 				[&](std::string const& name) { return context->ass->GetStyle(name); },
 				MainTrack(),ClipTrack().frames.empty() ? nullptr : &ClipTrack(),reference,
 				context->project->Timecodes(),width,height,options);
-			apply_summary = application.summary;
+			apply_summary = from_wx(options.encoding == motion_tracking::MotionEncoding::FrameByFrame
+				? fmt_tl("%d frame-by-frame transforms; one event per subtitle", static_cast<int>(application.transform_count))
+				: fmt_tl("%d optimized transforms; one event per subtitle", static_cast<int>(application.transform_count)));
+			if (application.used_clippos) apply_summary += "; clippos/clips";
 			plans.push_back({line->Id,std::move(application)});
 		}
 		applying = true;
@@ -2240,7 +2244,7 @@ void DialogMotionTrack::ApplyMotion(bool advanced) {
 	}
 	catch (std::exception const& error) {
 		applying = false;
-		wxMessageBox(to_wx(error.what()),_("Motion Apply"),wxOK | wxICON_INFORMATION,this);
+		wxMessageBox(wxGetTranslation(to_wx(error.what())),_("Motion Apply"),wxOK | wxICON_INFORMATION,this);
 		UpdateApplyStatus();
 	}
 }
@@ -2268,6 +2272,6 @@ void DialogMotionTrack::RevertMotion() {
 	}
 	catch (std::exception const& error) {
 		applying = false;
-		wxMessageBox(to_wx(error.what()),_("Motion Revert"),wxOK | wxICON_INFORMATION,this);
+		wxMessageBox(wxGetTranslation(to_wx(error.what())),_("Motion Revert"),wxOK | wxICON_INFORMATION,this);
 	}
 }

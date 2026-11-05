@@ -12,6 +12,7 @@
 #include "ass_style.h"
 #include "compat.h"
 #include "dialogs.h"
+#include "format.h"
 #include "gradient_placement_session.h"
 #include "include/aegisub/context.h"
 #include "mangetsu_gradient_placement.h"
@@ -23,7 +24,6 @@
 #include "video_controller.h"
 #include "visual_tool_gradient_placement.h"
 
-#include <libaegisub/format.h>
 #include <libaegisub/color.h>
 #include <libaegisub/make_unique.h>
 
@@ -1060,12 +1060,12 @@ void DialogMangetsuGradient::RefreshControls() {
 		target_list->Append(to_wx(label));
 		visible_targets.push_back(key);
 	};
-	add_target("Primary", {0, 1, 0});
-	add_target("Secondary", {0, 2, 0});
+	add_target(from_wx(_("Primary")), {0, 1, 0});
+	add_target(from_wx(_("Secondary")), {0, 2, 0});
 	for (int layer : border_layers)
-		add_target(agi::format("Outline %d", layer), {1, layer, 0});
-	add_target("Shadow", {0, 4, 0});
-	add_target("Fifth", {0, 5, 0});
+		add_target(from_wx(fmt_tl("Outline %d", layer)), {1, layer, 0});
+	add_target(from_wx(_("Shadow")), {0, 4, 0});
+	add_target(from_wx(_("Fifth")), {0, 5, 0});
 	for (size_t i = 0; i < visible_targets.size(); ++i)
 		if (std::get<0>(visible_targets[i]) == std::get<0>(CurrentKey()) &&
 			std::get<1>(visible_targets[i]) == std::get<1>(CurrentKey()))
@@ -1075,8 +1075,8 @@ void DialogMangetsuGradient::RefreshControls() {
 
 	color_button->SetValue(mode == ChannelMode::Color);
 	alpha_button->SetValue(mode == ChannelMode::Alpha);
-	editing_label->SetLabel(to_wx("Editing: " + CurrentTargetName() + " — " + CurrentModeName()));
-	SetTitle(to_wx("Gradient Editor — " + CurrentTargetName()));
+	editing_label->SetLabel(fmt_tl("Editing: %s — %s", to_wx(CurrentTargetName()), to_wx(CurrentModeName())));
+	SetTitle(fmt_tl("Gradient Editor — %s", to_wx(CurrentTargetName())));
 	outline_size_panel->Show(group == TargetGroup::Border);
 	delete_outline_button->Enable(group == TargetGroup::Border && new_outline_layers.count(border_index));
 	if (group == TargetGroup::Border) {
@@ -1189,25 +1189,25 @@ bool DialogMangetsuGradient::IsLockedLine() const {
 }
 
 std::string DialogMangetsuGradient::CurrentGroupName() const {
-	return group == TargetGroup::Main ? "Main" : "Outline";
+	return from_wx(group == TargetGroup::Main ? _("Main") : _("Outline"));
 }
 
 std::string DialogMangetsuGradient::CurrentTargetName() const {
 	if (group == TargetGroup::Border)
-		return agi::format("Outline %d", border_index);
+		return from_wx(fmt_tl("Outline %d", border_index));
 
 	switch (main_index) {
-		case 1: return "Primary";
-		case 2: return "Secondary";
-		case 3: return "Outline 1";
-		case 4: return "Shadow";
-		case 5: return "Fifth";
-		default: return "Main";
+		case 1: return from_wx(_("Primary"));
+		case 2: return from_wx(_("Secondary"));
+		case 3: return from_wx(fmt_tl("Outline %d", 1));
+		case 4: return from_wx(_("Shadow"));
+		case 5: return from_wx(_("Fifth"));
+		default: return from_wx(_("Main"));
 	}
 }
 
 std::string DialogMangetsuGradient::CurrentModeName() const {
-	return mode == ChannelMode::Color ? "Color" : "Alpha";
+	return from_wx(mode == ChannelMode::Color ? _("Color") : _("Alpha"));
 }
 
 std::string DialogMangetsuGradient::CurrentStatus() const {
@@ -1216,9 +1216,9 @@ std::string DialogMangetsuGradient::CurrentStatus() const {
 	bool original_exists = state != working.end() && state->second.exists_in_original;
 	bool pending = (state != working.end() && state->second.modified) ||
 		(group == TargetGroup::Border && changed_outline_sizes.count(border_index));
-	std::string status = "Editing: " + CurrentGroupName() + " / " + CurrentTargetName() + " / " + CurrentModeName() +
-		" -> " + tag.status_name + "\nOriginal gradient: " + (original_exists ? "yes" : "no") +
-		"   Pending edit: " + (pending ? "yes" : "no");
+	std::string status = from_wx(fmt_tl("Editing: %s / %s / %s -> %s\nOriginal gradient: %s   Pending edit: %s",
+		to_wx(CurrentGroupName()), to_wx(CurrentTargetName()), to_wx(CurrentModeName()), to_wx(tag.status_name),
+		original_exists ? _("yes") : _("no"), pending ? _("yes") : _("no")));
 	if (!placement_status.empty())
 		status += "\n" + from_wx(placement_status);
 	if (!add_stop_status.empty())
@@ -1226,7 +1226,7 @@ std::string DialogMangetsuGradient::CurrentStatus() const {
 	if (group == TargetGroup::Border && new_outline_layers.count(border_index) &&
 		!changed_outline_sizes.count(border_index) &&
 		state != working.end() && !state->second.modified)
-		status += "\nPreview only — edit this outline to keep it.";
+		status += "\n" + from_wx(_("Preview only — edit this outline to keep it."));
 	return status;
 }
 

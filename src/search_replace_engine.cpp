@@ -20,6 +20,8 @@
 #include "ass_file.h"
 #include "format.h"
 #include "include/aegisub/context.h"
+#include "mangetsu_style_metadata.h"
+#include "options.h"
 #include "selection_controller.h"
 #include "text_selection_controller.h"
 
@@ -170,6 +172,7 @@ bool SearchReplaceEngine::FindReplace(bool replace) {
 	auto matches = GetMatcher(settings);
 
 	AssDialogue *line = context->selectionController->GetActiveLine();
+	if (!line) return false;
 	auto it = context->ass->iterator_to(*line);
 	size_t pos = 0;
 
@@ -186,7 +189,7 @@ bool SearchReplaceEngine::FindReplace(bool replace) {
 			if (end == bad_pos || (pos == replace_ms.start && end == replace_ms.end)) {
 				Replace(line, replace_ms);
 				pos = replace_ms.end;
-				context->ass->Commit(_("replace"), AssFile::COMMIT_DIAG_TEXT);
+				context->ass->Commit(_("replace"), settings.field == SearchReplaceSettings::Field::TEXT ? AssFile::COMMIT_DIAG_TEXT : AssFile::COMMIT_DIAG_META);
 			}
 			else {
 				// The current line matches, but it wasn't already selected,
@@ -207,8 +210,10 @@ bool SearchReplaceEngine::FindReplace(bool replace) {
 
 	auto const& sel = context->selectionController->GetSelectedSet();
 	bool selection_only = sel.size() > 1 && settings.limit_to == SearchReplaceSettings::Limit::SELECTED;
+	auto hidden = mangetsu::HiddenMetadata(*context->ass, OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu", OPT_GET("Subtitle/Grid/Show Mangetsu Metadata")->GetBool());
 
 	do {
+		if (hidden.count(&*it)) continue;
 		if (selection_only && !sel.count(&*it)) continue;
 		if (settings.ignore_comments && it->Comment) continue;
 
@@ -244,8 +249,10 @@ bool SearchReplaceEngine::ReplaceAll() {
 
 	auto const& sel = context->selectionController->GetSelectedSet();
 	bool selection_only = settings.limit_to == SearchReplaceSettings::Limit::SELECTED;
+	auto hidden = mangetsu::HiddenMetadata(*context->ass, OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu", OPT_GET("Subtitle/Grid/Show Mangetsu Metadata")->GetBool());
 
 	for (auto& diag : context->ass->Events) {
+		if (hidden.count(&diag)) continue;
 		if (selection_only && !sel.count(&diag)) continue;
 		if (settings.ignore_comments && diag.Comment) continue;
 
@@ -270,7 +277,7 @@ bool SearchReplaceEngine::ReplaceAll() {
 	}
 
 	if (count > 0) {
-		context->ass->Commit(_("replace"), AssFile::COMMIT_DIAG_TEXT);
+		context->ass->Commit(_("replace"), settings.field == SearchReplaceSettings::Field::TEXT ? AssFile::COMMIT_DIAG_TEXT : AssFile::COMMIT_DIAG_META);
 		wxMessageBox(fmt_plural(count, "One match was replaced.", "%d matches were replaced.", (int)count));
 	}
 	else {

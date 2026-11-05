@@ -3,6 +3,7 @@
 #include "subtitles_provider_libassmod_render.h"
 #include "video_frame.h"
 #include "mkv_subtitle_fixture.h"
+#include "mangetsu_metadata.h"
 
 #include <gtest/gtest.h>
 #include <libaegisub/exception.h>
@@ -339,6 +340,81 @@ TEST_P(CustomSubtitleBackend, MatroskaImportReachesBackendWithoutNuls) {
 		EXPECT_STREQ(session.track->events[0].Text, "Matroska dialogue");
 		int change = 0;
 		EXPECT_NE(backend.api.ass_render_frame(session.renderer, session.track, 2000, &change), nullptr);
+	}
+}
+
+namespace {
+std::string SerializeMetadata(std::string const& events, int time = -1) {
+	AssFile file;
+	AssParser parser(&file, 1);
+	std::istringstream input(Script(events));
+	for (std::string line; std::getline(input, line);) parser.AddLine(line);
+	mkv_test::CaptureProvider provider;
+	static_cast<SubtitlesProvider&>(provider).LoadSubtitles(&file, time);
+	return provider.script;
+}
+
+std::string Metadata(std::string const& effect, std::string const& tags, std::string const& actor = "", std::string const& style = "Default") {
+	return "Comment: 0,0:00:00.00,0:00:00.00," + style + ',' + actor + ",0,0,0," + effect + ',' + tags + '\n';
+}
+}
+
+TEST(CustomSubtitleMetadata, MixedInitialBlockIsForwardedInOrderRegardlessOfTime) {
+	auto first = Metadata("mangetsu-style", "{\\furis70}");
+	auto actor = Metadata("mangetsu-colorcoding", "{\\1c&HFF0000&}", "Nene");
+	auto last = Metadata("mangetsu-style", "{\\furisx60}", "", "*Default");
+	auto unknown = Metadata("mangetsu-style", "{\\furis20}", "", "Missing");
+	auto serialized = SerializeMetadata(first + actor + last + unknown + Event("<A|reading>"), 2000);
+	auto pos = serialized.find(first);
+	ASSERT_NE(pos, std::string::npos);
+	EXPECT_EQ(serialized.substr(pos, first.size() + actor.size() + last.size() + unknown.size()), first + actor + last + unknown);
+	EXPECT_NE(serialized.find("Dialogue:"), std::string::npos);
+}
+
+TEST(CustomSubtitleMetadata, AnUnrelatedCommentOrDialogueClosesTheSharedBlock) {
+	auto late = Metadata("mangetsu-style", "{\\furis20}");
+	for (auto const& boundary : {Metadata("note", "ordinary comment"), Event("first dialogue"),
+		Metadata("Mangetsu-style", "{\\furis30}"), Metadata("mangetsu-colorcoding", "{}")}) {
+		auto serialized = SerializeMetadata(Metadata("mangetsu-style", "{\\furis70}") + boundary + late);
+		EXPECT_EQ(serialized.find(late), std::string::npos);
+	}
+	// Filtering out an inactive dialogue must not promote metadata after it.
+	auto serialized = SerializeMetadata("Dialogue: 0,0:00:10.00,0:00:20.00,Default,,0,0,0,,later\n" + late + Event("active"), 1000);
+	EXPECT_EQ(serialized.find(late), std::string::npos);
+}
+
+TEST(CustomSubtitleMetadata, EditingMetadataAndItsBoundaryInvalidatesThePreview) {
+	AssFile file;
+	for (auto const& raw : {Metadata("mangetsu-style", "{\\furis70}"),
+		Metadata("mangetsu-colorcoding", "{\\1c&HFF0000&}", "Nene"),
+		Metadata("note", "block ends here"), Metadata("mangetsu-style", "{\\furis20}"), Event("visible")}) {
+		auto line = new AssDialogue(raw);
+		line->Row = static_cast<int>(file.Events.size());
+		file.Events.push_back(*line);
+	}
+	for (auto const& line : file.Events) EXPECT_EQ(mangetsu::MayAffectMetadata(file, line), line.Row <= 2);
+}
+
+TEST_P(CustomSubtitleBackend, MangetsuStyleDefaultsSurviveHostSerializationAndMatchInlineTags) {
+	if (std::string(GetParam()).find("MANGETSU") == std::string::npos) return;
+	for (auto const& fixture : std::vector<std::pair<std::string, std::string>>{
+		{"\\furis70", "<A|reading>"},
+		{"\\2bs3\\2bc&HFFAA00&\\2ba&H40&", "border layers"},
+		{"\\q2\\vert1\\vtype3\\vdir2\\vsp2\\vcolsp8", "ABC\\NDEF"}}) {
+		SCOPED_TRACE(fixture.first);
+		Session subject(backend, SerializeMetadata(Metadata("mangetsu-style", '{' + fixture.first + '}') + Event(fixture.second)));
+		Session reference(backend, Script(Event('{' + fixture.first + '}' + fixture.second)));
+		Session ordinary(backend, Script(Event(fixture.second)));
+		for (bool legacy : {false, true}) {
+			auto api = backend.api;
+			if (legacy) { api.ass_render_frame_rgba = nullptr; api.ass_render_frame_auto = nullptr; }
+			auto frame = Background(), expected = frame, unchanged = frame;
+			DrawFrame(api, subject.renderer, subject.track, 1000, frame);
+			DrawFrame(api, reference.renderer, reference.track, 1000, expected);
+			DrawFrame(api, ordinary.renderer, ordinary.track, 1000, unchanged);
+			EXPECT_EQ(frame.data, expected.data);
+			EXPECT_NE(frame.data, unchanged.data) << "Fixture must actually exercise inherited defaults";
+		}
 	}
 }
 

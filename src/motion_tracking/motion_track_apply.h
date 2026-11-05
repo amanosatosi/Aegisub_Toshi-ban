@@ -1,10 +1,12 @@
 #pragma once
 
 #include "motion_track_optimizer.h"
+#include "motion_track_message.h"
 #include "motion_track_types.h"
 #include "../ass_dialogue.h"
 
 #include <functional>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -33,6 +35,7 @@ using MotionStyleResolver = std::function<AssStyle const*(std::string const&)>;
 struct MotionApplication {
 	std::vector<AssDialogueBase> events;
 	std::string summary;
+	std::size_t transform_count = 0;
 	bool used_clippos = false;
 };
 

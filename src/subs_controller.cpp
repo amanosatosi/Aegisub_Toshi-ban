@@ -26,6 +26,7 @@
 #include "format.h"
 #include "frame_main.h"
 #include "include/aegisub/context.h"
+#include "mangetsu_style_metadata.h"
 #include "options.h"
 #include "project.h"
 #include "selection_controller.h"
@@ -170,6 +171,7 @@ ProjectProperties SubsController::Load(agi::fs::path const& filename, std::strin
 	AssFile temp;
 
 	SubtitleFormat::GetReader(filename, charset)->ReadFile(&temp, filename, context->project->Timecodes(), charset);
+	mangetsu::NormalizeInitialMetadata(temp);
 
 	context->ass->swap(temp);
 	auto props = context->ass->Properties;
@@ -281,10 +283,10 @@ void SubsController::AutoSave() {
 			msg = fmt_tl("File backup saved as \"%s\".", path);
 		}
 		catch (const agi::Exception& err) {
-			msg = to_wx("Exception when attempting to autosave file: " + err.GetMessage());
+			msg = _("Exception when attempting to autosave file: ") + to_wx(err.GetMessage());
 		}
 		catch (...) {
-			msg = "Unhandled exception when attempting to autosave file.";
+			msg = _("Unhandled exception when attempting to autosave file.");
 		}
 
 		agi::dispatch::Main().Async([frame, msg] {

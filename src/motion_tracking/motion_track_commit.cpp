@@ -48,7 +48,7 @@ Family Decode(std::string const& text) {
 			family.extra.emplace_back(item.first,static_cast<json::String const&>(item.second));
 		return family;
 	}
-	catch (...) { throw std::invalid_argument("Motion Revert metadata is damaged or unsupported."); }
+	catch (...) { throw std::invalid_argument(motion_message("Motion Revert metadata is damaged or unsupported.")); }
 }
 
 std::string Metadata(AssFile const& file, AssDialogue const& line) {
@@ -76,13 +76,13 @@ MotionCommitSelection InstallMotionApplications(AssFile& file,
 	for (auto const& plan : plans) {
 		auto source = Find(file,plan.source_id);
 		if (!source || !ids.insert(plan.source_id).second || plan.application.events.size() != 1)
-			throw std::invalid_argument("Apply requires exactly one event per original subtitle.");
+			throw std::invalid_argument(motion_message("Apply requires exactly one event per original subtitle."));
 		auto const& event = plan.application.events.front();
 		if (event.Start.GetMilliseconds() != source->Start.GetMilliseconds() ||
 			event.End.GetMilliseconds() != source->End.GetMilliseconds())
-			throw std::invalid_argument("Apply cannot change subtitle timing.");
+			throw std::invalid_argument(motion_message("Apply cannot change subtitle timing."));
 		if (!Metadata(file,*source).empty())
-			throw std::invalid_argument("Revert the legacy split motion family once before applying Mangetsu tracking.");
+			throw std::invalid_argument(motion_message("Revert the legacy split motion family once before applying Mangetsu tracking."));
 		prepared.push_back({source,event.Text.get()});
 	}
 	MotionCommitSelection selection;
@@ -126,7 +126,7 @@ MotionCommitSelection RevertMotionFamilies(AssFile& file,
 	// remove an incomplete or duplicated family, or an unrelated damaged family.
 	for (auto const& item : families)
 		if (members[item.first].size() != static_cast<size_t>(item.second.count))
-			throw std::invalid_argument("This motion family is incomplete or was duplicated. Use Undo or restore its missing events.");
+			throw std::invalid_argument(motion_message("This motion family is incomplete or was duplicated. Use Undo or restore its missing events."));
 	MotionCommitSelection selection;
 	for (auto const& item : families) {
 		auto const& family = item.second;
@@ -149,7 +149,7 @@ MotionCommitSelection RevertMotionFamilies(AssFile& file,
 		selection.selected.push_back(line);
 		if (line->Id == active_id) selection.active = line;
 	}
-	if (selection.selected.empty()) throw std::invalid_argument("Select a subtitle with generated tracking to Revert.");
+	if (selection.selected.empty()) throw std::invalid_argument(motion_message("Select a subtitle with generated tracking to Revert."));
 	if (!selection.active) selection.active = selection.selected.front();
 	return selection;
 }

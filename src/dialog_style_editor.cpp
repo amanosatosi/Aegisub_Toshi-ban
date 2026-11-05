@@ -33,6 +33,8 @@
 ///
 
 #include "dialog_style_editor.h"
+#include "dialog_mangetsu_style.h"
+#include "mangetsu_metadata.h"
 
 #include "ass_dialogue.h"
 #include "ass_file.h"
@@ -57,6 +59,8 @@
 
 #include <wx/bmpbuttn.h>
 #include <wx/checkbox.h>
+#include <wx/choice.h>
+#include <wx/button.h>
 #include <wx/msgdlg.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
@@ -87,6 +91,9 @@ class StyleRenamer {
 		do_replace = replace;
 
 		for (auto& diag : c->ass->Events) {
+			// The style metadata transaction owns these targets and preserves
+			// manually written tag text rather than reparsing it on rename.
+			if (diag.Comment && diag.Effect == "mangetsu-style") continue;
 			if (diag.Style == source_name) {
 				if (replace)
 					diag.Style = new_name;
@@ -130,6 +137,8 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 , style(style)
 , store(store)
 {
+	metadata_source = store ? nullptr : style;
+	if (metadata_source) metadata = mangetsu::StyleMetadataDraft(*c->ass, *metadata_source);
 	if (new_name.size()) {
 		is_new = true;
 		style = this->style = new AssStyle(*style);
@@ -176,7 +185,7 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 			updating = true;
 			scd->GetValidator()->TransferFromWindow();
 			updating = old;
-			SubsPreview->SetStyle(*work);
+			UpdatePreview();
 		});
 		return scd;
 	};
@@ -357,7 +366,41 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	PreviewBox->Add(PreviewBottomSizer, 0, wxEXPAND | wxBOTTOM, 0);
 
 	// Buttons
-	auto ButtonSizer = CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxAPPLY | wxHELP);
+	auto gap = 4;
+#if wxCHECK_VERSION(3, 1, 0)
+	gap = FromDIP(gap);
+#endif
+	auto ButtonSizer = new wxBoxSizer(wxHORIZONTAL);
+	mangetsu_actions = new wxBoxSizer(wxHORIZONTAL);
+	auto add_properties = [&](wxString const& label, mangetsu::StyleEditorPage page) {
+		auto button = new wxButton(this, wxID_ANY, label);
+		button->Bind(wxEVT_BUTTON, [this, page](wxCommandEvent&) {
+			UpdateWorkStyle();
+			if (mangetsu::EditStyleProperties(this, metadata, *work, this->c->ass->GetScriptInfoAsInt("WrapStyle"), page)) {
+				UpdateMangetsuControls(); UpdatePreview();
+			}
+		});
+		mangetsu_actions->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
+		mangetsu_controls.push_back(button);
+	};
+	add_properties(_(L"Furigana\u2026"), mangetsu::StyleEditorPage::Furigana);
+	add_properties(_(L"Vertical\u2026"), mangetsu::StyleEditorPage::Vertical);
+	add_properties(_(L"Multi-border\u2026"), mangetsu::StyleEditorPage::Borders);
+	mangetsu_actions->Add(new wxStaticText(this, wxID_ANY, _("Wrap Mode")), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, gap);
+	wxString wrapping[] = {_("Inherit Script"), _("Smart"), _("End-of-line"), _("No automatic wrap"), _("Alternative smart")};
+	WrapMode = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, 5, wrapping);
+	WrapMode->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
+		if (this->store) return;
+		UpdateWorkStyle();
+		metadata.Set("q", WrapMode->GetSelection() == 0 ? std::nullopt : std::optional<std::string>(std::to_string(WrapMode->GetSelection() - 1)));
+		UpdatePreview();
+	});
+	mangetsu_controls.push_back(WrapMode);
+	mangetsu_actions->Add(WrapMode, 0, wxALIGN_CENTER_VERTICAL);
+	ButtonSizer->Add(mangetsu_actions, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, gap);
+	ButtonSizer->AddStretchSpacer(1);
+	ButtonSizer->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxAPPLY | wxHELP), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, gap);
+	mangetsu_actions->ShowItems(OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu");
 
 	// Left side sizer
 	wxSizer *LeftSizer = new wxBoxSizer(wxVERTICAL);
@@ -383,6 +426,8 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	MainSizer->Add(ButtonSizer, 0, wxBOTTOM | wxEXPAND, 5);
 
 	SetSizerAndFit(MainSizer);
+	UpdateMangetsuControls();
+	renderer_changed = OPT_SUB("Subtitle/Provider", [this] { UpdateMangetsuControls(); UpdatePreview(); });
 
 	// Force the style name text field to scroll based on its final size, rather
 	// than its initial size
@@ -408,9 +453,11 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 
 	for (auto const& elem : colorButton)
 		elem->Bind(EVT_COLOR, &DialogStyleEditor::OnSetColor, this);
+	UpdatePreview();
 }
 
 DialogStyleEditor::~DialogStyleEditor() {
+	renderer_changed.Disconnect();
 	if (is_new)
 		delete style;
 }
@@ -458,6 +505,7 @@ void DialogStyleEditor::Apply(bool apply, bool close) {
 		}
 
 		UpdateWorkStyle();
+		bool metadata_changed = !store && metadata.Apply(*c->ass, metadata_source, work->name, *work, is_new);
 
 		*style = *work;
 		style->UpdateData();
@@ -468,11 +516,15 @@ void DialogStyleEditor::Apply(bool apply, bool close) {
 				c->ass->Styles.push_back(*style);
 			is_new = false;
 		}
-		if (!store)
-			c->ass->Commit(_("style change"), AssFile::COMMIT_STYLES | (did_rename ? AssFile::COMMIT_DIAG_FULL : 0));
+		if (!store) {
+			c->ass->Commit(_("style change"), AssFile::COMMIT_STYLES | ((did_rename || metadata_changed) ? AssFile::COMMIT_DIAG_FULL : 0)
+				| (metadata_changed ? AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_ORDER : 0));
+			metadata_source = style;
+			metadata = mangetsu::StyleMetadataDraft(*c->ass, *style);
+		}
 
 		// Update preview
-		if (!close) SubsPreview->SetStyle(*style);
+		if (!close) { UpdateMangetsuControls(); UpdatePreview(); }
 	}
 
 	if (close) {
@@ -480,6 +532,28 @@ void DialogStyleEditor::Apply(bool apply, bool close) {
 		if (PreviewText)
 			OPT_SET("Tool/Style Editor/Preview Text")->SetString(from_wx(PreviewText->GetValue()));
 	}
+}
+
+void DialogStyleEditor::UpdateMangetsuControls() {
+	bool shown = OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu";
+	mangetsu_actions->ShowItems(shown);
+	for (auto control : mangetsu_controls) {
+		control->Enable(!store);
+		if (store) control->SetToolTip(_("Style catalogs store ordinary ASS style fields only. Edit Mangetsu defaults in the current script."));
+	}
+	auto value = metadata.Values(*work, c->ass->GetScriptInfoAsInt("WrapStyle")).at("q");
+	WrapMode->SetSelection(value.assigned ? std::stoi(value.value) + 1 : 0);
+	Layout();
+	if (GetSizer()) {
+		auto minimum = GetSizer()->GetMinSize();
+		SetMinSize(minimum);
+		if (GetSize().x < minimum.x) SetSize(wxSize(minimum.x, GetSize().y));
+	}
+}
+
+void DialogStyleEditor::UpdatePreview() {
+	SubsPreview->SetMangetsuMetadata(metadata.Texts(*work, c->ass->GetScriptInfoAsInt("WrapStyle")), c->ass->GetScriptInfoAsInt("WrapStyle"));
+	SubsPreview->SetStyle(*work);
 }
 
 void DialogStyleEditor::UpdateWorkStyle() {
@@ -510,12 +584,12 @@ void DialogStyleEditor::UpdateWorkStyle() {
 
 void DialogStyleEditor::OnSetColor(ValueEvent<agi::Color>&) {
 	TransferDataFromWindow();
-	SubsPreview->SetStyle(*work);
+	UpdatePreview();
 }
 
 void DialogStyleEditor::OnChildFocus(wxChildFocusEvent &event) {
 	UpdateWorkStyle();
-	SubsPreview->SetStyle(*work);
+	UpdatePreview();
 	event.Skip();
 }
 
@@ -531,7 +605,7 @@ void DialogStyleEditor::OnPreviewColourChange(ValueEvent<agi::Color> &evt) {
 
 void DialogStyleEditor::OnCommandPreviewUpdate(wxCommandEvent &event) {
 	UpdateWorkStyle();
-	SubsPreview->SetStyle(*work);
+	UpdatePreview();
 	event.Skip();
 }
 

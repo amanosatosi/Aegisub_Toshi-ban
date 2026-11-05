@@ -38,6 +38,8 @@
 #include <libaegisub/split.h>
 
 #include <algorithm>
+#include <chrono>
+#include <boost/scope_exit.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <boost/locale/collator.hpp>
@@ -135,9 +137,21 @@ class CommandManager {
 
 	/// Connection for hotkey change signal
 	agi::signal::Connection hotkeys_changed;
+	agi::signal::Connection renderer_changed;
+	struct ConditionalItem { wxMenu *menu; wxMenuItem *item; size_t position; bool shown; };
+	std::vector<ConditionalItem> mangetsu_items;
+	void UpdateMangetsuItems() {
+		bool show = OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu";
+		for (auto& entry : mangetsu_items) if (entry.shown != show) {
+			if (show) entry.menu->Insert(entry.position, entry.item);
+			else entry.menu->Remove(entry.item);
+			entry.shown = show;
+		}
+	}
 
 	/// Update a single dynamic menu item
 	void UpdateItem(std::pair<std::string, wxMenuItem*> const& item) {
+		if (item.first == "grid/mangetsu_metadata" && OPT_GET("Subtitle/Provider")->GetString() != "Mangetsu") return;
 		cmd::Command *c = cmd::get(item.first);
 		int flags = c->Type();
 		if (flags & cmd::COMMAND_VALIDATE) {
@@ -158,6 +172,7 @@ class CommandManager {
 	}
 
 	void UpdateItemName(std::pair<std::string, wxMenuItem*> const& item) {
+		if (item.first == "grid/mangetsu_metadata" && OPT_GET("Subtitle/Provider")->GetString() != "Mangetsu") return;
 		cmd::Command *c = cmd::get(item.first);
 		wxString text;
 		if (c->Type() & cmd::COMMAND_DYNAMIC_NAME)
@@ -171,8 +186,10 @@ public:
 	CommandManager(int id_base, agi::Context *context)
 	: id_base(id_base), context(context)
 	, hotkeys_changed(hotkey::inst->AddHotkeyChangeListener(&CommandManager::OnHotkeysChanged, this))
+	, renderer_changed(OPT_SUB("Subtitle/Provider", &CommandManager::UpdateMangetsuItems, this))
 	{
 	}
+	~CommandManager() { for (auto const& entry : mangetsu_items) if (!entry.shown) delete entry.item; }
 
 	void SetContext(agi::Context *c) {
 		context = c;
@@ -205,6 +222,10 @@ public:
 #endif
 		parent->Append(item);
 		items.push_back(co->name());
+		if (std::string(co->name()) == "grid/mangetsu_metadata") {
+			mangetsu_items.push_back({parent, item, parent->GetMenuItemCount() - 1, true});
+			UpdateMangetsuItems();
+		}
 
 		if (flags != cmd::COMMAND_NORMAL)
 			dynamic_items.emplace_back(co->name(), item);
@@ -453,6 +474,8 @@ class AutomationMenu final : public wxMenu {
 	};
 
 	void Regenerate() {
+		auto start = std::chrono::steady_clock::now();
+		BOOST_SCOPE_EXIT_ALL(&) { LOG_I("startup/automation/menu") << "reconstruction_ms=" << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(); };
 		for (auto item : all_items)
 			cm->Remove(item);
 		all_items.clear();
