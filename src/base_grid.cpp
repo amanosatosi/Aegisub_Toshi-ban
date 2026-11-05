@@ -47,7 +47,6 @@
 #include "subs_controller.h"
 #include "video_controller.h"
 
-#include <libaegisub/log.h>
 #include <libaegisub/make_unique.h>
 #include <libaegisub/util.h>
 
@@ -115,14 +114,16 @@ BaseGrid::BaseGrid(wxWindow* parent, agi::Context *context)
 
 		OPT_SUB("Subtitle/Grid/Highlight Subtitles in Frame", &BaseGrid::OnHighlightVisibleChange, this),
 		OPT_SUB("Subtitle/Grid/Hide Overrides", [&](agi::OptionValue const&) { Refresh(false); }),
+		// The constructor's context parameter is not alive when option callbacks run.
+		// Capture the grid and use its persistent member instead of a dangling reference.
 		OPT_SUB("Subtitle/Grid/Show Mangetsu Metadata", [this] {
-			LOG_I("mangetsu/grid/visibility") << "Begin metadata visibility update";
 			UpdateMaps();
-			LOG_I("mangetsu/grid/visibility") << "Visible map rebuilt";
-			context->selectionController->RefreshMetadataVisibility();
-			LOG_I("mangetsu/grid/visibility") << "Selection refreshed";
+			this->context->selectionController->RefreshMetadataVisibility();
 		}),
-		OPT_SUB("Subtitle/Provider", [&] { UpdateMaps(); context->selectionController->RefreshMetadataVisibility(); }),
+		OPT_SUB("Subtitle/Provider", [this] {
+			UpdateMaps();
+			this->context->selectionController->RefreshMetadataVisibility();
+		}),
 	});
 
 	Bind(wxEVT_CONTEXT_MENU, &BaseGrid::OnContextMenu, this);
