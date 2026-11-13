@@ -83,7 +83,7 @@ class NativeControlSnapshots(unittest.TestCase):
 
     def test_negative_wx_control_id_does_not_overwrite_notification_code(self):
         for identifier in (-2001, -32700, 1024):
-            for code in (0, 1, 5):
+            for code in (0, 1, 5, 9, 0x300):
                 packed = notification_wparam(identifier, code)
                 self.assertEqual(packed & 0xFFFF, identifier & 0xFFFF)
                 self.assertEqual(packed >> 16, code)

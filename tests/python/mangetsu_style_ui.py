@@ -212,11 +212,13 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
             return None
         return wait(ready, "complete native choice control")
 
-    def choose(h, index):
-        send(h, 0x14E, index)  # CB_SETCURSEL
-        # Notify the owning dialog synchronously. Asynchronous selection
-        # events otherwise race the immediately following Apply/Cancel.
-        send(user.GetParent(h), 0x111, notification_wparam(user.GetDlgCtrlID(h), 1), h, timeout=30000)
+    def choose(h, index, *, combo=False):
+        assert send(h, 0x14E, index) == index  # CB_SETCURSEL
+        # wxChoice emits wxEVT_CHOICE on CBN_SELENDOK. Preferences uses
+        # wxComboBox, which emits wxEVT_COMBOBOX on CBN_SELCHANGE.
+        notification = 1 if combo else 9
+        send(user.GetParent(h), 0x111, notification_wparam(user.GetDlgCtrlID(h), notification), h, timeout=30000)
+        assert send(h, 0x147) == index  # CB_GETCURSEL
 
     def enabled_in_dialog(hwnd, parent):
         # IsWindowEnabled alone ignores a disabled parent panel (offset pairs).
@@ -500,7 +502,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     for tag in ("\\furisx80", "\\vert1", "\\vtype3", "\\10bs3", "\\q0", "\\grd(45,", "\\vc(",
                 *(f"\\{layer}bs{layer}" for layer in range(2, 10))):
         assert tag in committed, (tag, committed)
-    assert "\\furisy" not in committed and "\\1bs" not in committed
+    assert "\\furisy" not in committed and "\\1bs" not in committed and "\\q2" not in committed
     assert "LINE|mangetsu-colorcoding|Default|{\\1c&HFFFFFF&}" in committed
 
     def history(prefix):
@@ -571,7 +573,7 @@ $graphics.Dispose(); $bitmap.Dispose()
         invoke(frame, "Options...")
         preferences = dialog("Preferences")
         renderer = choice_control(preferences, lambda values: {"Mangetsu", "libass"}.issubset(values))
-        choose(renderer, choices(renderer).index(name))
+        choose(renderer, choices(renderer).index(name), combo=True)
         close(preferences, "OK")
 
     select_renderer("libass")
