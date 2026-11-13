@@ -7,7 +7,7 @@ from ctypes import wintypes as W
 import os
 import subprocess
 import unicodedata
-from native_gui_snapshot import Control, StaleWindow, control_snapshot, editor_row, enable_editor, notification_wparam
+from native_gui_snapshot import Control, StaleWindow, control_snapshot, editor_row, notification_wparam
 
 
 def prepare(profile, autoload):
@@ -230,30 +230,40 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
 
     def row(parent, caption):
         # Switching the border layer destroys and recreates the whole native
-        # form. A label may appear before its checkbox/input: treat the trio
+        # form. A label may appear before its input or reset: treat the trio
         # as one atomic readiness condition, not three separate lookups.
         return wait(lambda: editor_row(scan(parent), caption, normalized_label),
                     caption + " complete native editor row")
 
-    def wait_row_value(parent, caption, value, assigned):
+    def wait_row_value(parent, caption, value, enabled=True):
         def ready():
             handles = editor_row(scan(parent), caption, normalized_label)
             if handles is None:
                 return None
             try:
-                return (get_text(handles[1]) == value and user.IsWindowEnabled(handles[0])
-                        and enabled_in_dialog(handles[1], parent) == assigned)
+                return get_text(handles[0]) == value and enabled_in_dialog(handles[0], parent) == enabled
             except StaleWindow:
                 return None
-        return wait(ready, caption + " value after completed form switch")
+        return wait(ready, f"{caption} shows {value!r} (editable={enabled})")
 
     def assign(parent, caption, value, choice=False):
-        field = enable_editor(lambda: row(parent, caption), lambda h: enabled_in_dialog(h, parent),
-                              lambda h: send(h, 0xF5, timeout=30000))
+        field, _ = row(parent, caption)
+        assert enabled_in_dialog(field, parent), caption + " is directly editable"
         if choice:
             choose(field, value)
         else:
             set_text(field, value)
+            send(user.GetParent(field), 0x111, notification_wparam(user.GetDlgCtrlID(field), 0x300), field)
+
+    def reset(parent, caption):
+        _, control = row(parent, caption)
+        assert enabled_in_dialog(control, parent), caption + " can be reset"
+        send(control, 0xF5, timeout=30000)
+
+    def assert_direct_form(parent, fields):
+        controls = inventory(parent)
+        assert sum(normalized_label(c.label) == "reset" for c in controls) == fields
+        assert not any(normalized_label(c.label) == "override" for c in controls)
 
     def snapshot():
         target = profile / "style-ui-snapshot"
@@ -279,9 +289,11 @@ $bitmap.Save($env:AEGISUB_UI_PATH, [System.Drawing.Imaging.ImageFormat]::Png)
 $graphics.Dispose(); $bitmap.Dispose()
 """], env=env, check=True, timeout=30, stdout=subprocess.DEVNULL)
 
-    def editor(copy=False):
+    def editor(copy=False, name=None):
         invoke(frame, "Styles Manager...")
         manager = dialog("Styles Manager")
+        if name:
+            select_style(manager, name)
         click(manager, "Copy" if copy else "Edit", rightmost=True)
         return manager, dialog("Style Editor")
 
@@ -386,40 +398,91 @@ $graphics.Dispose(); $bitmap.Dispose()
     assert layout[controls[2].hwnd][2] <= layout[wrap][0] < min(layout[c.hwnd][0] for c in controls[3:]), "Wrap belongs to left group"
     assert send(wrap, 0x147) == 3, "Existing q2 must be selected"  # CB_GETCURSEL
     capture(style, "style-editor")
+    for caption, title, fields in (("Furigana…", "Furigana", 9), ("Vertical…", "Vertical layout", 5),
+                                   ("Multi-border…", "Multi-border", 7)):
+        click(style, caption)
+        untouched = dialog(title)
+        assert_direct_form(untouched, fields)
+        close(untouched, "OK")
+    click_sync(style, "Apply")
     click(style, "Furigana…")
     furi = dialog("Furigana")
-    assert get_text(row(furi, "Reading scale X (%)")[1]) == "70"
+    wait_row_value(furi, "Reading scale X (%)", "70")
+    wait_row_value(furi, "Reading scale Y (%)", "70", enabled=False)
     assign(furi, "Reading scale X (%)", "80")
+    wait_row_value(furi, "Reading scale Y (%)", "80", enabled=False)
     close(furi)
     click(style, "Furigana…")
     furi = dialog("Furigana")
-    assert get_text(row(furi, "Reading scale X (%)")[1]) == "70", "Child Cancel discards edits"
+    wait_row_value(furi, "Reading scale X (%)", "70")
+    reset(furi, "Reading scale X (%)")
+    wait_row_value(furi, "Reading scale X (%)", "50")
+    wait_row_value(furi, "Reading scale Y (%)", "50", enabled=False)
     assign(furi, "Reading scale X (%)", "80")
     capture(furi, "furigana")
     close(furi, "OK")
     close(style)
     close_manager(manager)
-    assert "\\furis70" in snapshot(), "Parent Cancel discards accepted child edits"
+    document = lambda content: [line for line in content.splitlines() if line.startswith(("STYLE|", "LINE|"))]
+    assert document(snapshot()) == document(replaced), "Untouched OK/Apply and parent Cancel preserve the document"
 
     manager, style = editor()
     click(style, "Furigana…")
     furi = dialog("Furigana")
     assign(furi, "Reading scale X (%)", "80")
     close(furi, "OK")
+    click(style, "Furigana…")
+    furi = dialog("Furigana")
+    click_sync(furi, "Use the same reading scale on both axes")
+    assign(furi, "Reading scale Y (%)", "90")
+    wait_row_value(furi, "Reading scale X (%)", "80")
+    close(furi, "OK")
+    click(style, "Furigana…")
+    furi = dialog("Furigana")
+    wait_row_value(furi, "Reading scale Y (%)", "90")
+    reset(furi, "Reading scale Y (%)")
+    wait_row_value(furi, "Reading scale Y (%)", "50")
+    wait_row_value(furi, "Reading scale X (%)", "80")
+    close(furi, "OK")
     click(style, "Vertical…")
     vertical = dialog("Vertical layout")
+    vert, _ = row(vertical, "Native vertical layout")
+    assert send(vert, 0x147) == 0, "Inherited vertical layout starts disabled"
     assign(vertical, "Native vertical layout", 1, choice=True)
     assign(vertical, "Vertical unit policy", 3, choice=True)
     capture(vertical, "vertical")
     close(vertical, "OK")
+    click(style, "Vertical…")
+    vertical = dialog("Vertical layout")
+    reset(vertical, "Native vertical layout")
+    vert, _ = row(vertical, "Native vertical layout")
+    assert send(vert, 0x147) == 0
+    assert send(row(vertical, "Vertical unit policy")[0], 0x147) == 3
+    assign(vertical, "Native vertical layout", 1, choice=True)
+    close(vertical, "OK")
     click(style, "Multi-border…")
     border = dialog("Multi-border")
     required(border, ("Border alpha (0–255)",))
-    # A radio handler saves the old layer, destroys its controls and builds
-    # the new form. Fence that entire operation before any new HWND lookup.
+    wait_row_value(border, "Border size X", "2")
+    for layer in range(2, 10):
+        click_sync(border, str(layer))
+        wait_row_value(border, "Border size X", "0")
+        assign(border, "Border size X", str(layer))
+        wait_row_value(border, "Border size Y", str(layer), enabled=False)
     click_sync(border, "10")
-    wait_row_value(border, "Border size X", "0", False)
+    wait_row_value(border, "Border size X", "0")
+    click_sync(border, "2")
+    wait_row_value(border, "Border size X", "2")
+    reset(border, "Border size X")
+    wait_row_value(border, "Border size X", "0")
+    wait_row_value(border, "Border size Y", "0", enabled=False)
+    assign(border, "Border size X", "2")
+    click_sync(border, "10")
+    wait_row_value(border, "Border size X", "0")
     assign(border, "Border size X", "-1")
+    click(border, "9")
+    close(dialog("Invalid style value"), "OK")
+    wait_row_value(border, "Border size X", "-1")
     click(border, "OK")
     close(dialog("Invalid style value"), "OK")
     assert user.IsWindowVisible(border), "Invalid numbers must not close or commit the editor"
@@ -434,19 +497,24 @@ $graphics.Dispose(); $bitmap.Dispose()
     close(style)
     close_manager(manager)
     committed = snapshot()
-    for tag in ("\\furis80", "\\vert1", "\\vtype3", "\\10bs3", "\\q0", "\\grd(45,", "\\vc("):
+    for tag in ("\\furisx80", "\\vert1", "\\vtype3", "\\10bs3", "\\q0", "\\grd(45,", "\\vc(",
+                *(f"\\{layer}bs{layer}" for layer in range(2, 10))):
         assert tag in committed, (tag, committed)
+    assert "\\furisy" not in committed and "\\1bs" not in committed
     assert "LINE|mangetsu-colorcoding|Default|{\\1c&HFFFFFF&}" in committed
 
     def history(prefix):
-        matches = [(label, command) for label, command in entries(user.GetMenu(frame)) if label.startswith(prefix)]
+        # wx updates dynamic captions when the Edit menu opens. The stored ID
+        # also works when the menu still displays its initial disabled caption.
+        matches = [(label, identifier) for label, identifier in entries(user.GetMenu(frame))
+                   if label.startswith(prefix) or label.casefold() == f"nothing to {prefix.lower()}"]
         assert len(matches) == 1, matches
         command_id(matches[0][1])
 
     history("Undo")
     assert "\\furis70" in snapshot(), "One undo restores ordinary style and metadata"
     history("Redo")
-    assert "\\furis80" in snapshot()
+    assert "\\furisx80" in snapshot()
     manager, style = editor(copy=True)
     edits = controls_of_kind(style, "edit")
     set_text(min(edits, key=lambda c: (c.bounds[1], c.bounds[0])).hwnd, "UI Copy")
@@ -469,23 +537,59 @@ $graphics.Dispose(); $bitmap.Dispose()
     close(dialog("Update script?"), "Yes")
     wait(lambda: not user.IsWindowVisible(style), "renamed Style Editor closes")
     close_manager(manager)
-    assert "LINE|mangetsu-style|UI Sign|" in snapshot()
+    renamed = snapshot()
+    assert "LINE|mangetsu-style|UI Sign|" in renamed
     command("Save Subtitles")
-    wait(lambda: "\\furis80" in (profile / "style-ui.ass").read_text(encoding="utf-8-sig"), "committed metadata saved")
+    wait(lambda: "\\furisx80" in (profile / "style-ui.ass").read_text(encoding="utf-8-sig"), "committed metadata saved")
     saved = (profile / "style-ui.ass").read_text(encoding="utf-8-sig")
     assert "WrapStyle: 0" in saved and "mangetsu-colorcoding" in saved
 
-    invoke(frame, "Options...")
-    preferences = dialog("Preferences")
-    renderer = choice_control(preferences, lambda values: {"Mangetsu", "libass"}.issubset(values))
-    choose(renderer, choices(renderer).index("libass"))
-    close(preferences, "OK")
+    reopened = profile / "style-ui-reopened.ass"
+    reopened.write_bytes((profile / "style-ui.ass").read_bytes())
+    invoke(frame, "Open Subtitles...")
+    picker = dialog("Open subtitles file")
+
+    def filename_edit():
+        edits = [control for control in inventory(picker)
+                 if control.kind.lower() == "edit" and enabled_in_dialog(control.hwnd, picker)]
+        for control in edits:
+            ancestor = control.hwnd
+            while ancestor and ancestor != picker:
+                if (user.GetDlgCtrlID(ancestor) == 1148  # Win32 file-name combo (cmb13)
+                        or text(ancestor, True) == "FileNameControlHost"):
+                    return control.hwnd
+                ancestor = user.GetParent(ancestor)
+        return edits[0].hwnd if len(edits) == 1 else None
+
+    set_text(wait(filename_edit, "native file-name editor"), str(reopened))
+    close(picker, "Open")
+    wait(lambda: reopened.stem in text(frame), "reopened ASS becomes the active document")
+    reloaded = snapshot()
+    assert document(reloaded) == document(renamed), "Reopening preserves the saved styles and metadata"
+
+    def select_renderer(name):
+        invoke(frame, "Options...")
+        preferences = dialog("Preferences")
+        renderer = choice_control(preferences, lambda values: {"Mangetsu", "libass"}.issubset(values))
+        choose(renderer, choices(renderer).index(name))
+        close(preferences, "OK")
+
+    select_renderer("libass")
     wait(lambda: not any(name == "Show Mangetsu Metadata" for name, _ in entries(user.GetMenu(frame))), "renderer switch hides metadata menu")
-    manager, style = editor()
+    manager, style = editor(name="UI Sign")
     hidden_names = {normalized_label(n) for n in ("Furigana…", "Vertical…", "Multi-border…", "Wrap Mode")}
     assert not any(normalized_label(c.label) in hidden_names for c in inventory(style))
     capture(style, "style-editor-libass")
     close(style)
     close_manager(manager)
-    assert "\\furis80" in snapshot(), "Renderer switching preserves saved metadata"
-    (profile / "style-ui-result.txt").write_text("metadata visibility, sort, replace, transactions, layout, copy/delete/rename, undo/redo, save, renderer switch: passed\n", encoding="utf-8")
+    assert "\\furisx80" in snapshot(), "Renderer switching preserves saved metadata"
+    select_renderer("Mangetsu")
+    manager, style = editor(name="UI Sign")
+    click(style, "Furigana…")
+    furi = dialog("Furigana")
+    wait_row_value(furi, "Reading scale X (%)", "80")
+    wait_row_value(furi, "Reading scale Y (%)", "50")
+    close(furi)
+    close(style)
+    close_manager(manager)
+    (profile / "style-ui-result.txt").write_text("metadata visibility, direct edit/reset, ten layers, validation, transactions, copy/delete/rename, undo/redo, save/reload, renderer switching: passed\n", encoding="utf-8")

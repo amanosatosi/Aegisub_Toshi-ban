@@ -10338,12 +10338,16 @@ msgid "Invalid style value"
 msgstr "ပုံစံတန်ဖိုး မမှန်ပါ"
 
 #: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
-msgid "Override"
-msgstr "ကိုယ်တိုင်သတ်မှတ်ရန်"
+msgid "Reset"
+msgstr "မူလအတိုင်း ပြန်ထားရန်"
 
 #: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
-msgid "Unchecked uses the style or native default. Checked writes an explicit Mangetsu value."
-msgstr "အမှန်မခြစ်ထားလျှင် မူလပုံစံ သို့မဟုတ် စနစ်၏ မူလတန်ဖိုးကို သုံးမည်။ အမှန်ခြစ်ထားလျှင် Mangetsu တန်ဖိုးကို သီးသန့်သတ်မှတ်မည်။"
+msgid "Restore the inherited value for %s."
+msgstr "%s ကို အမွေဆက်ခံထားသော တန်ဖိုးသို့ ပြန်ထားပါ။"
+
+#: src/dialog_mangetsu_style.cpp
+msgid "Invalid value for %s."
+msgstr "%s အတွက် တန်ဖိုး မမှန်ပါ။"
 
 #: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
 msgid "Use the same reading scale on both axes"

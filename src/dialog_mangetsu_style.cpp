@@ -4,12 +4,14 @@
 #include "ass_style.h"
 #include "colour_button.h"
 #include "compat.h"
+#include "format.h"
 #include <libaegisub/color.h>
 #include <cmath>
 #include <iomanip>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/choice.h>
 #include <wx/dialog.h>
@@ -31,12 +33,13 @@ struct Field {
 };
 struct Row {
 	Field field;
-	wxCheckBox *assigned = nullptr;
+	wxButton *reset = nullptr;
 	wxWindow *input = nullptr;
 	wxTextCtrl *first = nullptr, *second = nullptr;
 	ColourButton *color = nullptr;
 	wxChoice *choice = nullptr;
 	std::string original;
+	wxString original_first, original_second;
 	bool originally_assigned = false;
 };
 class PropertyDialog final : public wxDialog {
@@ -113,44 +116,66 @@ class PropertyDialog final : public wxDialog {
 			if (row.second) row.second->ChangeValue(to_wx(value.substr(comma + 1)));
 		}
 	}
-	bool Save() {
+	bool Save(Row const *reset = nullptr) {
+		LinkAxes();
+		auto candidate = working;
+		// With the axes linked, the X reset applies to the pair.
+		auto reset_y = linked && linked->GetValue() && reset == rows[AxisX()].get()
+			? rows[AxisX() + 1].get() : nullptr;
 		for (auto const& entry : rows) {
 			auto& row = *entry;
-			bool assigned = row.assigned->GetValue();
-			std::string value;
-			try { if (assigned) value = Read(row, true); }
-			catch (...) {
-				wxMessageBox(_("Enter a finite number in the allowed range. Sizes and scales cannot be negative; alpha must be an integer from 0 to 255. Blur cannot exceed 100; edge blur cannot exceed 127."), _("Invalid style value"), wxOK | wxICON_ERROR, this);
-				row.input->SetFocus(); return false;
+			if (&row == reset || &row == reset_y) {
+				if (row.originally_assigned)
+					candidate.Set(row.field.key, std::nullopt);
+				continue;
 			}
-			if (assigned != row.originally_assigned || (assigned && value != row.original))
-				working.Set(row.field.key, assigned ? std::optional<std::string>(value) : std::nullopt);
+			if (row.first && row.first->GetValue() == row.original_first &&
+				(!row.second || row.second->GetValue() == row.original_second))
+				continue;
+			std::string value;
+			try { value = Read(row, true); }
+			catch (std::invalid_argument const&) {
+				wxMessageBox(fmt_tl("Invalid value for %s.", row.field.label) + "\n\n" +
+					_("Enter a finite number in the allowed range. Sizes and scales cannot be negative; alpha must be an integer from 0 to 255. Blur cannot exceed 100; edge blur cannot exceed 127."),
+					_("Invalid style value"), wxOK | wxICON_ERROR, this);
+				(row.first ? row.first : row.input)->SetFocus();
+				return false;
+			}
+			if (value != row.original)
+				candidate.Set(row.field.key, value);
 		}
+		working = std::move(candidate);
 		return true;
 	}
+	size_t AxisX() const { return page == StyleEditorPage::Furigana ? 1 : 0; }
 	void LinkAxes() {
-		if (!linked || rows.size() < 2) return;
-		size_t x = page == StyleEditorPage::Furigana ? 1 : 0;
-		auto& first = *rows[x]; auto& second = *rows[x + 1];
-		if (linked->GetValue()) {
-			second.assigned->SetValue(first.assigned->GetValue());
+		if (!linked) return;
+		auto& first = *rows[AxisX()];
+		auto& second = *rows[AxisX() + 1];
+		if (linked->GetValue())
 			second.first->ChangeValue(first.first->GetValue());
+		second.input->Enable(!linked->GetValue());
+		second.reset->Enable(!linked->GetValue());
+	}
+	void LoadValues(StyleValues const& values) {
+		for (auto const& row : rows) {
+			auto const& value = values.at(row->field.key);
+			SetInput(*row, value.value);
+			row->originally_assigned = value.assigned;
+			row->original = Read(*row, false);
+			if (row->first) row->original_first = row->first->GetValue();
+			if (row->second) row->original_second = row->second->GetValue();
 		}
-		second.assigned->Enable(!linked->GetValue());
-		second.input->Enable(!linked->GetValue() && second.assigned->GetValue());
 	}
 	void Build() {
+		linked = nullptr;
 		rows.clear();
 		body->Clear(true);
-		auto values = working.Values(style, wrap);
 		auto form = new wxFlexGridSizer(3, Dip(5), Dip(8));
-		form->AddGrowableCol(2);
+		form->AddGrowableCol(1);
 		for (auto field : Fields()) {
 			auto row = std::make_unique<Row>();
 			row->field = field;
-			row->assigned = new wxCheckBox(this, wxID_ANY, _("Override"));
-			row->assigned->SetToolTip(_("Unchecked uses the style or native default. Checked writes an explicit Mangetsu value."));
-			form->Add(row->assigned, 0, wxALIGN_CENTER_VERTICAL);
 			form->Add(new wxStaticText(this, wxID_ANY, field.label), 0, wxALIGN_CENTER_VERTICAL);
 			if (field.kind == Kind::Choice) row->input = row->choice = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, static_cast<int>(field.choices.size()), field.choices.data());
 			else if (field.kind == Kind::Color) row->input = row->color = new ColourButton(this, GetTextExtent("000000"), false);
@@ -166,28 +191,24 @@ class PropertyDialog final : public wxDialog {
 					panel->SetSizer(pair); row->input = panel;
 				} else row->input = row->first;
 			}
-			SetInput(*row, values.at(field.key).value);
-			row->originally_assigned = values.at(field.key).assigned;
-			row->assigned->SetValue(row->originally_assigned);
-			row->input->Enable(row->originally_assigned);
-			row->original = Read(*row, false);
 			form->Add(row->input, 1, wxEXPAND);
+			row->reset = new wxButton(this, wxID_ANY, _("Reset"), wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+			row->reset->SetToolTip(fmt_tl("Restore the inherited value for %s.", field.label));
+			form->Add(row->reset, 0, wxALIGN_CENTER_VERTICAL);
 			auto raw = row.get();
-			row->assigned->Bind(wxEVT_CHECKBOX, [this, raw](wxCommandEvent&) {
-				if (!raw->assigned->GetValue()) {
-					auto reset = working; reset.Set(raw->field.key, std::nullopt);
-					SetInput(*raw, reset.Values(style, wrap).at(raw->field.key).value);
-				}
-				raw->input->Enable(raw->assigned->GetValue()); LinkAxes();
+			row->reset->Bind(wxEVT_BUTTON, [this, raw](wxCommandEvent&) {
+				if (!Save(raw)) return;
+				LoadValues(working.Values(style, wrap));
+				LinkAxes();
 			});
 			rows.push_back(std::move(row));
 		}
 		body->Add(form, 1, wxEXPAND);
-		linked = nullptr;
+		LoadValues(working.Values(style, wrap));
 		if (page != StyleEditorPage::Vertical) {
 			linked = new wxCheckBox(this, wxID_ANY, page == StyleEditorPage::Furigana ? _("Use the same reading scale on both axes") : _("Use the same border size on both axes"));
-			size_t x = page == StyleEditorPage::Furigana ? 1 : 0;
-			linked->SetValue(Read(*rows[x], false) == Read(*rows[x + 1], false) && rows[x]->originally_assigned == rows[x + 1]->originally_assigned);
+			auto x = AxisX();
+			linked->SetValue(rows[x]->original == rows[x + 1]->original && rows[x]->originally_assigned == rows[x + 1]->originally_assigned);
 			linked->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) { LinkAxes(); });
 			rows[x]->first->Bind(wxEVT_TEXT, [this](wxCommandEvent&) { LinkAxes(); });
 			body->Add(linked, 0, wxTOP, Dip(8));

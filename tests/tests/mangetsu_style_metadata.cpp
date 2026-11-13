@@ -27,6 +27,45 @@ TEST(MangetsuStyleMetadata, DefaultsFollowOrdinaryOutlineAndScriptWrap) {
 	EXPECT_EQ(values.at("q").value, "2"); EXPECT_FALSE(values.at("q").assigned);
 	EXPECT_EQ(values.at("1bsx").value, "3.5"); EXPECT_EQ(values.at("10bsx").value, "0");
 }
+
+TEST(MangetsuStyleMetadata, UntouchedExplicitDefaultAndResetHaveDistinctStates) {
+	AssFile file;
+	auto& style = AddStyle(file);
+	std::string original = "{\\furis50\\q2}";
+	Add(file, original);
+	StyleMetadataDraft draft(file, style);
+	auto values = draft.Values(style, 0);
+	EXPECT_FALSE(draft.Dirty());
+	EXPECT_EQ(draft.Texts(style, 0), std::vector<std::string>{original});
+	EXPECT_TRUE(values.at("furisx").assigned);
+	EXPECT_EQ(values.at("furisx").value, "50");
+	EXPECT_FALSE(values.at("vert").assigned);
+	EXPECT_EQ(values.at("vert").value, "0");
+
+	draft.Set("vert", "1");
+	draft.Set("furisx", std::nullopt);
+	values = draft.Values(style, 0);
+	EXPECT_TRUE(draft.Dirty());
+	EXPECT_FALSE(values.at("furisx").assigned);
+	EXPECT_EQ(values.at("furisx").value, "50");
+	EXPECT_TRUE(values.at("furisy").assigned);
+	EXPECT_EQ(values.at("furisy").value, "50");
+	EXPECT_TRUE(values.at("vert").assigned);
+	EXPECT_EQ(values.at("vert").value, "1");
+	EXPECT_EQ(draft.Texts(style, 0), std::vector<std::string>{"{\\furisy50\\q2\\vert1}"});
+}
+
+TEST(MangetsuStyleMetadata, LinkedAxisEditsUseCommonTagsAndResetRemovesThem) {
+	AssStyle style;
+	StyleMetadataDraft draft;
+	EXPECT_TRUE(draft.Texts(style, 0).empty());
+	draft.Set("furisx", "80");
+	draft.Set("furisy", "80");
+	EXPECT_EQ(draft.Texts(style, 0), std::vector<std::string>{"{\\furis80}"});
+	draft.Set("furisx", std::nullopt);
+	draft.Set("furisy", std::nullopt);
+	EXPECT_TRUE(draft.Texts(style, 0).empty());
+}
 TEST(MangetsuStyleMetadata, StrictTargetsAndInitialSharedBlock) {
 	AssFile file; auto& first = AddStyle(file); auto& last = AddStyle(file); auto& sign = AddStyle(file, "Sign");
 	EXPECT_EQ(mangetsu::ResolveMetadataStyle(file, "***default"), &last);
@@ -78,7 +117,7 @@ TEST(MangetsuStyleMetadata, StableNormalizationKeepsTypesAndInitialBlockContents
 	EXPECT_EQ(lines[0], &style1); EXPECT_EQ(lines[1], &style2);
 	EXPECT_EQ(lines[2], &actor1); EXPECT_EQ(lines[3], &whitelist); EXPECT_EQ(lines[4], &actor2);
 	EXPECT_FALSE(mangetsu::NormalizeInitialMetadata(file));
-	EXPECT_EQ(ordinary.Row, -1); EXPECT_EQ(late.Row, -1);
+	EXPECT_EQ(ordinary.Row, 5); EXPECT_EQ(late.Row, 6);
 }
 
 TEST(MangetsuStyleMetadata, ExternalImportCopiesSelectedStylesAndAllActorDeclarations) {
@@ -100,7 +139,7 @@ TEST(MangetsuStyleMetadata, ExternalImportCopiesSelectedStylesAndAllActorDeclara
 	EXPECT_EQ(lines[1]->Actor.get(), "Old");
 	EXPECT_EQ(lines[2]->Actor.get(), "Nene");
 	EXPECT_EQ(lines[3]->Actor.get(), "mangetsu-colorcode-applied-styles");
-	EXPECT_FALSE(mangetsu::ImportMetadata(destination, source, {source_default.name}));
+	EXPECT_TRUE(mangetsu::ImportMetadata(destination, source, {source_default.name}));
 	EXPECT_EQ(mangetsu::InitialMetadata(destination).size(), 5u);
 }
 TEST(MangetsuStyleMetadata, RelativeNumbersAndCommonAxisAliasesAreResolvedOnce) {

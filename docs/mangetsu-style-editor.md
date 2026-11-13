@@ -12,9 +12,10 @@ operations. Sorting keeps the initial metadata header in its authored order.
 The familiar Style Editor retains its content. Its single bottom row adds
 **Furigana…**, **Vertical…**, **Multi-border…**, and **Wrap Mode** on the left,
 with the original action buttons on the right. Other renderers hide this group.
-The three property dialogs are independently resizable. **Override** distinguishes
-explicit assignments from effective native/style defaults; uncheck a property to
-restore inheritance. Linked axes permit common reading/border sizes. Native
+The three property dialogs are independently resizable. Edit the displayed
+values directly to set them for this style. **Reset** restores the inherited
+value. With linked reading scales or border sizes, editing or resetting X
+applies to both axes. Native
 border layers 1–10 are independent; a color alone never enables a layer.
 
 Child OK only updates the parent's pending state. Parent Apply/OK commits

@@ -15,19 +15,6 @@ def notification_wparam(identifier, notification):
     return (identifier & 0xFFFF) | ((notification & 0xFFFF) << 16)
 
 
-def enable_editor(lookup, enabled, click):
-    """Observe the editor, not BM_GETCHECK on owner-drawn wx checkboxes."""
-    override, field = lookup()
-    if not enabled(override):
-        raise AssertionError("Override is unavailable (unlink the axes before editing this row)")
-    if not enabled(field):
-        click(override)
-        override, field = lookup()
-    if not enabled(field):
-        raise AssertionError("Override callback did not enable its editor")
-    return field
-
-
 @dataclass(frozen=True)
 class Control:
     hwnd: int
@@ -50,17 +37,19 @@ def control_snapshot(handles, describe, still_current):
 
 
 def editor_row(controls, caption, normalize):
-    """Find label, Override and input in one snapshot, never by re-enumerating."""
+    """Find label, input and Reset in one snapshot, including disabled inputs."""
     if controls is None:
         return None
     titles = [c for c in controls if normalize(c.label) == normalize(caption)]
     for title in titles:
         y = (title.bounds[1] + title.bounds[3]) / 2
         aligned = [c for c in controls if abs((c.bounds[1] + c.bounds[3]) / 2 - y) < 12]
-        overrides = [c for c in aligned if normalize(c.label) == "override"]
         inputs = [c for c in aligned if c.kind.lower() in ("edit", "combobox")
                   and c.bounds[0] >= title.bounds[2]]
-        if overrides and inputs:
-            nearest = lambda c: abs((c.bounds[1] + c.bounds[3]) / 2 - y)
-            return min(overrides, key=nearest).hwnd, min(inputs, key=lambda c: c.bounds[0]).hwnd
+        resets = [c for c in aligned if c.kind.lower() == "button" and normalize(c.label) == "reset"]
+        if inputs and resets:
+            field = min(inputs, key=lambda c: c.bounds[0])
+            reset = min(resets, key=lambda c: abs((c.bounds[1] + c.bounds[3]) / 2 - y))
+            if reset.bounds[0] >= field.bounds[2]:
+                return field.hwnd, reset.hwnd
     return None
