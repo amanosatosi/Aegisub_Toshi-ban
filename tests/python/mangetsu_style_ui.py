@@ -407,7 +407,9 @@ $graphics.Dispose(); $bitmap.Dispose()
     # wxWidgets may publish a native dialog window before all children have
     # finished showing. Wait for its actual controls, but never ignore an
     # absent button: report which one is missing and retain a UI screenshot.
-    expected = ("Furigana...", "Vertical...", "Multi-border...", "OK", "Cancel", "Apply", "Help")
+    feature_captions = ("Furigana...", "Vertical...", "Multi-border...",
+                        "Text alignment...", "Extended boxes...", "Gradient defaults...")
+    expected = feature_captions + ("OK", "Cancel", "Apply", "Help")
     try:
         controls = required(style, expected, seconds=10)
     except AssertionError as exc:
@@ -430,13 +432,20 @@ $graphics.Dispose(); $bitmap.Dispose()
                              f"native child inventory: {native_dump}") from exc
     wrap = choice_control(style, lambda values: values == [
         "Inherit Script", "Smart", "End-of-line", "No automatic wrap", "Alternative smart"])
-    branded, normal = controls[:3], controls[3:]
-    positions = [c.bounds for c in branded] + [rect(wrap)] + [c.bounds for c in normal]
-    centers = [(top + bottom) / 2 for _, top, _, bottom in positions]
-    assert max(centers) - min(centers) < 5, "Direct features, Wrap Mode and native actions share the bottom row"
-    left_group = positions[:4]
-    assert all(left[2] <= right[0] for left, right in zip(left_group, left_group[1:])), positions
-    assert left_group[-1][2] <= min(bounds[0] for bounds in positions[4:]), positions
+    branded, normal = controls[:len(feature_captions)], controls[len(feature_captions):]
+    first_row = [c.bounds for c in branded[:3]]
+    second_row = [c.bounds for c in branded[3:]]
+    wrap_label = required(style, ("Wrap Mode",))[0].bounds
+    wrap_bounds = rect(wrap)
+    style_name = required(style, ("Style Name",))[0].bounds
+    for row in (first_row, second_row):
+        assert all(left[2] <= right[0] for left, right in zip(row, row[1:])), row
+        assert max(bounds[1] for bounds in row) < min(bounds[3] for bounds in row), row
+    assert first_row[0][0] == second_row[0][0] == wrap_label[0], "The extension rows share a left edge"
+    assert max(bounds[3] for bounds in first_row) <= min(bounds[1] for bounds in second_row)
+    assert max(bounds[3] for bounds in second_row) <= min(wrap_label[1], wrap_bounds[1])
+    assert wrap_label[2] <= wrap_bounds[0] and max(wrap_label[1], wrap_bounds[1]) < min(wrap_label[3], wrap_bounds[3])
+    assert max(wrap_label[3], wrap_bounds[3]) <= style_name[1], "Wrap Mode precedes the ordinary left-side controls"
     assert all(normalized_label(c.label) != normalized_label("Mangetsu Extensions...")
                for c in inventory(style)), "The original feature buttons are the direct entry points"
     for control in branded:

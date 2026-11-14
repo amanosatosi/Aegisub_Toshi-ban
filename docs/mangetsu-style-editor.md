@@ -9,9 +9,9 @@ selection, never the ASS document.
 Hidden declarations are excluded from ordinary Find/Replace and adjoining timing
 operations. Sorting keeps the initial metadata header in its authored order.
 
-The Style Editor opens **Furigana**, **Vertical**, and **Multi-border**
-directly from the bottom-left buttons, beside **Wrap Mode**. **Text alignment**,
-**Extended boxes**, and **Gradient defaults** are beside the preview. On
+The Style Editor groups **Furigana**, **Vertical**, **Multi-border**,
+**Text alignment**, **Extended boxes**, and **Gradient defaults** on the left.
+**Wrap Mode** sits directly below the buttons, before the ordinary style fields. On
 Windows, yellow identifies an extension button. The standard Style Editor
 actions use the system palette. Windows contrast themes and other platforms
 use system controls. Extensions can be authored with any renderer. Select

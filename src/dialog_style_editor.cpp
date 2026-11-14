@@ -367,14 +367,14 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	PreviewBox->Add(SubsPreview, 1, wxEXPAND | wxBOTTOM, 5);
 	PreviewBox->Add(PreviewBottomSizer, 0, wxEXPAND | wxBOTTOM, 0);
 
-	// Buttons
+	// Mangetsu controls
 	auto gap = 4;
 #if wxCHECK_VERSION(3, 1, 0)
 	gap = FromDIP(gap);
 #endif
-	auto ButtonSizer = new wxBoxSizer(wxHORIZONTAL);
 	auto feature_actions = new wxBoxSizer(wxHORIZONTAL);
-	auto preview_actions = new wxBoxSizer(wxHORIZONTAL);
+	auto more_features = new wxBoxSizer(wxHORIZONTAL);
+	auto wrap_controls = new wxBoxSizer(wxHORIZONTAL);
 	auto add_feature = [&](wxSizer *row, wxString const& label, auto edit) {
 		auto button = new mangetsu::MangetsuButton(this, label);
 		button->Enable(!store);
@@ -386,6 +386,7 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 			if (edit(wrap)) UpdatePreview();
 		});
 		row->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
+		button->MoveBeforeInTabOrder(StyleName);
 	};
 	auto properties = [this](mangetsu::StyleEditorPage page) {
 		return [this, page](int wrap) { return mangetsu::EditStyleProperties(this, metadata, *work, wrap, page); };
@@ -393,9 +394,18 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	add_feature(feature_actions, _(L"Furigana\u2026"), properties(mangetsu::StyleEditorPage::Furigana));
 	add_feature(feature_actions, _(L"Vertical\u2026"), properties(mangetsu::StyleEditorPage::Vertical));
 	add_feature(feature_actions, _(L"Multi-border\u2026"), properties(mangetsu::StyleEditorPage::Borders));
-	feature_actions->Add(new wxStaticText(this, wxID_ANY, _("Wrap Mode")), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, gap);
+	add_feature(more_features, _("Text alignment..."), [this](int wrap) {
+		return mangetsu::EditStyleAlignment(this, metadata, *work, wrap, from_wx(PreviewText->GetValue()));
+	});
+	add_feature(more_features, _("Extended boxes..."), properties(mangetsu::StyleEditorPage::Box));
+	add_feature(more_features, _("Gradient defaults..."), [this](int wrap) {
+		return mangetsu::EditStyleGradients(this, metadata, *work, wrap);
+	});
+
+	wrap_controls->Add(new wxStaticText(this, wxID_ANY, _("Wrap Mode")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
 	wxString wrapping[] = {_("Inherit Script"), _("Smart"), _("End-of-line"), _("No automatic wrap"), _("Alternative smart")};
 	WrapMode = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, 5, wrapping);
+	WrapMode->MoveBeforeInTabOrder(StyleName);
 	WrapMode->Enable(!store);
 	WrapMode->SetToolTip(store ? _("Style catalogs store ordinary ASS style fields only. Edit Mangetsu defaults in the current script.")
 		: mangetsu::CompatibilityText());
@@ -405,22 +415,17 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 		UpdateWorkStyle();
 		UpdatePreview();
 	});
-	feature_actions->Add(WrapMode, 0, wxALIGN_CENTER_VERTICAL);
-	ButtonSizer->Add(feature_actions, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, gap);
+	wrap_controls->Add(WrapMode, 0, wxALIGN_CENTER_VERTICAL);
+
+	auto ButtonSizer = new wxBoxSizer(wxHORIZONTAL);
 	ButtonSizer->AddStretchSpacer(1);
 	ButtonSizer->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxAPPLY | wxHELP), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, gap);
 
-	add_feature(preview_actions, _("Text alignment..."), [this](int wrap) {
-		return mangetsu::EditStyleAlignment(this, metadata, *work, wrap, from_wx(PreviewText->GetValue()));
-	});
-	add_feature(preview_actions, _("Extended boxes..."), properties(mangetsu::StyleEditorPage::Box));
-	add_feature(preview_actions, _("Gradient defaults..."), [this](int wrap) {
-		return mangetsu::EditStyleGradients(this, metadata, *work, wrap);
-	});
-	PreviewBox->Add(preview_actions, 0, wxTOP | wxEXPAND, gap);
-
 	// Left side sizer
 	wxSizer *LeftSizer = new wxBoxSizer(wxVERTICAL);
+	LeftSizer->Add(feature_actions, 0, wxBOTTOM, gap);
+	LeftSizer->Add(more_features, 0, wxBOTTOM, gap);
+	LeftSizer->Add(wrap_controls, 0, wxBOTTOM, 2 * gap);
 	LeftSizer->Add(NameSizer, 0, wxBOTTOM | wxEXPAND, 5);
 	LeftSizer->Add(FontSizer, 0, wxBOTTOM | wxEXPAND, 5);
 	LeftSizer->Add(ColorsSizer, 0, wxBOTTOM | wxEXPAND, 5);
