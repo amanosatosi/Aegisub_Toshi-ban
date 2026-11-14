@@ -58,3 +58,7 @@ finally {
         if ($resolvedRoot -eq $root) { Remove-Item -LiteralPath $resolvedRoot -Recurse -Force }
     }
 }
+
+# GitHub Actions propagates the last native exit code. The corrupt archive
+# intentionally makes 7-Zip fail, and reaching here means all checks passed.
+exit 0
