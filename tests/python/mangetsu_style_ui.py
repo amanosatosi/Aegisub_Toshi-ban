@@ -306,14 +306,19 @@ $graphics.Dispose(); $bitmap.Dispose()
 
     def assert_native_palette(branded, normal):
         branded_box, normal_box = rect(branded), rect(normal)
-        def sample(bounds):
-            return bounds[0] + (bounds[2] - bounds[0]) // 8, (bounds[1] + bounds[3]) // 2
+        def samples(bounds):
+            left, top, right, bottom = bounds
+            return [(left + (right - left) * x // 8, top + (bottom - top) * y // 8)
+                    for x in (2, 4, 6) for y in (2, 4, 6)]
         # PrintWindow includes the rendered child controls. In wx master the
         # system dark-mode button may itself use wx's own drawing path.
-        yellow, gray = capture(user.GetParent(branded), "style-editor", (sample(branded_box), sample(normal_box)))
+        branded_samples, normal_samples = samples(branded_box), samples(normal_box)
+        pixels = capture(user.GetParent(branded), "style-editor", branded_samples + normal_samples)
+        assert len(pixels) == len(branded_samples) + len(normal_samples)
+        yellow, gray = pixels[:len(branded_samples)], pixels[len(branded_samples):]
         accents = {"F2D46D", "FFE48A", "D9B94F"}
-        assert yellow in accents, ("Mangetsu button accent", yellow)
-        assert gray not in accents, ("Standard OK button keeps the system palette", gray)
+        assert sum(pixel in accents for pixel in yellow) >= 3, ("Mangetsu button accent", yellow)
+        assert not accents.intersection(gray), ("Standard OK button keeps the system palette", gray)
 
     def editor(copy=False, name=None):
         invoke(frame, "Styles Manager...")
@@ -333,7 +338,19 @@ $graphics.Dispose(); $bitmap.Dispose()
         return dialog("Mangetsu Extensions")
 
     def tab(parent, index):
-        control = controls_of_kind(parent, "systabcontrol32", 1)[0].hwnd
+        # wx registers a private copy of the Win32 tab class on some
+        # versions. The native notebook is the visible four-page control.
+        def find_tab():
+            for hwnd in windows(pid, parent):
+                if not user.IsWindowVisible(hwnd):
+                    continue
+                try:
+                    if send(hwnd, 0x1304) == 4:  # TCM_GETITEMCOUNT
+                        return hwnd
+                except StaleWindow:
+                    continue
+            return None
+        control = wait(find_tab, "visible four-page notebook")
         # The native tab handles keyboard navigation and notifies wxNotebook.
         current = send(control, 0x130B)  # TCM_GETCURSEL
         key = 0x27 if index > current else 0x25
