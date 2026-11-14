@@ -1,6 +1,5 @@
 // Copyright (c) 2026, Aegisub Project. Distributed under the ISC license.
 #include "dialog_mangetsu_style.h"
-#include "dialog_mangetsu_gradient.h"
 #include "mangetsu_style_metadata.h"
 #include "ass_style.h"
 #include "colour_button.h"
@@ -20,7 +19,6 @@
 #include <wx/choice.h>
 #include <wx/dialog.h>
 #include <wx/msgdlg.h>
-#include <wx/notebook.h>
 #include <wx/panel.h>
 #include <wx/radiobox.h>
 #include <wx/sizer.h>
@@ -303,10 +301,10 @@ bool EditStyleProperties(wxWindow *parent, StyleMetadataDraft& pending, AssStyle
 	pending = dialog.Result(); return true;
 }
 
-bool EditStyleExtensions(wxWindow *parent, StyleMetadataDraft& pending, AssStyle const& style,
+bool EditStyleAlignment(wxWindow *parent, StyleMetadataDraft& pending, AssStyle const& style,
 	int script_wrap, std::string const& preview_text) {
 	auto draft = pending;
-	wxDialog dialog(parent, wxID_ANY, _("Mangetsu Extensions"), wxDefaultPosition, wxDefaultSize,
+	wxDialog dialog(parent, wxID_ANY, _("Mangetsu Style Alignment"), wxDefaultPosition, wxDefaultSize,
 		wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
 	StyleSurface(&dialog);
 	auto root = new wxBoxSizer(wxVERTICAL);
@@ -314,71 +312,22 @@ bool EditStyleExtensions(wxWindow *parent, StyleMetadataDraft& pending, AssStyle
 	auto heading = new wxStaticText(&dialog, wxID_ANY, CompatibilityText());
 	if (OPT_GET("Subtitle/Provider")->GetString() != "Mangetsu")
 		heading->SetLabel(heading->GetLabel() + "\n" + _("Select Mangetsu in Preferences to preview these extensions."));
+	heading->Wrap(Dip(&dialog, 390));
 	root->Add(heading, 0, wxEXPAND | wxALL, gap);
-	auto tabs = new wxNotebook(&dialog, wxID_ANY);
-	auto add_page = [&](wxString const& title) {
-		auto panel = new wxPanel(tabs);
-		StyleSurface(panel);
-		auto content = new wxBoxSizer(wxVERTICAL);
-		panel->SetSizer(content);
-		tabs->AddPage(panel, title);
-		return panel;
-	};
-	auto general = add_page(_("General"));
-	auto layout = add_page(_("Layout"));
-	auto appearance = add_page(_("Appearance"));
-	auto gradients = add_page(_("Gradients"));
-	auto values = draft.Values(style, script_wrap);
 	auto preview = new SubtitlesPreview(&dialog, Dip(&dialog, wxSize(330, 125)), wxBORDER_SIMPLE,
 		OPT_GET("Colour/Style Editor/Background/Preview")->GetColor());
 	auto refresh = [&] {
 		preview->SetMangetsuMetadata(draft.Texts(style, script_wrap), script_wrap);
 		preview->SetStyle(style);
 	};
-	auto current_ta = values.at("ta");
-	auto picker = new AlignmentPicker(general, current_ta.assigned ? std::stoi(current_ta.value) : 0,
+	auto current_ta = draft.Values(style, script_wrap).at("ta");
+	auto picker = new AlignmentPicker(&dialog, current_ta.assigned ? std::stoi(current_ta.value) : 0,
 		style.alignment, _("Inherit ordinary style alignment"), [&](int alignment) {
 			draft.Set("ta", alignment ? std::optional<std::string>(std::to_string(alignment)) : std::nullopt);
 			refresh();
 		});
-	heading->Wrap(Dip(&dialog, 390));
-	general->GetSizer()->Add(new wxStaticText(general, wxID_ANY, _("Logical line alignment")), 0, wxALL, gap);
-	general->GetSizer()->Add(picker, 0, wxLEFT | wxRIGHT | wxBOTTOM, gap);
-	auto wrapping = new wxChoice(layout, wxID_ANY);
-	for (auto const& name : {_("Inherit Script"), _("Smart"), _("End-of-line"),
-		_("No automatic wrap"), _("Alternative smart")}) wrapping->Append(name);
-	auto wrap = values.at("q");
-	wrapping->SetSelection(wrap.assigned ? std::stoi(wrap.value) + 1 : 0);
-	wrapping->Bind(wxEVT_CHOICE, [&](wxCommandEvent&) {
-		int selection = wrapping->GetSelection();
-		draft.Set("q", selection > 0 ? std::optional<std::string>(std::to_string(selection - 1)) : std::nullopt);
-		refresh();
-	});
-	layout->GetSizer()->Add(new wxStaticText(layout, wxID_ANY, _("Wrap Mode")), 0, wxLEFT | wxTOP, gap);
-	layout->GetSizer()->Add(wrapping, 0, wxEXPAND | wxALL, gap);
-	auto properties = [&](wxWindow *page, wxString const& name, StyleEditorPage field) {
-		auto button = new MangetsuButton(page, name);
-		button->Bind(wxEVT_BUTTON, [&, field](wxCommandEvent&) {
-			if (EditStyleProperties(&dialog, draft, style, script_wrap, field)) refresh();
-		});
-		page->GetSizer()->Add(button, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, gap);
-	};
-	properties(layout, _(L"Furigana\u2026"), StyleEditorPage::Furigana);
-	properties(layout, _(L"Vertical text\u2026"), StyleEditorPage::Vertical);
-	appearance->GetSizer()->AddSpacer(gap);
-	properties(appearance, _(L"Multi-border\u2026"), StyleEditorPage::Borders);
-	properties(appearance, _("Extended boxes..."), StyleEditorPage::Box);
-	auto gradient = new MangetsuButton(gradients, _("Edit gradient defaults..."));
-	gradients->GetSizer()->Add(gradient, 0, wxEXPAND | wxALL, gap);
-	auto slide_note = new wxStaticText(gradients, wxID_ANY,
-		_("Set sliding transitions for an event in Subtitle > Mangetsu Extensions > Mangetsu Gradient Color/Alpha."));
-	slide_note->Wrap(Dip(&dialog, 390));
-	gradients->GetSizer()->Add(slide_note, 0, wxLEFT | wxRIGHT | wxBOTTOM, gap);
-	gradient->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
-		EditStyleGradients(&dialog, draft, style, script_wrap, refresh);
-	});
-	for (auto page : {general, layout, appearance, gradients}) StyleLabels(page);
-	root->Add(tabs, 1, wxEXPAND | wxLEFT | wxRIGHT, gap);
+	root->Add(new wxStaticText(&dialog, wxID_ANY, _("Logical line alignment")), 0, wxLEFT | wxRIGHT | wxBOTTOM, gap);
+	root->Add(picker, 0, wxLEFT | wxRIGHT, gap);
 	preview->SetText(preview_text);
 	refresh();
 	root->Add(preview, 1, wxEXPAND | wxALL, gap);

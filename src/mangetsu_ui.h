@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wx/button.h>
+#include <wx/bitmap.h>
 #include <wx/colour.h>
 #include <wx/checkbox.h>
 #include <wx/panel.h>
@@ -45,12 +46,13 @@ class MangetsuButton final : public wxButton {
 	bool MSWOnDraw(WXDRAWITEMSTRUCT *item) override;
 #endif
 public:
-	MangetsuButton(wxWindow *parent, wxString const& label);
+	MangetsuButton(wxWindow *parent, wxString const& label, wxBitmap const& icon = wxNullBitmap);
 	void SetPaintedLabel(wxString const& value);
 	void SetSelected(bool value);
 private:
 	wxString painted_label;
 	wxString accessible_position;
+	wxBitmap icon;
 };
 
 class AlignmentPicker final : public wxPanel {

@@ -10381,6 +10381,22 @@ msgstr "ဒေါင်လိုက်…"
 msgid "Multi-border…"
 msgstr "အနားသတ်အလွှာများ…"
 
+#: src/dialog_style_editor.cpp
+msgid "Text alignment..."
+msgstr "စာသား တန်းညှိရန်…"
+
+#: src/dialog_style_editor.cpp
+msgid "Extended boxes..."
+msgstr "တိုးချဲ့ စာသားဘောင်များ…"
+
+#: src/dialog_style_editor.cpp
+msgid "Gradient defaults..."
+msgstr "ရောင်ပြေး မူလသတ်မှတ်ချက်များ…"
+
+#: src/dialog_mangetsu_style.cpp
+msgid "Mangetsu Style Alignment"
+msgstr "Mangetsu ပုံစံ၏ စာသားတန်းညှိမှု"
+
 #: src/dialog_mangetsu_style.cpp src/dialog_style_editor.cpp src/command/grid.cpp
 msgid "Wrap Mode"
 msgstr "စာကြောင်းချိုးပုံ"

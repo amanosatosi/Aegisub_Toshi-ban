@@ -52,8 +52,8 @@ wxString CompatibilityText() {
 	return _("Mangetsu extension. Other ASS renderers may display it differently.");
 }
 
-MangetsuButton::MangetsuButton(wxWindow *parent, wxString const& label)
-: wxButton(parent, wxID_ANY, label, wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT) {
+MangetsuButton::MangetsuButton(wxWindow *parent, wxString const& label, wxBitmap const& icon)
+: wxButton(parent, wxID_ANY, label, wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT), icon(icon) {
 	SetToolTip(CompatibilityText());
 #ifdef __WXMSW__
 	if (UseBrandColours()) {
@@ -87,6 +87,10 @@ void MangetsuButton::SetPaintedLabel(wxString const& value) {
 }
 
 void MangetsuButton::UpdateMinimumSize() {
+	if (icon.IsOk()) {
+		SetMinSize(icon.GetSize() + Dip(this, wxSize(8, 8)));
+		return;
+	}
 	auto extent = GetTextExtent(painted_label.empty() ? GetLabelText() : painted_label);
 	SetMinSize(wxSize(std::max(extent.x + Dip(this, 24), Dip(this, 38)),
 		std::max(extent.y + Dip(this, 10), Dip(this, 32))));
@@ -112,7 +116,10 @@ bool MangetsuButton::MSWOnDraw(WXDRAWITEMSTRUCT *item) {
 	dc.DrawRoundedRectangle(rect, Dip(this, 5));
 	dc.SetFont(GetFont());
 	dc.SetTextForeground(!enabled ? palette.muted : (selected || hovered || down) ? palette.ink : palette.text);
-	dc.DrawLabel(painted_label.empty() ? GetLabelText() : painted_label, rect, wxALIGN_CENTER);
+	if (icon.IsOk())
+		dc.DrawLabel(wxString{}, icon, rect, wxALIGN_CENTER);
+	else
+		dc.DrawLabel(painted_label.empty() ? GetLabelText() : painted_label, rect, wxALIGN_CENTER);
 	if (HasFocus() && enabled) {
 		rect.Deflate(Dip(this, 3));
 		dc.SetBrush(*wxTRANSPARENT_BRUSH);

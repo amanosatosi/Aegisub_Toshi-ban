@@ -157,7 +157,6 @@ class DialogMangetsuGradient final : public wxDialog {
 	mangetsu::StyleMetadataDraft *style_draft = nullptr;
 	AssStyle const *style_model = nullptr;
 	int style_wrap = 0;
-	std::function<void()> style_refresh;
 	SubtitlesPreview *style_preview = nullptr;
 	wxTextCtrl *slide_width = nullptr;
 
@@ -311,7 +310,7 @@ class DialogMangetsuGradient final : public wxDialog {
 public:
 	DialogMangetsuGradient(wxWindow *parent, agi::Context *context);
 	DialogMangetsuGradient(wxWindow *parent, mangetsu::StyleMetadataDraft& draft,
-		AssStyle const& style, int wrap, std::function<void()> refresh);
+		AssStyle const& style, int wrap);
 	~DialogMangetsuGradient();
 };
 
@@ -627,10 +626,10 @@ DialogMangetsuGradient::~DialogMangetsuGradient() {
 }
 
 DialogMangetsuGradient::DialogMangetsuGradient(wxWindow *parent, mangetsu::StyleMetadataDraft& draft,
-	AssStyle const& style, int wrap, std::function<void()> refresh)
+	AssStyle const& style, int wrap)
 : wxDialog(parent, wxID_ANY, _("Mangetsu Style Gradients"), wxDefaultPosition, wxDefaultSize,
 	wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
-, style_draft(&draft), style_model(&style), style_wrap(wrap), style_refresh(std::move(refresh)) {
+, style_draft(&draft), style_model(&style), style_wrap(wrap) {
 	for (auto const& text : draft.Texts(style, wrap)) original_text += text;
 	edit_scope = {original_text.size(), original_text.size(), false};
 	ResetDefaultGradient();
@@ -2052,7 +2051,6 @@ void DialogMangetsuGradient::OnOK(wxCommandEvent&) {
 	if (style_draft) {
 		CancelAddStopPlacement(false);
 		*style_draft = BuildStyleDraft();
-		style_refresh();
 		EndModal(wxID_OK);
 		return;
 	}
@@ -2094,7 +2092,7 @@ void ShowMangetsuGradientDialog(agi::Context *c) {
 }
 
 bool mangetsu::EditStyleGradients(wxWindow *parent, StyleMetadataDraft& draft, AssStyle const& style,
-	int wrap, std::function<void()> refresh) {
-	DialogMangetsuGradient dialog(parent, draft, style, wrap, std::move(refresh));
+	int wrap) {
+	DialogMangetsuGradient dialog(parent, draft, style, wrap);
 	return dialog.ShowModal() == wxID_OK;
 }

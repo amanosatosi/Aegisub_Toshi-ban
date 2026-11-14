@@ -8,6 +8,6 @@ class StyleMetadataDraft;
 enum class StyleEditorPage { Furigana, Vertical, Borders, Box };
 bool EditStyleProperties(wxWindow *parent, StyleMetadataDraft& pending,
 	AssStyle const& style, int script_wrap, StyleEditorPage page);
-bool EditStyleExtensions(wxWindow *parent, StyleMetadataDraft& pending, AssStyle const& style,
+bool EditStyleAlignment(wxWindow *parent, StyleMetadataDraft& pending, AssStyle const& style,
 	int script_wrap, std::string const& preview_text);
 }

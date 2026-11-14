@@ -9,16 +9,18 @@ selection, never the ASS document.
 Hidden declarations are excluded from ordinary Find/Replace and adjoining timing
 operations. Sorting keeps the initial metadata header in its authored order.
 
-**Mangetsu Extensions** appears beside the Style Editor's standard ASS actions.
-On Windows its yellow button identifies a renderer extension. Windows contrast
-themes and other platforms use system controls. Extensions can be authored with
-any renderer. Select Mangetsu to see the extended output in the preview.
+The Style Editor opens **Furigana**, **Vertical**, and **Multi-border**
+directly from the bottom-left buttons, beside **Wrap Mode**. **Text alignment**,
+**Extended boxes**, and **Gradient defaults** are beside the preview. On
+Windows, yellow identifies an extension button. The standard Style Editor
+actions use the system palette. Windows contrast themes and other platforms
+use system controls. Extensions can be authored with any renderer. Select
+Mangetsu to see the extended output in the preview.
 
-**General** contains the logical-line alignment picker. It uses the ASS numpad
-arrangement and can inherit the ordinary style alignment. **Layout** contains
-Wrap Mode, Furigana and Vertical text. **Appearance** contains native border
-layers and extended boxes, including asymmetric padding. **Gradients** opens
-the attached color and alpha gradient editor for the selected style.
+The text alignment picker uses the ASS numpad arrangement and can inherit
+the ordinary style alignment. The box editor supports asymmetric padding,
+and the gradient editor edits attached color and alpha gradients for the
+selected style.
 The property dialogs are independently resizable. Edit the displayed
 values directly to set them for this style. **Reset** restores the inherited
 value. With linked reading scales or border sizes, editing or resetting X

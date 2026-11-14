@@ -33,6 +33,7 @@
 /// @ingroup main_ui
 
 #include "subs_edit_box.h"
+#include "mangetsu_ui.h"
 
 // [actor_MRU] BEGIN
 #include "actor_MRU.h"
@@ -255,7 +256,7 @@ SubsEditBox::SubsEditBox(wxWindow *parent, agi::Context *context)
 
 	// Middle-bottom controls
 	middle_right_sizer = new wxBoxSizer(wxHORIZONTAL);
-	wxBitmapButton *bold_button = MakeButton("edit/style/bold");
+	auto bold_button = MakeButton("edit/style/bold");
 	MakeButton("edit/style/italic");
 	MakeButton("edit/style/underline");
 	MakeButton("edit/style/strikeout");
@@ -296,8 +297,8 @@ SubsEditBox::SubsEditBox(wxWindow *parent, agi::Context *context)
 	MakeButton("edit/color/outline");
 	MakeButton("edit/color/shadow");
 	MakeButton("edit/color/insert_value");
-	MakeButton("edit/color/gradient");
-	auto chat_style_button = MakeButton("edit/chat/style");
+	MakeButton("edit/color/gradient", true);
+	auto chat_style_button = MakeButton("edit/chat/style", true);
 	chat_style_button->Bind(wxEVT_UPDATE_UI, [this](wxUpdateUIEvent& event) {
 		event.Enable(cmd::get("edit/chat/style")->Validate(c));
 	});
@@ -425,9 +426,14 @@ TimeEdit *SubsEditBox::MakeTimeCtrl(wxString const& tooltip, TimeField field) {
 	return ctrl;
 }
 
-wxBitmapButton *SubsEditBox::MakeButton(const char *cmd_name) {
+wxButton *SubsEditBox::MakeButton(const char *cmd_name, bool mangetsu_feature) {
 	cmd::Command *command = cmd::get(cmd_name);
-	wxBitmapButton *btn = new wxBitmapButton(this, -1, command->Icon(OPT_GET("App/Toolbar Icon Size")->GetInt(), retina_helper->GetScaleFactor()));
+	auto icon = command->Icon(OPT_GET("App/Toolbar Icon Size")->GetInt(), retina_helper->GetScaleFactor());
+	wxButton *btn;
+	if (mangetsu_feature && mangetsu::UseBrandColours())
+		btn = new mangetsu::MangetsuButton(this, command->StrDisplay(c), icon);
+	else
+		btn = new wxBitmapButton(this, -1, icon);
 	ToolTipManager::Bind(btn, command->StrHelp(), "Subtitle Edit Box", cmd_name);
 
 	middle_right_sizer->Add(btn, wxSizerFlags().Expand());

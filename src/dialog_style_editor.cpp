@@ -33,6 +33,7 @@
 ///
 
 #include "dialog_style_editor.h"
+#include "dialog_mangetsu_gradient.h"
 #include "dialog_mangetsu_style.h"
 #include "mangetsu_metadata.h"
 
@@ -372,20 +373,51 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	gap = FromDIP(gap);
 #endif
 	auto ButtonSizer = new wxBoxSizer(wxHORIZONTAL);
-	auto extensions = new mangetsu::MangetsuButton(this, _("Mangetsu Extensions..."));
-	extensions->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+	auto feature_actions = new wxBoxSizer(wxHORIZONTAL);
+	auto preview_actions = new wxBoxSizer(wxHORIZONTAL);
+	auto add_feature = [&](wxSizer *row, wxString const& label, auto edit) {
+		auto button = new mangetsu::MangetsuButton(this, label);
+		button->Enable(!store);
+		if (store)
+			button->SetToolTip(_("Style catalogs store ordinary ASS style fields only. Edit Mangetsu defaults in the current script."));
+		button->Bind(wxEVT_BUTTON, [this, edit](wxCommandEvent&) {
+			UpdateWorkStyle();
+			auto wrap = this->c->ass->GetScriptInfoAsInt("WrapStyle");
+			if (edit(wrap)) UpdatePreview();
+		});
+		row->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
+	};
+	auto properties = [this](mangetsu::StyleEditorPage page) {
+		return [this, page](int wrap) { return mangetsu::EditStyleProperties(this, metadata, *work, wrap, page); };
+	};
+	add_feature(feature_actions, _(L"Furigana\u2026"), properties(mangetsu::StyleEditorPage::Furigana));
+	add_feature(feature_actions, _(L"Vertical\u2026"), properties(mangetsu::StyleEditorPage::Vertical));
+	add_feature(feature_actions, _(L"Multi-border\u2026"), properties(mangetsu::StyleEditorPage::Borders));
+	feature_actions->Add(new wxStaticText(this, wxID_ANY, _("Wrap Mode")), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, gap);
+	wxString wrapping[] = {_("Inherit Script"), _("Smart"), _("End-of-line"), _("No automatic wrap"), _("Alternative smart")};
+	WrapMode = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, 5, wrapping);
+	WrapMode->Enable(!store);
+	WrapMode->SetToolTip(store ? _("Style catalogs store ordinary ASS style fields only. Edit Mangetsu defaults in the current script.")
+		: mangetsu::CompatibilityText());
+	WrapMode->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
+		int selection = WrapMode->GetSelection();
+		metadata.Set("q", selection > 0 ? std::optional<std::string>(std::to_string(selection - 1)) : std::nullopt);
 		UpdateWorkStyle();
-		if (mangetsu::EditStyleExtensions(this, metadata, *work, this->c->ass->GetScriptInfoAsInt("WrapStyle"),
-			from_wx(PreviewText->GetValue()))) UpdatePreview();
+		UpdatePreview();
 	});
-	ButtonSizer->Add(extensions, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, gap);
-	if (store) {
-		extensions->Disable();
-		extensions->SetToolTip(_("Style catalogs store ordinary ASS style fields only. Edit Mangetsu defaults in the current script."));
-		ButtonSizer->Add(new wxStaticText(this, wxID_ANY, _("Script styles only")), 0, wxALIGN_CENTER_VERTICAL | wxLEFT, gap);
-	}
+	feature_actions->Add(WrapMode, 0, wxALIGN_CENTER_VERTICAL);
+	ButtonSizer->Add(feature_actions, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, gap);
 	ButtonSizer->AddStretchSpacer(1);
 	ButtonSizer->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxAPPLY | wxHELP), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, gap);
+
+	add_feature(preview_actions, _("Text alignment..."), [this](int wrap) {
+		return mangetsu::EditStyleAlignment(this, metadata, *work, wrap, from_wx(PreviewText->GetValue()));
+	});
+	add_feature(preview_actions, _("Extended boxes..."), properties(mangetsu::StyleEditorPage::Box));
+	add_feature(preview_actions, _("Gradient defaults..."), [this](int wrap) {
+		return mangetsu::EditStyleGradients(this, metadata, *work, wrap);
+	});
+	PreviewBox->Add(preview_actions, 0, wxTOP | wxEXPAND, gap);
 
 	// Left side sizer
 	wxSizer *LeftSizer = new wxBoxSizer(wxVERTICAL);
@@ -411,6 +443,7 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	MainSizer->Add(ButtonSizer, 0, wxBOTTOM | wxEXPAND, 5);
 
 	SetSizerAndFit(MainSizer);
+	UpdateWrapMode();
 	renderer_changed = OPT_SUB("Subtitle/Provider", [this] { UpdatePreview(); });
 
 	// Force the style name text field to scroll based on its final size, rather
@@ -508,7 +541,10 @@ void DialogStyleEditor::Apply(bool apply, bool close) {
 		}
 
 		// Update preview
-		if (!close) UpdatePreview();
+		if (!close) {
+			UpdateWrapMode();
+			UpdatePreview();
+		}
 	}
 
 	if (close) {
@@ -516,6 +552,11 @@ void DialogStyleEditor::Apply(bool apply, bool close) {
 		if (PreviewText)
 			OPT_SET("Tool/Style Editor/Preview Text")->SetString(from_wx(PreviewText->GetValue()));
 	}
+}
+
+void DialogStyleEditor::UpdateWrapMode() {
+	auto wrap = metadata.Values(*work, c->ass->GetScriptInfoAsInt("WrapStyle")).at("q");
+	WrapMode->SetSelection(wrap.assigned ? std::stoi(wrap.value) + 1 : 0);
 }
 
 void DialogStyleEditor::UpdatePreview() {

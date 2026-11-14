@@ -304,21 +304,23 @@ $graphics.Dispose(); $bitmap.Dispose()
 """], env=env, check=True, timeout=30, capture_output=True, text=True)
         return result.stdout.split()
 
-    def assert_native_palette(branded, normal):
-        branded_box, normal_box = rect(branded), rect(normal)
+    def assert_native_palette(parent, branded, normal):
         def samples(bounds):
             left, top, right, bottom = bounds
             return [(left + (right - left) * x // 8, top + (bottom - top) * y // 8)
                     for x in (2, 4, 6) for y in (2, 4, 6)]
         # PrintWindow includes the rendered child controls. In wx master the
         # system dark-mode button may itself use wx's own drawing path.
-        branded_samples, normal_samples = samples(branded_box), samples(normal_box)
-        pixels = capture(user.GetParent(branded), "style-editor", branded_samples + normal_samples)
-        assert len(pixels) == len(branded_samples) + len(normal_samples)
-        yellow, gray = pixels[:len(branded_samples)], pixels[len(branded_samples):]
+        controls = branded + normal
+        pixels = capture(parent, "style-editor", [point for c in controls for point in samples(c.bounds)])
+        assert len(pixels) == 9 * len(controls)
         accents = {"F2D46D", "FFE48A", "D9B94F"}
-        assert sum(pixel in accents for pixel in yellow) >= 3, ("Mangetsu button accent", yellow)
-        assert not accents.intersection(gray), ("Standard OK button keeps the system palette", gray)
+        for index, control in enumerate(controls):
+            colours = pixels[9 * index:9 * (index + 1)]
+            if index < len(branded):
+                assert sum(pixel in accents for pixel in colours) >= 3, (control.label, colours)
+            else:
+                assert not accents.intersection(colours), (control.label, colours)
 
     def editor(copy=False, name=None):
         invoke(frame, "Styles Manager...")
@@ -333,33 +335,7 @@ $graphics.Dispose(); $bitmap.Dispose()
         assert user.PostMessageW(manager, 0x10, 0, 0)
         wait(lambda: not user.IsWindowVisible(manager), "Styles Manager closes")
 
-    def extensions(style):
-        click(style, "Mangetsu Extensions...")
-        return dialog("Mangetsu Extensions")
-
-    def tab(parent, index):
-        # wx registers a private copy of the Win32 tab class on some
-        # versions. The native notebook is the visible four-page control.
-        def find_tab():
-            for hwnd in windows(pid, parent):
-                if not user.IsWindowVisible(hwnd):
-                    continue
-                try:
-                    if send(hwnd, 0x1304) == 4:  # TCM_GETITEMCOUNT
-                        return hwnd
-                except StaleWindow:
-                    continue
-            return None
-        control = wait(find_tab, "visible four-page notebook")
-        # The native tab handles keyboard navigation and notifies wxNotebook.
-        current = send(control, 0x130B)  # TCM_GETCURSEL
-        key = 0x27 if index > current else 0x25
-        for _ in range(abs(index - current)):
-            send(control, 0x100, key)
-        assert send(control, 0x130B) == index
-
     def property_dialog(parent, caption, title):
-        tab(parent, 2 if caption.startswith(("Multi-border", "Extended boxes")) else 1)
         click(parent, caption)
         return dialog(title)
 
@@ -431,7 +407,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     # wxWidgets may publish a native dialog window before all children have
     # finished showing. Wait for its actual controls, but never ignore an
     # absent button: report which one is missing and retain a UI screenshot.
-    expected = ("Mangetsu Extensions...", "OK", "Cancel", "Apply", "Help")
+    expected = ("Furigana...", "Vertical...", "Multi-border...", "OK", "Cancel", "Apply", "Help")
     try:
         controls = required(style, expected, seconds=10)
     except AssertionError as exc:
@@ -452,39 +428,38 @@ $graphics.Dispose(); $bitmap.Dispose()
                                   + "Screenshot failed: " + repr(capture_error) + "\n", encoding="utf-8")
         raise AssertionError(f"Style Editor is missing visible controls {missing}; "
                              f"native child inventory: {native_dump}") from exc
-    layout = {c.hwnd: c.bounds for c in inventory(style)}
-    centers = [sum(layout[c.hwnd][1::2]) / 2 for c in controls]
-    assert max(centers) - min(centers) < 5, "The branded entry and native actions share the bottom row"
-    assert layout[controls[0].hwnd][2] < min(layout[c.hwnd][0] for c in controls[1:])
-    style_button = button(style, "Mangetsu Extensions...")
-    native_ok = button(style, "OK")
-    assert user.GetWindowLongW(style_button, -16) & 0xF == 0xB, "The branded entry is owner drawn"
-    assert_native_palette(style_button, native_ok)
-    ext = extensions(style)
-    capture(ext, "mangetsu-extensions")
-    tab(ext, 3)
-    click(ext, "Edit gradient defaults...")
-    gradients = dialog("Mangetsu Style Gradients")
+    wrap = choice_control(style, lambda values: values == [
+        "Inherit Script", "Smart", "End-of-line", "No automatic wrap", "Alternative smart"])
+    branded, normal = controls[:3], controls[3:]
+    positions = [c.bounds for c in branded] + [rect(wrap)] + [c.bounds for c in normal]
+    centers = [(top + bottom) / 2 for _, top, _, bottom in positions]
+    assert max(centers) - min(centers) < 5, "Direct features, Wrap Mode and native actions share the bottom row"
+    left_group = positions[:4]
+    assert all(left[2] <= right[0] for left, right in zip(left_group, left_group[1:])), positions
+    assert left_group[-1][2] <= min(bounds[0] for bounds in positions[4:]), positions
+    assert all(normalized_label(c.label) != normalized_label("Mangetsu Extensions...")
+               for c in inventory(style)), "The original feature buttons are the direct entry points"
+    for control in branded:
+        hwnd = button(style, control.label)
+        assert user.GetWindowLongW(hwnd, -16) & 0xF == 0xB, (control.label, "owner drawn")
+    assert_native_palette(style, branded, normal)
+    gradients = property_dialog(style, "Gradient defaults...", "Mangetsu Style Gradients")
     capture(gradients, "mangetsu-style-gradients")
     close(gradients, "OK")
-    tab(ext, 1)
-    wrap = choice_control(ext, lambda values: values == ["Inherit Script", "Smart", "End-of-line", "No automatic wrap", "Alternative smart"])
     assert send(wrap, 0x147) == 3, "Existing q2 must be selected"  # CB_GETCURSEL
-    for caption, title, fields in (("Furigana...", "Furigana", 9), ("Vertical text...", "Vertical layout", 5),
+    for caption, title, fields in (("Furigana...", "Furigana", 9), ("Vertical...", "Vertical layout", 5),
                                    ("Multi-border...", "Multi-border", 7)):
-        untouched = property_dialog(ext, caption, title)
+        untouched = property_dialog(style, caption, title)
         assert_direct_form(untouched, fields)
         close(untouched, "OK")
-    close(ext, "OK")
     click_sync(style, "Apply")
-    ext = extensions(style)
-    furi = property_dialog(ext, "Furigana...", "Furigana")
+    furi = property_dialog(style, "Furigana...", "Furigana")
     wait_row_value(furi, "Reading scale X (%)", "70")
     wait_row_value(furi, "Reading scale Y (%)", "70", enabled=False)
     assign(furi, "Reading scale X (%)", "80")
     wait_row_value(furi, "Reading scale Y (%)", "80", enabled=False)
     close(furi)
-    furi = property_dialog(ext, "Furigana...", "Furigana")
+    furi = property_dialog(style, "Furigana...", "Furigana")
     wait_row_value(furi, "Reading scale X (%)", "70")
     reset(furi, "Reading scale X (%)")
     wait_row_value(furi, "Reading scale X (%)", "50")
@@ -492,45 +467,46 @@ $graphics.Dispose(); $bitmap.Dispose()
     assign(furi, "Reading scale X (%)", "80")
     capture(furi, "furigana")
     close(furi, "OK")
-    close(ext, "OK")
     close(style)
     close_manager(manager)
     document = lambda content: [line for line in content.splitlines() if line.startswith(("STYLE|", "LINE|"))]
     assert document(snapshot()) == document(replaced), "Untouched OK/Apply and parent Cancel preserve the document"
 
     manager, style = editor()
-    ext = extensions(style)
-    click_sync(ext, "Top left")
-    assert button(ext, "Top left (selected)"), "Selected alignment is exposed by the native button caption"
-    furi = property_dialog(ext, "Furigana...", "Furigana")
+    alignment = property_dialog(style, "Text alignment...", "Mangetsu Style Alignment")
+    click_sync(alignment, "Top left")
+    assert button(alignment, "Top left (selected)"), "Selected alignment is exposed by the native button caption"
+    capture(alignment, "mangetsu-style-alignment")
+    close(alignment, "OK")
+    furi = property_dialog(style, "Furigana...", "Furigana")
     assign(furi, "Reading scale X (%)", "80")
     close(furi, "OK")
-    furi = property_dialog(ext, "Furigana...", "Furigana")
+    furi = property_dialog(style, "Furigana...", "Furigana")
     click_sync(furi, "Use the same reading scale on both axes")
     assign(furi, "Reading scale Y (%)", "90")
     wait_row_value(furi, "Reading scale X (%)", "80")
     close(furi, "OK")
-    furi = property_dialog(ext, "Furigana...", "Furigana")
+    furi = property_dialog(style, "Furigana...", "Furigana")
     wait_row_value(furi, "Reading scale Y (%)", "90")
     reset(furi, "Reading scale Y (%)")
     wait_row_value(furi, "Reading scale Y (%)", "50")
     wait_row_value(furi, "Reading scale X (%)", "80")
     close(furi, "OK")
-    vertical = property_dialog(ext, "Vertical text...", "Vertical layout")
+    vertical = property_dialog(style, "Vertical...", "Vertical layout")
     vert, _ = row(vertical, "Native vertical layout")
     assert send(vert, 0x147) == 0, "Inherited vertical layout starts disabled"
     assign(vertical, "Native vertical layout", 1, choice=True)
     assign(vertical, "Vertical unit policy", 3, choice=True)
     capture(vertical, "vertical")
     close(vertical, "OK")
-    vertical = property_dialog(ext, "Vertical text...", "Vertical layout")
+    vertical = property_dialog(style, "Vertical...", "Vertical layout")
     reset(vertical, "Native vertical layout")
     vert, _ = row(vertical, "Native vertical layout")
     assert send(vert, 0x147) == 0
     assert send(row(vertical, "Vertical unit policy")[0], 0x147) == 3
     assign(vertical, "Native vertical layout", 1, choice=True)
     close(vertical, "OK")
-    border = property_dialog(ext, "Multi-border...", "Multi-border")
+    border = property_dialog(style, "Multi-border...", "Multi-border")
     required(border, ("Border alpha (0–255)",))
     wait_row_value(border, "Border size X", "2")
     for layer in range(2, 10):
@@ -558,22 +534,17 @@ $graphics.Dispose(); $bitmap.Dispose()
     assign(border, "Border size X", "3")
     capture(border, "multi-border")
     close(border, "OK")
-    box = property_dialog(ext, "Extended boxes...", "Extended boxes")
+    box = property_dialog(style, "Extended boxes...", "Extended boxes")
     assign(box, "Rectangular box", 1, choice=True)
     assign(box, "Corner radius", "6")
     capture(box, "mangetsu-extended-boxes")
     close(box, "OK")
-    tab(ext, 1)
-    wrap = choice_control(ext, lambda values: "Inherit Script" in values)
+    wrap = choice_control(style, lambda values: "Inherit Script" in values)
     choose(wrap, 1)  # q0; metadata only, not Script Info WrapStyle
-    close(ext, "OK")
     click_sync(style, "Apply")
     assert user.IsWindowVisible(style), "Apply leaves Style Editor open"
-    ext = extensions(style)
-    tab(ext, 1)
-    wrap = choice_control(ext, lambda values: "Inherit Script" in values)
+    wrap = choice_control(style, lambda values: "Inherit Script" in values)
     choose(wrap, 0)  # Pending reset must be discarded by Cancel after Apply.
-    close(ext, "OK")
     close(style)
     close_manager(manager)
     committed = snapshot()
@@ -659,21 +630,19 @@ $graphics.Dispose(); $bitmap.Dispose()
     wait(lambda: not any(name == "Show Mangetsu Metadata" for name, _ in entries(user.GetMenu(frame))), "renderer switch hides metadata menu")
     manager, style = editor(name="UI Sign")
     capture(style, "style-editor-libass")
-    ext = extensions(style)
-    required(ext, ("Logical line alignment",))
-    capture(ext, "mangetsu-extensions-libass")
-    close(ext)
+    alignment = property_dialog(style, "Text alignment...", "Mangetsu Style Alignment")
+    required(alignment, ("Logical line alignment",))
+    capture(alignment, "mangetsu-style-alignment-libass")
+    close(alignment)
     close(style)
     close_manager(manager)
     assert "\\furisx80" in snapshot(), "Renderer switching preserves saved metadata"
     select_renderer("Mangetsu")
     manager, style = editor(name="UI Sign")
-    ext = extensions(style)
-    furi = property_dialog(ext, "Furigana...", "Furigana")
+    furi = property_dialog(style, "Furigana...", "Furigana")
     wait_row_value(furi, "Reading scale X (%)", "80")
     wait_row_value(furi, "Reading scale Y (%)", "50")
     close(furi)
-    close(ext)
     close(style)
     close_manager(manager)
     command("Select first dialogue")
@@ -686,7 +655,10 @@ $graphics.Dispose(); $bitmap.Dispose()
     history("Undo")
     assert document(snapshot()) == document(reloaded), "Inline alignment is a single undo step"
     command("Select first dialogue")
-    invoke(frame, "Mangetsu Gradient Color/Alpha...")
+    for caption in ("Gradient", "Mangetsu Chat Style"):
+        hwnd = button(frame, caption)
+        assert user.GetWindowLongW(hwnd, -16) & 0xF == 0xB, (caption, "owner drawn")
+    click(frame, "Gradient")
     gradient_editor = wait(lambda: next((h for h in windows(pid) if text(h).startswith("Gradient Editor")
                                         and user.IsWindowVisible(h)), None), "dialogue gradient editor")
     width = controls_of_kind(gradient_editor, "edit")
