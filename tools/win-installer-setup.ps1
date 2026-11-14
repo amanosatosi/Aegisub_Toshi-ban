@@ -291,7 +291,10 @@ if (!(Test-Path -LiteralPath $XAudioDll -PathType Leaf)) {
 	New-Item -ItemType Directory -Path $XAudioRoot -Force | Out-Null
 	try {
 		Invoke-WebRequestWithRetry -Uri "https://www.nuget.org/api/v2/package/Microsoft.XAudio2.Redist/1.2.11" -OutFile $XAudioArchive
-		Expand-Archive -LiteralPath $XAudioArchive -DestinationPath $XAudioRoot -ErrorAction Stop
+		& 7z x $XAudioArchive "-o$XAudioRoot" -y | Out-Null
+		if ($LASTEXITCODE -ne 0) {
+			throw "XAudio2 extraction failed with exit code $LASTEXITCODE"
+		}
 		if (!(Test-Path -LiteralPath $XAudioDll -PathType Leaf)) {
 			$Found = @(Get-ChildItem -LiteralPath $XAudioRoot -Recurse -File -Filter "xaudio2_9redist.dll" |
 				Select-Object -ExpandProperty FullName)

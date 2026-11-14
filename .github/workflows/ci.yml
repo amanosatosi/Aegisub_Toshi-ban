@@ -385,6 +385,11 @@ jobs:
         run: meson test -C build --verbose "gtest main"
 
       # Windows artifacts
+      - name: Test XAudio2 packaging recovery
+        if: matrix.config.os == 'windows-latest'
+        shell: powershell
+        run: ./tests/xaudio2-packaging.ps1
+
       - name: Generate Windows installer
         id: installer_package
         # Package compiled binaries even when Meson/GUI tests fail.
@@ -397,7 +402,13 @@ jobs:
       - name: Generate Windows portable installer
         id: portable_package
         if: ${{ !cancelled() && matrix.config.os == 'windows-latest' && steps.compiled.outcome == 'success' }}
-        run: cd build && ninja win-portable
+        run: |
+          ninja -C build win-portable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $zipList = 7z l -slt 'build/aegisub-portable-64.zip'
+          if ($LASTEXITCODE -ne 0 -or -not ($zipList -match '^Path = (.*[\\/])?Redist[\\/]XAudio2_9\.dll$')) {
+            throw 'XAudio2 runtime DLL is missing from the portable ZIP'
+          }
 
       - name: Exercise responsive startup, rescans, cancellation and lazy renderers
         if: ${{ !cancelled() && matrix.config.os == 'windows-latest' && steps.portable_package.outcome == 'success' }}
