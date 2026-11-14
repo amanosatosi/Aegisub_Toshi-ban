@@ -438,9 +438,9 @@ $graphics.Dispose(); $bitmap.Dispose()
     wrap_label = required(style, ("Wrap Mode",))[0].bounds
     wrap_bounds = rect(wrap)
     style_name = required(style, ("Style Name",))[0].bounds
-    for row in (first_row, second_row):
-        assert all(left[2] <= right[0] for left, right in zip(row, row[1:])), row
-        assert max(bounds[1] for bounds in row) < min(bounds[3] for bounds in row), row
+    for button_row in (first_row, second_row):
+        assert all(left[2] <= right[0] for left, right in zip(button_row, button_row[1:])), button_row
+        assert max(bounds[1] for bounds in button_row) < min(bounds[3] for bounds in button_row), button_row
     assert first_row[0][0] == second_row[0][0] == wrap_label[0], "The extension rows share a left edge"
     assert max(bounds[3] for bounds in first_row) <= min(bounds[1] for bounds in second_row)
     assert max(bounds[3] for bounds in second_row) <= min(wrap_label[1], wrap_bounds[1])
