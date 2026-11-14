@@ -400,7 +400,7 @@ jobs:
         run: cd build && ninja win-portable
 
       - name: Exercise responsive startup, rescans, cancellation and lazy renderers
-        if: matrix.config.os == 'windows-latest'
+        if: ${{ !cancelled() && matrix.config.os == 'windows-latest' && steps.portable_package.outcome == 'success' }}
         timeout-minutes: 5
         shell: pwsh
         run: python tests/python/startup_smoke.py --portable build/aegisub-portable --output build/startup-smoke ${{ contains(matrix.config.name, 'wx master') && '--mangetsu-ui-dark' || '' }}

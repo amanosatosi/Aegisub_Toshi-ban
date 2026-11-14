@@ -207,13 +207,22 @@ if (!(Test-Path VSFilter)) {
 ### VapourSynth plugins
 
 # L-SMASH-Works
-if (!(Test-Path L-SMASH-Works)) {
-	New-Item -ItemType Directory L-SMASH-Works
-	$lsmasReleases = Invoke-WebRequest "https://api.github.com/repos/AkarinVS/L-SMASH-Works/releases/latest" -Headers $GitHeaders -UseBasicParsing | ConvertFrom-Json
-	$lsmasUrl = "https://github.com/AkarinVS/L-SMASH-Works/releases/download/" + $lsmasReleases.tag_name + "/release-x86_64-cachedir-cwd.zip"
-	Invoke-WebRequestWithRetry -Uri $lsmasUrl -OutFile release-x86_64-cachedir-cwd.zip
-	Expand-Archive -LiteralPath release-x86_64-cachedir-cwd.zip -DestinationPath L-SMASH-Works
-	Remove-Item release-x86_64-cachedir-cwd.zip
+$lsmashDir = Join-Path $DepsDir "L-SMASH-Works"
+$lsmashDll = Join-Path $lsmashDir "libvslsmashsource.dll"
+if (!(Test-Path -LiteralPath $lsmashDll -PathType Leaf)) {
+	$lsmashArchiveName = "release-x86_64-cachedir-cwd.zip"
+	$lsmashArchive = Join-Path $DepsDir $lsmashArchiveName
+	$lsmashRelease = Invoke-WebRequest "https://api.github.com/repos/AkarinVS/L-SMASH-Works/releases/latest" -Headers $GitHeaders -UseBasicParsing -ErrorAction Stop | ConvertFrom-Json
+	$lsmashAsset = $lsmashRelease.assets | Where-Object { $_.name -eq $lsmashArchiveName } | Select-Object -First 1
+	if (!$lsmashAsset) {
+		throw "L-SMASH-Works $($lsmashRelease.tag_name) has no $lsmashArchiveName asset."
+	}
+	Invoke-WebRequestWithRetry -Uri $lsmashAsset.browser_download_url -OutFile $lsmashArchive
+	7z x $lsmashArchive "-o$lsmashDir" -y
+	if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $lsmashDll -PathType Leaf)) {
+		throw "Could not stage libvslsmashsource.dll from $lsmashArchiveName."
+	}
+	Remove-Item -LiteralPath $lsmashArchive
 }
 
 # BestSource
