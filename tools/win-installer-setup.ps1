@@ -276,11 +276,31 @@ if (!(Test-Path VC_redist)) {
 }
 
 # XAudio2 redistributable
-if (!(Test-Path XAudio2_redist)) {
-	New-Item -ItemType Directory XAudio2_redist
-	Invoke-WebRequestWithRetry -Uri "https://www.nuget.org/api/v2/package/Microsoft.XAudio2.Redist/1.2.11" -OutFile XAudio2Redist.zip
-	Expand-Archive -LiteralPath XAudio2Redist.zip -DestinationPath XAudio2_redist
-	Remove-Item XAudio2Redist.zip
+$XAudioRoot = Join-Path $ResolvedDepsDir "XAudio2_redist"
+$XAudioDll = Join-Path $XAudioRoot "build\native\release\bin\x64\xaudio2_9redist.dll"
+$XAudioArchive = Join-Path $ResolvedDepsDir "XAudio2Redist.zip"
+if (!(Test-Path -LiteralPath $XAudioDll -PathType Leaf)) {
+	# A previous, incomplete extraction may have created the directory.
+	if (Test-Path -LiteralPath $XAudioRoot) {
+		$ExistingRoot = Get-Item -LiteralPath $XAudioRoot -Force -ErrorAction Stop
+		if ($ExistingRoot.FullName -ne $XAudioRoot -or ($ExistingRoot.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+			throw "Unexpected XAudio2 staging path: $XAudioRoot"
+		}
+		Remove-Item -LiteralPath $XAudioRoot -Recurse -Force
+	}
+	New-Item -ItemType Directory -Path $XAudioRoot -Force | Out-Null
+	try {
+		Invoke-WebRequestWithRetry -Uri "https://www.nuget.org/api/v2/package/Microsoft.XAudio2.Redist/1.2.11" -OutFile $XAudioArchive
+		Expand-Archive -LiteralPath $XAudioArchive -DestinationPath $XAudioRoot -ErrorAction Stop
+		if (!(Test-Path -LiteralPath $XAudioDll -PathType Leaf)) {
+			$Found = @(Get-ChildItem -LiteralPath $XAudioRoot -Recurse -File -Filter "xaudio2_9redist.dll" |
+				Select-Object -ExpandProperty FullName)
+			throw "XAudio2 package extraction did not produce $XAudioDll. Other matching files: $($Found -join ', ')"
+		}
+	}
+	finally {
+		Remove-Item -LiteralPath $XAudioArchive -Force -ErrorAction SilentlyContinue
+	}
 }
 
 # dictionaries
