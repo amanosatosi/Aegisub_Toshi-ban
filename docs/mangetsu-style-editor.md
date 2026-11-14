@@ -41,14 +41,20 @@ Their order within each type remains intact, and Actor Colorcoding retains its
 renderer priority regardless of physical order. Importing styles from another
 ASS file copies declarations for the selected styles when present, and imports
 all Actor Colorcoding declarations, including its applied-styles whitelist.
+Comments and dialogue containing a standalone `{uketsugu}` marker in Effect
+are inherited in source order after the metadata and before ordinary events.
+Their referenced source styles go through the same style conflict prompts.
+The import preserves repeated events, and importing again adds another batch.
 External Style Manager catalogs store ordinary ASS fields only.
 
 Metadata declarations retain source order within each type. Supported scalar assignments are
 edited structurally; axis aliases are split only when one axis changes. Unknown
 and malformed text, transforms, image tags, and manual gradients are retained.
 Gradient first-valid-source precedence is not rewritten. Actor Colorcoding
-declarations remain independent. Preview/render serialization sends both kinds
-of metadata in their original interleaved initial-block order.
+declarations remain independent. An initial metadata comment can have braced
+annotations before or after its bare Effect identifier, for example
+`{uketsugu}mangetsu-style{note}`. Saving keeps the full Effect. Preview and
+playback pass the bare identifier to Mangetsu, whose parser expects it.
 The built-in Fix Styles and Transform Framerate export filters leave this
 initial header intact; subtitle preparation only reads attachments. ASS saving
 and exporting serialize a style-first view of the initial metadata block.

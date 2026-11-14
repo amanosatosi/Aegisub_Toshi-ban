@@ -605,25 +605,28 @@ $graphics.Dispose(); $bitmap.Dispose()
     saved = (profile / "style-ui.ass").read_text(encoding="utf-8-sig")
     assert "WrapStyle: 0" in saved and "mangetsu-colorcoding" in saved
 
+    def choose_subtitle_file(path):
+        picker = dialog("Open subtitles file")
+
+        def filename_edit():
+            edits = [control for control in inventory(picker)
+                     if control.kind.lower() == "edit" and enabled_in_dialog(control.hwnd, picker)]
+            for control in edits:
+                ancestor = control.hwnd
+                while ancestor and ancestor != picker:
+                    if (user.GetDlgCtrlID(ancestor) == 1148  # Win32 file-name combo (cmb13)
+                            or text(ancestor, True) == "FileNameControlHost"):
+                        return control.hwnd
+                    ancestor = user.GetParent(ancestor)
+            return edits[0].hwnd if len(edits) == 1 else None
+
+        set_text(wait(filename_edit, "native file-name editor"), str(path))
+        close(picker, "Open")
+
     reopened = profile / "style-ui-reopened.ass"
     reopened.write_bytes((profile / "style-ui.ass").read_bytes())
     invoke(frame, "Open Subtitles...")
-    picker = dialog("Open subtitles file")
-
-    def filename_edit():
-        edits = [control for control in inventory(picker)
-                 if control.kind.lower() == "edit" and enabled_in_dialog(control.hwnd, picker)]
-        for control in edits:
-            ancestor = control.hwnd
-            while ancestor and ancestor != picker:
-                if (user.GetDlgCtrlID(ancestor) == 1148  # Win32 file-name combo (cmb13)
-                        or text(ancestor, True) == "FileNameControlHost"):
-                    return control.hwnd
-                ancestor = user.GetParent(ancestor)
-        return edits[0].hwnd if len(edits) == 1 else None
-
-    set_text(wait(filename_edit, "native file-name editor"), str(reopened))
-    close(picker, "Open")
+    choose_subtitle_file(reopened)
     wait(lambda: reopened.stem in text(frame), "reopened ASS becomes the active document")
     reloaded = snapshot()
     assert document(reloaded) == document(renamed), "Reopening preserves the saved styles and metadata"
@@ -680,4 +683,55 @@ $graphics.Dispose(); $bitmap.Dispose()
     assert "LINE||UI Sign|{\\grds16}" in snapshot(), "The gradient editor stores the initial slide width"
     history("Undo")
     assert document(snapshot()) == document(reloaded), "Slide width is a single undo step"
-    (profile / "style-ui-result.txt").write_text("metadata visibility, direct edit/reset, ten layers, validation, transactions, copy/delete/rename, undo/redo, save/reload, renderer switching: passed\n", encoding="utf-8")
+
+    source = profile / "inheritance-source.ass"
+    style_record = next(line for line in saved.splitlines() if line.startswith("Style: "))
+    event_format = next(line for line in saved.splitlines() if line.startswith("Format: Layer,"))
+    style_format = next(line for line in saved.splitlines() if line.startswith("Format: Name,"))
+    source.write_text("\n".join((
+        "[Script Info]", "ScriptType: v4.00+", "PlayResX: 320", "PlayResY: 180",
+        "[V4+ Styles]", style_format, "Style: Reusable," + style_record.split(",", 1)[1],
+        "[Events]", event_format,
+        r"Comment: 0,0:00:00.00,0:00:00.00,Reusable,Bob,0,0,0,mangetsu-colorcoding{note},{\1c&H123456&}",
+        r"Comment: 0,0:00:00.00,0:00:00.00,Reusable,,0,0,0,{uketsugu}mangetsu-style,{\furis90}",
+        "Comment: 0,0:00:00.00,0:00:00.00,Reusable,,0,0,0,prefix{uketsugu},inherited comment",
+        "Dialogue: 2,0:00:00.00,0:00:02.00,Reusable,Bob,1,2,3,{uketsugu}suffix,inherited dialogue",
+        "Dialogue: 0,0:00:00.00,0:00:02.00,Reusable,,0,0,0,{uketsugu2},unmarked dialogue",
+        "",
+    )), encoding="utf-8")
+    invoke(frame, "Styles Manager...")
+    manager = dialog("Styles Manager")
+    click(manager, "Import from script...")
+    choose_subtitle_file(source)
+    chooser = dialog("Import Styles")
+    click_sync(chooser, "Select All")
+    close(chooser, "OK")
+    close_manager(manager)
+    imported = document(snapshot())
+    assert "STYLE|Reusable" in imported
+    events = [line for line in imported if line.startswith("LINE|")]
+    expected_new = [
+        r"LINE|{uketsugu}mangetsu-style|Reusable|{\furis90}",
+        r"LINE|mangetsu-colorcoding{note}|Reusable|{\1c&H123456&}",
+        "LINE|prefix{uketsugu}|Reusable|inherited comment",
+        "LINE|{uketsugu}suffix|Reusable|inherited dialogue",
+    ]
+    positions = [events.index(line) for line in expected_new]
+    old_events = [line for line in reloaded.splitlines() if line.startswith("LINE|")]
+    assert [line for line in events if line not in expected_new] == old_events
+    assert positions == sorted(positions) and positions[1:4] == list(range(positions[1], positions[1] + 3))
+    assert positions[-1] < events.index(next(line for line in old_events if line.startswith("LINE|note|")))
+    assert all("unmarked dialogue" not in line for line in events)
+    history("Undo")
+    assert document(snapshot()) == document(reloaded), "Style import and inherited events share one undo step"
+    history("Redo")
+    assert document(snapshot()) == imported, "Redo restores the complete inherited block"
+    command("Save Subtitles")
+    wait(lambda: "inherited dialogue" in reopened.read_text(encoding="utf-8-sig"), "inherited events saved")
+    round_trip = profile / "inherited-reopened.ass"
+    round_trip.write_bytes(reopened.read_bytes())
+    invoke(frame, "Open Subtitles...")
+    choose_subtitle_file(round_trip)
+    wait(lambda: round_trip.stem in text(frame), "inherited ASS reopens")
+    assert document(snapshot()) == imported, "Save and reload retain annotations and event order"
+    (profile / "style-ui-result.txt").write_text("metadata visibility, direct edit/reset, ten layers, validation, transactions, copy/delete/rename, inheritance, undo/redo, save/reload, renderer switching: passed\n", encoding="utf-8")

@@ -57,10 +57,17 @@ void SubtitlesProvider::LoadSubtitles(AssFile *subs, int time) {
 	push_header("[Events]\n");
 	push_header("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
 	for (auto const& line : subs->Events) {
-		if (mangetsu::IsMetadataComment(line))
+		auto effect = mangetsu::MetadataEffect(line);
+		if (!effect) break;
+		if (line.Effect == effect)
 			push_line(line.GetEntryData());
-		else
-			break;
+		else {
+			// Mangetsu expects its bare Effect identifier. Keep annotations
+			// in the editable document and canonicalize only the render copy.
+			AssDialogue render_line(static_cast<AssDialogueBase const&>(line));
+			render_line.Effect = effect;
+			push_line(render_line.GetEntryData());
+		}
 	}
 
 	for (auto const& line : subs->Events) {

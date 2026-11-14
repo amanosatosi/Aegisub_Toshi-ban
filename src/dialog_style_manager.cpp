@@ -36,6 +36,7 @@
 #include "dialog_manager.h"
 #include "dialog_style_editor.h"
 #include "mangetsu_style_metadata.h"
+#include "mangetsu_metadata.h"
 #include "dialogs.h"
 #include "format.h"
 #include "help_button.h"
@@ -672,7 +673,7 @@ void DialogStyleManager::OnCurrentDelete() {
 	if (confirm_delete(n, this, _("Confirm delete from current")) == wxYES) {
 		Selection removed;
 		for (auto line : mangetsu::InitialMetadata(*c->ass)) {
-			if (line->Effect != "mangetsu-style") continue;
+			if (!mangetsu::IsStyleMetadata(*line)) continue;
 			for (int i = 0; i < n; ++i) if (mangetsu::ResolveMetadataStyle(*c->ass, line->Style) == styleMap.at(selections[i])) removed.insert(line);
 		}
 		if (!removed.empty()) {
@@ -710,13 +711,15 @@ void DialogStyleManager::OnCurrentImport() {
 	AssFile temp;
 	try {
 		auto reader = SubtitleFormat::GetReader(filename, charset);
-		if (!reader)
+		if (!reader) {
 			wxMessageBox(_("Unsupported subtitle format"), _("Error"), wxOK | wxICON_ERROR | wxCENTER, this);
-		else
-			reader->ReadFile(&temp, filename, 0, charset);
+			return;
+		}
+		reader->ReadFile(&temp, filename, 0, charset);
 	}
 	catch (agi::Exception const& err) {
 		wxMessageBox(to_wx(err.GetMessage()), _("Error"), wxOK | wxICON_ERROR | wxCENTER, this);
+		return;
 	}
 	catch (...) {
 			wxMessageBox(_("Unknown error"), _("Error"), wxOK | wxICON_ERROR | wxCENTER, this);
@@ -754,6 +757,19 @@ void DialogStyleManager::OnCurrentImport() {
 	wxArrayInt selections;
 	int res = GetSelectedChoices(this, selections, _("Choose styles to import:"), _("Import Styles"), to_wx(styles));
 	if (res == -1 || selections.empty()) return;
+
+	// Inherited events keep their authored style names. Add their real
+	// source styles to the same selection and conflict-resolution pass.
+	std::set<int> selected_indices(selections.begin(), selections.end());
+	for (auto const& line : temp.Events) {
+		if (!mangetsu::HasInheritanceMarker(line)
+			|| (mangetsu::IsMetadataComment(line) && !mangetsu::IsStyleMetadata(line))) continue;
+		auto style = mangetsu::ResolveMetadataStyle(temp, line.Style);
+		if (!style) continue;
+		auto position = std::find(styles.begin(), styles.end(), style->name);
+		auto index = static_cast<int>(position - styles.begin());
+		if (position != styles.end() && selected_indices.insert(index).second) selections.Add(index);
+	}
 	bool styles_modified = false;
 
 	// [Satoshi replace-all import] One-time conflict prompt with Replace All option
@@ -822,15 +838,14 @@ void DialogStyleManager::OnCurrentImport() {
 		imported_styles.push_back(source_style->name);
 	}
 
-	// Event metadata belongs to the imported styles, not to catalog Style
-	// records. Capture selection IDs before replacing declarations, so visible
+	// Capture selection IDs before replacing declarations, so visible
 	// selected metadata cannot leave dangling pointers in the editor.
 	std::set<int> selected_ids;
 	for (auto line : c->selectionController->GetSelectedSet()) selected_ids.insert(line->Id);
 	auto old_active = c->selectionController->GetActiveLine();
 	int active_id = old_active ? old_active->Id : -1;
-	bool metadata_modified = mangetsu::ImportMetadata(*c->ass, temp, imported_styles);
-	if (metadata_modified) {
+	bool events_modified = mangetsu::ImportStyleEvents(*c->ass, temp, imported_styles);
+	if (events_modified) {
 		Selection selected;
 		AssDialogue *active = nullptr;
 		int row = 0;
@@ -851,9 +866,9 @@ void DialogStyleManager::OnCurrentImport() {
 
 	// Commit the subtitle transformations together after synchronizing project
 	// metadata, so an immediate save/autosave sees the current runtime paths.
-	if (match_resolution || styles_modified || metadata_modified) {
+	if (match_resolution || styles_modified || events_modified) {
 		int commit_type = styles_modified ? AssFile::COMMIT_STYLES : 0;
-		if (metadata_modified)
+		if (events_modified)
 			commit_type |= AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_DIAG_FULL | AssFile::COMMIT_ORDER | AssFile::COMMIT_EXTRADATA;
 		if (match_resolution)
 			commit_type |= AssFile::COMMIT_SCRIPTINFO | AssFile::COMMIT_STYLES | AssFile::COMMIT_DIAG_FULL;

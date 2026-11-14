@@ -374,13 +374,29 @@ TEST(CustomSubtitleMetadata, MixedInitialBlockIsForwardedInOrderRegardlessOfTime
 TEST(CustomSubtitleMetadata, AnUnrelatedCommentOrDialogueClosesTheSharedBlock) {
 	auto late = Metadata("mangetsu-style", "{\\furis20}");
 	for (auto const& boundary : {Metadata("note", "ordinary comment"), Event("first dialogue"),
-		Metadata("Mangetsu-style", "{\\furis30}"), Metadata("mangetsu-colorcoding", "{}")}) {
+		Metadata("Mangetsu-style", "{\\furis30}"), Metadata("mangetsu-colorcoding", "{}"),
+		Metadata("ordinary mangetsu-style{uketsugu}", "{\\furis30}"),
+		Metadata("{mangetsu-style}{uketsugu}", "{\\furis30}"),
+		Metadata("mangetsu-style mangetsu-colorcoding", "{\\furis30}", "Nene"),
+		Metadata("mangetsu-style{unclosed", "{\\furis30}")}) {
 		auto serialized = SerializeMetadata(Metadata("mangetsu-style", "{\\furis70}") + boundary + late);
 		EXPECT_EQ(serialized.find(late), std::string::npos);
 	}
 	// Filtering out an inactive dialogue must not promote metadata after it.
 	auto serialized = SerializeMetadata("Dialogue: 0,0:00:10.00,0:00:20.00,Default,,0,0,0,,later\n" + late + Event("active"), 1000);
 	EXPECT_EQ(serialized.find(late), std::string::npos);
+}
+
+TEST(CustomSubtitleMetadata, EffectAnnotationsAreRemovedOnlyFromRendererMetadata) {
+	auto first = Metadata("mangetsu-style", "{\\furis70}");
+	auto second = Metadata("mangetsu-style", "{\\q2}");
+	auto actor = Metadata("mangetsu-colorcoding", "{\\1c&HFF0000&}", "Nene");
+	std::string ordinary = "Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,code{uketsugu},visible\n";
+	auto serialized = SerializeMetadata(Metadata(" {uketsugu}mangetsu-style{other} ", "{\\furis70}")
+		+ Metadata("mangetsu-style{uketsugu}", "{\\q2}")
+		+ Metadata("{other}mangetsu-colorcoding{uketsugu}", "{\\1c&HFF0000&}", "Nene") + ordinary);
+	EXPECT_NE(serialized.find(first + second + actor + ordinary), std::string::npos);
+	EXPECT_EQ(serialized.find("{other}"), std::string::npos);
 }
 
 TEST(CustomSubtitleMetadata, EditingMetadataAndItsBoundaryInvalidatesThePreview) {
@@ -402,7 +418,7 @@ TEST_P(CustomSubtitleBackend, MangetsuStyleDefaultsSurviveHostSerializationAndMa
 		{"\\2bs3\\2bc&HFFAA00&\\2ba&H40&", "border layers"},
 		{"\\q2\\vert1\\vtype3\\vdir2\\vsp2\\vcolsp8", "ABC\\NDEF"}}) {
 		SCOPED_TRACE(fixture.first);
-		Session subject(backend, SerializeMetadata(Metadata("mangetsu-style", '{' + fixture.first + '}') + Event(fixture.second)));
+		Session subject(backend, SerializeMetadata(Metadata("{uketsugu}mangetsu-style{note}", '{' + fixture.first + '}') + Event(fixture.second)));
 		Session reference(backend, Script(Event('{' + fixture.first + '}' + fixture.second)));
 		Session ordinary(backend, Script(Event(fixture.second)));
 		for (bool legacy : {false, true}) {
@@ -416,6 +432,23 @@ TEST_P(CustomSubtitleBackend, MangetsuStyleDefaultsSurviveHostSerializationAndMa
 			EXPECT_NE(frame.data, unchanged.data) << "Fixture must actually exercise inherited defaults";
 		}
 	}
+}
+
+TEST_P(CustomSubtitleBackend, DecoratedActorColorcodingRetainsPriorityOverStyleDefaults) {
+	if (std::string(GetParam()).find("MANGETSU") == std::string::npos) return;
+	auto event = "Dialogue: 0,0:00:00.00,0:00:05.00,Default,Nene,0,0,0,,visible\n";
+	auto style = Metadata("mangetsu-style", "{\\1c&H00FF00&}");
+	auto actor = Metadata("mangetsu-colorcoding", "{\\1c&HFF0000&}", "Nene");
+	Session reference(backend, Script(style + actor + event));
+	Session style_only(backend, Script(style + event));
+	Session decorated(backend, SerializeMetadata(Metadata("mangetsu-style{uketsugu}", "{\\1c&H00FF00&}")
+		+ Metadata("{note}{uketsugu}mangetsu-colorcoding", "{\\1c&HFF0000&}", "Nene") + event));
+	auto expected = Background(), without_actor = expected, actual = expected;
+	DrawFrame(backend.api, reference.renderer, reference.track, 1000, expected);
+	DrawFrame(backend.api, style_only.renderer, style_only.track, 1000, without_actor);
+	DrawFrame(backend.api, decorated.renderer, decorated.track, 1000, actual);
+	EXPECT_EQ(actual.data, expected.data);
+	EXPECT_NE(actual.data, without_actor.data);
 }
 
 TEST_P(CustomSubtitleBackend, OrdinaryAssAppearance) {

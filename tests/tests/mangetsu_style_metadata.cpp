@@ -4,6 +4,8 @@
 #include "ass_file.h"
 #include "ass_parser.h"
 #include "ass_style.h"
+#include "mangetsu_metadata.h"
+#include "style_import.h"
 #include <gtest/gtest.h>
 
 namespace {
@@ -193,15 +195,108 @@ TEST(MangetsuStyleMetadata, ExternalImportCopiesSelectedStylesAndAllActorDeclara
 	Add(source, "late", "Default", "note");
 	Add(destination, "{\\q0}", "Default");
 	Add(destination, "old actor", "Default", "mangetsu-colorcoding", true, "Old");
-	ASSERT_TRUE(mangetsu::ImportMetadata(destination, source, {source_default.name}));
+	ASSERT_TRUE(mangetsu::ImportStyleEvents(destination, source, {source_default.name}));
 	auto lines = mangetsu::InitialMetadata(destination);
 	ASSERT_EQ(lines.size(), 5u);
 	EXPECT_NE(lines[0]->Text.get().find("\\furis70"), std::string::npos);
 	EXPECT_EQ(lines[1]->Actor.get(), "Old");
 	EXPECT_EQ(lines[2]->Actor.get(), "Nene");
 	EXPECT_EQ(lines[3]->Actor.get(), "mangetsu-colorcode-applied-styles");
-	EXPECT_TRUE(mangetsu::ImportMetadata(destination, source, {source_default.name}));
+	EXPECT_TRUE(mangetsu::ImportStyleEvents(destination, source, {source_default.name}));
 	EXPECT_EQ(mangetsu::InitialMetadata(destination).size(), 5u);
+}
+
+TEST(MangetsuStyleMetadata, ImportsEveryMarkedEventAfterTheMetadataHeader) {
+	for (bool with_style : {false, true}) for (bool with_actor : {false, true}) {
+		AssFile source, destination;
+		auto& sign = AddStyle(source, "Sign");
+		sign.fontsize = 32;
+		auto& existing_sign = AddStyle(destination, "Sign");
+		existing_sign.fontsize = 27;
+		auto& normal = Add(destination, "original", "Sign", "", false);
+		auto insertion = destination.Events.iterator_to(normal);
+		if (with_actor) {
+			auto actor = new AssDialogue("Comment: 0,0:00:00.00,0:00:00.00,Sign,Nene,0,0,0,{other}mangetsu-colorcoding,{\\1c&HFF0000&}");
+			destination.Events.insert(insertion, *actor);
+		}
+		if (with_style) {
+			auto style = new AssDialogue("Comment: 0,0:00:00.00,0:00:00.00,Sign,,0,0,0,mangetsu-style{other},{\\furis70}");
+			destination.Events.insert(insertion, *style);
+		}
+		auto original = normal.GetEntryData();
+		auto& comment = Add(source, "{\\an8}configuration", "Sign", " code {uketsugu}{keep} ", true, "actor");
+		comment.Layer = 7;
+		comment.Start = 1230;
+		comment.End = 4560;
+		comment.Margin = {{11, 22, 33}};
+		auto& dialogue = Add(source, "visible", "Sign", "before{uketsugu}after", false);
+		Add(source, "ignore", "Sign", "{uketsugu2}");
+		Add(source, "ignore nested", "Sign", "{other{uketsugu}}");
+		auto duplicate = new AssDialogue(comment);
+		source.Events.push_back(*duplicate);
+
+		EXPECT_FALSE(ImportStyle(destination, sign, false));
+		EXPECT_EQ(existing_sign.fontsize, 27);
+		ASSERT_TRUE(ImportStyle(destination, sign, true));
+		EXPECT_EQ(existing_sign.fontsize, 32);
+
+		std::vector<std::string> expected;
+		if (with_style) expected.push_back("Comment: 0,0:00:00.00,0:00:00.00,Sign,,0,0,0,mangetsu-style{other},{\\furis70}");
+		if (with_actor) expected.push_back("Comment: 0,0:00:00.00,0:00:00.00,Sign,Nene,0,0,0,{other}mangetsu-colorcoding,{\\1c&HFF0000&}");
+		for (int import = 0; import < 2; ++import) {
+			ASSERT_TRUE(mangetsu::ImportStyleEvents(destination, source, {"Sign"}));
+			expected.insert(expected.end(), {comment.GetEntryData(), dialogue.GetEntryData(), duplicate->GetEntryData()});
+			auto serialized = expected;
+			serialized.push_back(original);
+			std::vector<std::string> actual;
+			AssFile reopened;
+			AssParser parser(&reopened, 1);
+			parser.AddLine("[Events]");
+			for (auto const& event : destination.Events) {
+				actual.push_back(event.GetEntryData());
+				parser.AddLine(actual.back());
+			}
+			EXPECT_EQ(actual, serialized);
+			actual.clear();
+			for (auto const& event : reopened.Events) actual.push_back(event.GetEntryData());
+			EXPECT_EQ(actual, serialized);
+		}
+		EXPECT_EQ(normal.GetEntryData(), original);
+	}
+}
+
+TEST(MangetsuStyleMetadata, ImportsOneMarkedEventWithoutAnyMetadata) {
+	AssFile source, destination;
+	auto& marked = Add(source, "inherit me", "Default", "{uketsugu}", false);
+	auto& ordinary = Add(destination, "keep me", "Default", "", false);
+	ASSERT_TRUE(mangetsu::ImportStyleEvents(destination, source, {}));
+	ASSERT_EQ(destination.Events.size(), 2u);
+	EXPECT_EQ(destination.Events.front().GetEntryData(), marked.GetEntryData());
+	EXPECT_EQ(&destination.Events.back(), &ordinary);
+}
+
+TEST(MangetsuStyleMetadata, DecoratedDeclarationsAreCopiedOnceInTheirOwnCategory) {
+	AssFile source, destination;
+	AddStyle(source);
+	auto& style = AddStyle(destination);
+	auto& addon = Add(source, "{\\furis70}", "Default", "{uketsugu}mangetsu-style{preserve}");
+	auto& actor = Add(source, "{\\1c&H123456&}", "Default", "mangetsu-colorcoding{uketsugu}", true, "Nene");
+	ASSERT_TRUE(mangetsu::ImportStyleEvents(destination, source, {"Default"}));
+	auto header = mangetsu::InitialMetadata(destination);
+	ASSERT_EQ(header.size(), 2u);
+	ASSERT_EQ(destination.Events.size(), 2u);
+	EXPECT_EQ(header[0]->GetEntryData(), addon.GetEntryData());
+	EXPECT_EQ(header[1]->GetEntryData(), actor.GetEntryData());
+	EXPECT_EQ(mangetsu::HiddenMetadata(destination, true, false).count(header[0]), 1u);
+	StyleMetadataDraft draft(destination, style);
+	EXPECT_EQ(draft.Values(style, 0).at("furisx").value, "70");
+	draft.Set("furisx", "80");
+	ASSERT_TRUE(draft.Apply(destination, &style, style.name, style, false));
+	EXPECT_EQ(header[0]->Effect.get(), addon.Effect.get());
+	EXPECT_EQ(header[1]->GetEntryData(), actor.GetEntryData());
+	auto& copy = AddStyle(destination, "Copy");
+	ASSERT_TRUE(draft.Apply(destination, &style, copy.name, copy, true));
+	EXPECT_EQ(mangetsu::InitialMetadata(destination)[1]->Effect.get(), addon.Effect.get());
 }
 TEST(MangetsuStyleMetadata, RelativeNumbersAndCommonAxisAliasesAreResolvedOnce) {
 	AssFile file; auto& style = AddStyle(file);

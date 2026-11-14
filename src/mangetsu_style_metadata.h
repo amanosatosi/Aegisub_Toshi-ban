@@ -30,13 +30,15 @@ bool NormalizeInitialMetadata(AssFile& file);
 std::set<AssDialogue const*> HiddenMetadata(AssFile const& file, bool mangetsu_selected, bool show_metadata);
 bool RemoveStyleMetadata(AssFile& file, AssStyle const& style);
 // Import only the accepted styles' declarations, plus every initial Actor
-// Colorcoding declaration (including its whitelist), in source order.
-bool ImportMetadata(AssFile& destination, AssFile const& source, std::vector<std::string> const& styles);
+// Colorcoding declaration (including its whitelist), and all events marked
+// for inheritance. Metadata keeps its header priority over other events.
+bool ImportStyleEvents(AssFile& destination, AssFile const& source, std::vector<std::string> const& styles);
 
 // A value object: child dialogs edit copies; only the parent's Apply writes
 // the document. Unknown text and gradient sources retain their exact order.
 class StyleMetadataDraft {
 	std::vector<std::string> sources;
+	std::vector<std::string> source_effects;
 	std::map<std::string, std::optional<std::string>> changes;
 	std::vector<GradientEdit> gradients;
 public:

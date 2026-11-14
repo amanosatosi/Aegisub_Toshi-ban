@@ -95,7 +95,7 @@ class StyleRenamer {
 		for (auto& diag : c->ass->Events) {
 			// The style metadata transaction owns these targets and preserves
 			// manually written tag text rather than reparsing it on rename.
-			if (diag.Comment && diag.Effect == "mangetsu-style") continue;
+			if (mangetsu::IsStyleMetadata(diag)) continue;
 			if (diag.Style == source_name) {
 				if (replace)
 					diag.Style = new_name;
