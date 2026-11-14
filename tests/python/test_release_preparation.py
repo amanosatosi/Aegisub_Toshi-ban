@@ -93,8 +93,8 @@ class ReleasePreparation(unittest.TestCase):
     def test_windows_mangetsu_style_punctuation_is_unicode_safe(self):
         # MSVC /utf-8 alone did not prevent wxWidgets' narrow-string
         # conversion from producing e.g. "Furiganaâ€¦" on Windows CI.
-        source = read("src/dialog_style_editor.cpp")
-        for value in (r'_(L"Furigana\u2026")', r'_(L"Vertical\u2026")',
+        source = read("src/dialog_mangetsu_style.cpp")
+        for value in (r'_(L"Furigana\u2026")', r'_(L"Vertical text\u2026")',
                       r'_(L"Multi-border\u2026")'):
             self.assertIn(value, source)
         self.assertIn(r'_(L"Border alpha (0\u2013255)")',

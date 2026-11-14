@@ -47,6 +47,14 @@ struct GradientTag {
 GradientScope ResolveGradientScope(std::string const& text, size_t selection_start, size_t selection_end);
 std::vector<int> FindOutlineLayers(std::string const& text);
 GradientTag FindEffectiveGradient(std::string const& text, GradientScope scope, GradientTarget target);
+bool IsStyleGradientTag(std::string const& name, GradientTarget target);
+std::vector<GradientTag> FindStyleGradients(std::string const& text, GradientTarget target);
+// The caret or start of the selection chooses one logical \N line.
+int InlineAlignment(std::string const& text, size_t caret);
+std::string SetInlineAlignment(std::string const& text, size_t caret, int value, int& selection_start, int& selection_end);
+int InheritedInlineAlignment(std::string const& text, size_t caret, int fallback);
+std::string GradientSlideWidth(std::string const& text);
+std::string SetGradientSlideWidth(std::string text, std::string const& value, GradientScope *scope = nullptr);
 GradientTag FindEffectiveBorderSize(std::string const& text, GradientScope scope, int layer, bool x_axis);
 double EffectiveBorderSize(std::string const& text, GradientScope scope, int layer, bool x_axis,
 	double default_size, std::map<std::string, double> const& named_style_sizes = {});

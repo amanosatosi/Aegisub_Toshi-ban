@@ -17,6 +17,11 @@
 #include "include/aegisub/context.h"
 #include "mangetsu_gradient_placement.h"
 #include "mangetsu_gradient_scope.h"
+#include "dialog_mangetsu_gradient.h"
+#include "mangetsu_style_metadata.h"
+#include "mangetsu_ui.h"
+#include "options.h"
+#include "subs_preview.h"
 #include "mangetsu_gradient_stop_drag.h"
 #include "selection_controller.h"
 #include "text_selection_controller.h"
@@ -45,11 +50,13 @@
 #include <wx/font.h>
 #include <wx/intl.h>
 #include <wx/listbox.h>
+#include <wx/msgdlg.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
 #include <wx/stattext.h>
 #include <wx/tglbtn.h>
+#include <wx/textctrl.h>
 #include <wx/timer.h>
 
 #include <libaegisub/signal.h>
@@ -147,6 +154,12 @@ class DialogMangetsuGradient final : public wxDialog {
 
 	agi::Context *context = nullptr;
 	AssDialogue *active_line = nullptr;
+	mangetsu::StyleMetadataDraft *style_draft = nullptr;
+	AssStyle const *style_model = nullptr;
+	int style_wrap = 0;
+	std::function<void()> style_refresh;
+	SubtitlesPreview *style_preview = nullptr;
+	wxTextCtrl *slide_width = nullptr;
 
 	TargetGroup group = TargetGroup::Main;
 	ChannelMode mode = ChannelMode::Color;
@@ -231,6 +244,7 @@ class DialogMangetsuGradient final : public wxDialog {
 	void OnBorderSizeChanged(wxCommandEvent&);
 	std::string BuildWorkingText(bool include_provisional = false,
 		mangetsu::GradientScope *result_scope = nullptr);
+	mangetsu::StyleMetadataDraft BuildStyleDraft();
 	std::string FormatStateValue(TargetKey key, WorkingState const& state) const;
 	mangetsu::GradientTarget ScopeTarget(TargetKey key) const;
 	std::string FallbackTag(mangetsu::GradientTarget target, AssStyle const *style = nullptr) const;
@@ -284,6 +298,7 @@ class DialogMangetsuGradient final : public wxDialog {
 	void OnQuickAngle(int new_angle);
 	void OnMode(ChannelMode new_mode);
 	void OnApply(wxCommandEvent&);
+	bool ApplyEdits();
 	void OnOK(wxCommandEvent&);
 	void OnCancel(wxCommandEvent&);
 	void MarkGradientChanged(bool immediate = false, wxString const& message = wxString());
@@ -295,6 +310,8 @@ class DialogMangetsuGradient final : public wxDialog {
 
 public:
 	DialogMangetsuGradient(wxWindow *parent, agi::Context *context);
+	DialogMangetsuGradient(wxWindow *parent, mangetsu::StyleMetadataDraft& draft,
+		AssStyle const& style, int wrap, std::function<void()> refresh);
 	~DialogMangetsuGradient();
 };
 
@@ -609,14 +626,32 @@ DialogMangetsuGradient::~DialogMangetsuGradient() {
 	EndPlacementSession();
 }
 
+DialogMangetsuGradient::DialogMangetsuGradient(wxWindow *parent, mangetsu::StyleMetadataDraft& draft,
+	AssStyle const& style, int wrap, std::function<void()> refresh)
+: wxDialog(parent, wxID_ANY, _("Mangetsu Style Gradients"), wxDefaultPosition, wxDefaultSize,
+	wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
+, style_draft(&draft), style_model(&style), style_wrap(wrap), style_refresh(std::move(refresh)) {
+	for (auto const& text : draft.Texts(style, wrap)) original_text += text;
+	edit_scope = {original_text.size(), original_text.size(), false};
+	ResetDefaultGradient();
+	BuildControls();
+	RefreshAvailableTargets();
+	LoadWorkingState();
+	RefreshControls();
+	PreviewWorkingText();
+	CentreOnParent();
+}
+
 void DialogMangetsuGradient::BuildControls() {
+	mangetsu::StyleSurface(this);
 	auto *root = new wxBoxSizer(wxVERTICAL);
 	auto *body = new wxBoxSizer(wxHORIZONTAL);
 	auto *editor = new wxBoxSizer(wxVERTICAL);
 	auto *target_box = new wxStaticBoxSizer(wxVERTICAL, this, _("Target"));
+	if (mangetsu::UseBrandColours()) target_box->GetStaticBox()->SetForegroundColour(mangetsu::Colours().text);
 	target_list = new wxListBox(this, wxID_ANY, wxDefaultPosition, wxSize(145, 230));
 	target_box->Add(target_list, 1, wxEXPAND | wxALL, 4);
-	auto *new_outline = new wxButton(this, wxID_ANY, _("+ New outline"));
+	auto *new_outline = new mangetsu::MangetsuButton(this, _("+ New outline"));
 	target_box->Add(new_outline, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 4);
 	delete_outline_button = new wxButton(this, wxID_ANY, _("Delete outline"));
 	target_box->Add(delete_outline_button, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 4);
@@ -683,11 +718,11 @@ void DialogMangetsuGradient::BuildControls() {
 	outline_size_panel->SetSizer(size_sizer);
 
 	auto *ops = new wxBoxSizer(wxHORIZONTAL);
-	add_button = new wxButton(this, wxID_ANY, _("+ Stop"));
+	add_button = new mangetsu::MangetsuButton(this, _("+ Stop"));
 	add_button->SetToolTip(_("Choose a position for a new stop on the gradient strip."));
 	remove_button = new wxButton(this, wxID_ANY, _("Remove"));
-	auto *reverse_button = new wxButton(this, wxID_ANY, _("Reverse"));
-	auto *flat_button = new wxButton(this, wxID_ANY, _("Flat Zone"));
+	auto *reverse_button = new mangetsu::MangetsuButton(this, _("Reverse"));
+	auto *flat_button = new mangetsu::MangetsuButton(this, _("Flat Zone"));
 	auto *clear_button = new wxButton(this, wxID_ANY, _("Clear"));
 	ops->Add(add_button, wxSizerFlags().Border(wxRIGHT, 4));
 	ops->Add(remove_button, wxSizerFlags().Border(wxRIGHT, 4));
@@ -705,13 +740,37 @@ void DialogMangetsuGradient::BuildControls() {
 	buttons->Add(cancel);
 
 	editor->Add(top, wxSizerFlags().Expand().Border(wxALL, 8));
+	if (!style_draft) {
+		auto slide = new wxBoxSizer(wxHORIZONTAL);
+		slide->Add(new wxStaticText(this, wxID_ANY, _("Global gradient slide width")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+		slide_width = new wxTextCtrl(this, wxID_ANY, to_wx(mangetsu::GradientSlideWidth(original_text)));
+		slide_width->SetToolTip(_("Sets the initial sliding transition width in script pixels. Zero gives a sharp edge. Clear the field to remove the global override."));
+		slide->Add(slide_width, 0);
+		editor->Add(slide, 0, wxLEFT | wxRIGHT | wxBOTTOM, 8);
+		slide_width->Bind(wxEVT_TEXT, [this](wxCommandEvent&) { SchedulePreview(_("set gradient")); });
+	}
 	editor->Add(outline_size_panel, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
 	editor->Add(stop_bar, wxSizerFlags(1).Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
 	editor->Add(status_label, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
 	editor->Add(ops, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
+	if (style_draft) {
+		style_preview = new SubtitlesPreview(this, mangetsu::Dip(this, wxSize(330, 100)), wxBORDER_SIMPLE,
+			OPT_GET("Colour/Style Editor/Background/Preview")->GetColor());
+		style_preview->SetText("Mangetsu\\NGradient preview");
+		editor->Add(style_preview, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 8);
+	}
 	body->Add(editor, 1, wxEXPAND);
 	root->Add(body, 1, wxEXPAND);
+	root->Add(new wxStaticText(this, wxID_ANY, mangetsu::CompatibilityText()), 0, wxLEFT | wxRIGHT | wxBOTTOM, mangetsu::Dip(this, 8));
 	root->Add(buttons, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
+	if (style_draft) {
+		new_outline->Hide();
+		delete_outline_button->Hide();
+		lock_placement_button->Hide();
+		outline_size_panel->Hide();
+		apply->Hide();
+	}
+	mangetsu::StyleLabels(this);
 	SetSizerAndFit(root);
 	SetMinSize(GetSize());
 
@@ -761,6 +820,7 @@ void DialogMangetsuGradient::BuildControls() {
 
 void DialogMangetsuGradient::RefreshAvailableTargets() {
 	border_layers = mangetsu::FindOutlineLayers(original_text);
+	if (style_draft) border_layers = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
 	for (int layer : new_outline_layers)
 		if (std::find(border_layers.begin(), border_layers.end(), layer) == border_layers.end())
 			border_layers.push_back(layer);
@@ -846,8 +906,19 @@ void DialogMangetsuGradient::LoadWorkingState() {
 		ResetDefaultGradient();
 		lock_placement = false;
 		placement_rect = {};
-		auto tag = mangetsu::FindEffectiveGradient(original_text, edit_scope, ScopeTarget(CurrentKey()));
-		existing = tag && LoadTagValue(tag.value, mangetsu::IsPlacementGradientTagName(tag.name));
+		auto target = ScopeTarget(CurrentKey());
+		if (style_draft) {
+			existing = false;
+			for (auto const& tag : mangetsu::FindStyleGradients(original_text, target)) {
+				if (LoadTagValue(tag.value, false)) {
+					existing = true;
+					break;
+				}
+			}
+		} else {
+			auto tag = mangetsu::FindEffectiveGradient(original_text, edit_scope, target);
+			existing = tag && LoadTagValue(tag.value, mangetsu::IsPlacementGradientTagName(tag.name));
+		}
 		if (!existing) {
 			ResetDefaultGradient();
 			lock_placement = false;
@@ -973,10 +1044,24 @@ std::string DialogMangetsuGradient::BuildWorkingText(bool include_provisional,
 		edit.border_fallback_x = p + "x" + size_fallback;
 		edit.border_fallback_y = p + "y" + size_fallback;
 	}
-	return mangetsu::ApplyGradientEdits(original_text, edit_scope, edits, result_scope);
+	auto result = mangetsu::ApplyGradientEdits(original_text, edit_scope, edits, result_scope);
+	if (slide_width) {
+		auto width = from_wx(slide_width->GetValue());
+		double pixels;
+		if (width != mangetsu::GradientSlideWidth(original_text) &&
+			(width.empty() || width == "off" || (mangetsu::ParseStyleNumber(width, pixels) && pixels >= 0)))
+			result = mangetsu::SetGradientSlideWidth(std::move(result), width, result_scope);
+	}
+	return result;
 }
 
 void DialogMangetsuGradient::PreviewWorkingText() {
+	if (style_draft && style_preview) {
+		auto draft = BuildStyleDraft();
+		style_preview->SetMangetsuMetadata(draft.Texts(*style_model, style_wrap), style_wrap);
+		style_preview->SetStyle(*style_model);
+		return;
+	}
 	if (context && context->videoController && active_line)
 		context->videoController->PreviewSubtitleText(active_line, BuildWorkingText(true));
 }
@@ -1076,8 +1161,8 @@ void DialogMangetsuGradient::RefreshControls() {
 	color_button->SetValue(mode == ChannelMode::Color);
 	alpha_button->SetValue(mode == ChannelMode::Alpha);
 	editing_label->SetLabel(fmt_tl("Editing: %s — %s", to_wx(CurrentTargetName()), to_wx(CurrentModeName())));
-	SetTitle(fmt_tl("Gradient Editor — %s", to_wx(CurrentTargetName())));
-	outline_size_panel->Show(group == TargetGroup::Border);
+	if (!style_draft) SetTitle(fmt_tl("Gradient Editor — %s", to_wx(CurrentTargetName())));
+	outline_size_panel->Show(!style_draft && group == TargetGroup::Border);
 	delete_outline_button->Enable(group == TargetGroup::Border && new_outline_layers.count(border_index));
 	if (group == TargetGroup::Border) {
 		border_x_ctrl->SetValue(border_size_x);
@@ -1890,14 +1975,29 @@ void DialogMangetsuGradient::OnMode(ChannelMode new_mode) {
 }
 
 void DialogMangetsuGradient::OnApply(wxCommandEvent&) {
+	ApplyEdits();
+}
+
+bool DialogMangetsuGradient::ApplyEdits() {
 	if (stop_bar && stop_bar->IsAdding())
 		CancelAddStopPlacement(false);
 	if (lock_placement && !placement_rect.valid) {
 		placement_status = _("Drag a fixed gradient area before applying placement mode.");
 		RefreshLightControls();
-		return;
+		return false;
 	}
-	if (!active_line || !context || !context->ass) return;
+	if (!active_line || !context || !context->ass) return false;
+	if (slide_width) {
+		auto width = from_wx(slide_width->GetValue());
+		double pixels;
+		if (width != mangetsu::GradientSlideWidth(original_text) && !width.empty() && width != "off" &&
+			(!mangetsu::ParseStyleNumber(width, pixels) || pixels < 0)) {
+			wxMessageBox(_("Enter a nonnegative slide width, off, or leave it empty."),
+				_("Invalid style value"), wxOK | wxICON_ERROR, this);
+			slide_width->SetFocus();
+			return false;
+		}
+	}
 	if (preview_pending) { preview_timer.Stop(); preview_pending = false; }
 	mangetsu::GradientScope applied_scope;
 	std::string result = BuildWorkingText(false, &applied_scope);
@@ -1929,13 +2029,35 @@ void DialogMangetsuGradient::OnApply(wxCommandEvent&) {
 		border_index = 1;
 	LoadWorkingState();
 	RefreshControls();
+	return true;
+}
+
+mangetsu::StyleMetadataDraft DialogMangetsuGradient::BuildStyleDraft() {
+	auto draft = *style_draft;
+	SaveWorkingState();
+	for (auto const& item : working) {
+		auto const& state = item.second;
+		if (!state.modified && !state.cleared) continue;
+		auto target = ScopeTarget(item.first);
+		auto number = std::to_string(std::get<1>(item.first));
+		std::string tag = target.kind == mangetsu::GradientTargetKind::Outline
+			? "\\" + std::to_string(target.layer) + (target.alpha ? "bga" : "bgrd")
+			: "\\" + number + (target.alpha ? "gra" : "grd");
+		draft.SetGradient(target, state.cleared ? std::string{} : tag + FormatStateValue(item.first, state));
+	}
+	return draft;
 }
 
 void DialogMangetsuGradient::OnOK(wxCommandEvent&) {
+	if (style_draft) {
+		CancelAddStopPlacement(false);
+		*style_draft = BuildStyleDraft();
+		style_refresh();
+		EndModal(wxID_OK);
+		return;
+	}
 	CancelAddStopPlacement(false);
-	if (lock_placement && !placement_rect.valid) return;
-	wxCommandEvent apply;
-	OnApply(apply);
+	if (!ApplyEdits()) return;
 	EndPlacementSession();
 	FinishDialog(wxID_OK);
 }
@@ -1969,4 +2091,10 @@ void ShowMangetsuGradientDialog(agi::Context *c) {
 
 	auto *dlg = new DialogMangetsuGradient(c->parent, c);
 	dlg->Show();
+}
+
+bool mangetsu::EditStyleGradients(wxWindow *parent, StyleMetadataDraft& draft, AssStyle const& style,
+	int wrap, std::function<void()> refresh) {
+	DialogMangetsuGradient dialog(parent, draft, style, wrap, std::move(refresh));
+	return dialog.ShowModal() == wxID_OK;
 }

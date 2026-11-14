@@ -82,6 +82,7 @@ aegisub_src = files(
     'dialog_kara_timing_copy.cpp',
     'dialog_log.cpp',
     'dialog_mangetsu_gradient.cpp',
+    'mangetsu_ui.cpp',
     'dialog_mangetsu_chat_style.cpp',
     'dialog_motion_track.cpp',
     'dialog_ocr.cpp',

@@ -87,11 +87,7 @@ class DialogStyleEditor final : public wxDialog {
 	SubtitlesPreview *SubsPreview;
 	mangetsu::StyleMetadataDraft metadata;
 	AssStyle const *metadata_source = nullptr;
-	wxSizer *mangetsu_actions = nullptr;
-	wxChoice *WrapMode = nullptr;
-	std::vector<wxWindow*> mangetsu_controls;
 	agi::signal::Connection renderer_changed;
-	void UpdateMangetsuControls();
 	void UpdatePreview();
 
 	void SetBitmapColor(int n,wxColour color);

@@ -54,6 +54,11 @@ StyleValues Defaults(AssStyle const& style, int wrap) {
 	for (auto key : {"furifsp", "furistyle", "furiplaceauto", "furichangepos", "vert", "vtype", "vdir", "vsp", "vcolsp"}) v[key].value = "0";
 	v["furipos"].value = "0,0";
 	v["q"].value = std::to_string(std::max(0, std::min(3, wrap)));
+	v["ta"].value = std::to_string(std::clamp(style.alignment, 1, 9));
+	v["box"].value = style.borderstyle == 4 ? "1" : "0";
+	v["boxr"].value = "0";
+	v["bbs"].value = "0";
+	v["boxp"].value = "0,0,0,0";
 	for (int layer = 1; layer <= 10; ++layer) {
 		auto n = std::to_string(layer);
 		v[n + "bsx"].value = v[n + "bsy"].value = StyleNumber(layer == 1 ? style.outline_w : 0);
@@ -121,6 +126,8 @@ std::map<std::string, StyleValue> Assign(Token const& token, StyleValues const& 
 	std::vector<std::string> names;
 	for (auto const& entry : defaults) names.push_back(entry.first);
 	names.push_back("furis");
+	names.push_back("boxpx");
+	names.push_back("boxpy");
 	for (int n = 1; n <= 10; ++n) names.push_back(std::to_string(n) + "bs");
 	std::sort(names.begin(), names.end(), [](auto const& a, auto const& b) { return a.size() > b.size(); });
 	std::string key, arg;
@@ -128,7 +135,8 @@ std::map<std::string, StyleValue> Assign(Token const& token, StyleValues const& 
 		key = name; arg = Trim(token.text.substr(name.size())); break;
 	}
 	if (key.empty()) return {};
-	if (!arg.empty() && arg.front() == '(') {
+	bool tuple = !arg.empty() && arg.front() == '(';
+	if (tuple) {
 		if (arg.back() != ')') return {};
 		arg = Trim(arg.substr(1, arg.size() - 2));
 	}
@@ -136,6 +144,24 @@ std::map<std::string, StyleValue> Assign(Token const& token, StyleValues const& 
 	if (key == "furis") fields = {"furisx", "furisy"};
 	else if (key.size() >= 3 && key.substr(key.size() - 2) == "bs") fields = {key + 'x', key + 'y'};
 	std::map<std::string, StyleValue> result;
+	if (key == "boxp" || key == "boxpx" || key == "boxpy") {
+		std::istringstream prior(current.at("boxp").value);
+		std::vector<std::string> sides;
+		for (std::string side; std::getline(prior, side, ',');) sides.push_back(side);
+		int first = key == "boxpy" ? 2 : 0;
+		int last = key == "boxpx" ? 2 : 4;
+		std::istringstream input(arg);
+		std::vector<std::string> parts;
+		for (std::string part; std::getline(input, part, ',');) parts.push_back(Trim(part));
+		if (arg.empty() || arg.back() == ',' || parts.size() != static_cast<size_t>(tuple ? last - first : 1)) return {};
+		for (int index = first; index < last; ++index) {
+			double base = 0, value;
+			ParseStyleNumber(sides[index], base);
+			if (!Number(parts[tuple ? index - first : 0], base, false, value)) return {};
+			sides[index] = StyleNumber(value);
+		}
+		return {{"boxp", {sides[0] + ',' + sides[1] + ',' + sides[2] + ',' + sides[3], true}}};
+	}
 	if (key == "furipos") {
 		if (arg.empty()) return {{key, {defaults.at(key).value, false}}};
 		auto comma = arg.find(',');
@@ -148,6 +174,12 @@ std::map<std::string, StyleValue> Assign(Token const& token, StyleValues const& 
 		return {{key, {StyleNumber(x) + ',' + StyleNumber(y), true}}};
 	}
 	for (auto const& field : fields) {
+		if (field == "ta" || field == "box") {
+			if (tuple || arg.size() != 1) continue;
+			if (field == "ta" ? (arg[0] >= '1' && arg[0] <= '9') : (arg == "0" || arg == "1"))
+				result[field] = {arg, true};
+			continue;
+		}
 		if (arg.empty()) {
 			bool inherited_paint = field.find("bsc") != field.npos || field.find("bblur") != field.npos || field.find("bbe") != field.npos;
 			if (field.size() >= 3 && field != "1bc" && field != "1ba" && (field.back() == 'c' || field.substr(field.size() - 2) == "ba")) inherited_paint = true;
@@ -325,8 +357,20 @@ StyleMetadataDraft::StyleMetadataDraft(AssFile const& file, AssStyle const& styl
 void StyleMetadataDraft::Set(std::string const& property, std::optional<std::string> value) {
 	changes[property] = std::move(value);
 }
+void StyleMetadataDraft::SetGradient(GradientTarget target, std::string tag) {
+	for (auto& edit : gradients) {
+		if (edit.target.kind == target.kind && edit.target.layer == target.layer && edit.target.alpha == target.alpha) {
+			edit.gradient = std::move(tag);
+			return;
+		}
+	}
+	GradientEdit edit;
+	edit.target = target;
+	edit.gradient = std::move(tag);
+	gradients.push_back(std::move(edit));
+}
 std::vector<std::string> StyleMetadataDraft::Texts(AssStyle const& style, int wrap) const {
-	if (changes.empty()) return sources;
+	if (!Dirty()) return sources;
 	auto defaults = Defaults(style, wrap), current = defaults;
 	std::vector<std::string> result;
 	for (auto const& source : sources) {
@@ -334,7 +378,10 @@ std::vector<std::string> StyleMetadataDraft::Texts(AssStyle const& style, int wr
 		size_t offset = 0;
 		for (auto const& token : Tokens(source)) {
 			auto assignments = Assign(token, defaults, current);
-			bool edit = false;
+			auto argument = token.text.find('(');
+			auto name = "\\" + token.text.substr(0, argument);
+			bool edit = argument != std::string::npos && std::any_of(gradients.begin(), gradients.end(),
+				[&](GradientEdit const& gradient) { return IsStyleGradientTag(name, gradient.target); });
 			for (auto const& entry : assignments) { current[entry.first] = entry.second; edit |= changes.count(entry.first) != 0; }
 			if (!edit) continue;
 			rewritten += source.substr(offset, token.start - offset);
@@ -346,6 +393,8 @@ std::vector<std::string> StyleMetadataDraft::Texts(AssStyle const& style, int wr
 		result.push_back(std::move(rewritten));
 	}
 	std::string append;
+	std::string gradient_prefix;
+	for (auto const& gradient : gradients) gradient_prefix += gradient.gradient;
 	auto pending = changes;
 	for (auto const& entry : changes) {
 		if (!pending.count(entry.first) || !entry.second) continue;
@@ -355,12 +404,18 @@ std::vector<std::string> StyleMetadataDraft::Texts(AssStyle const& style, int wr
 			auto it = pending.find(other);
 			if (it != pending.end() && it->second == entry.second) { key.pop_back(); pending.erase(it); }
 		}
-		append += '\\' + key + (key == "furipos" ? '(' + *entry.second + ')' : *entry.second);
+		append += '\\' + key + (key == "furipos" || key == "boxp" ? '(' + *entry.second + ')' : *entry.second);
 	}
 	if (!append.empty()) {
 		if (!result.empty() && Appendable(result.back()))
 			result.back().insert(result.back().size() - 1, append);
 		else result.push_back('{' + append + '}');
+	}
+	if (!gradient_prefix.empty()) {
+		// Metadata uses the first valid source. Keep the existing declaration
+		// count and preserve any other gradient families later in the stream.
+		if (result.empty()) result.push_back("{" + gradient_prefix + "}");
+		else result.front().insert(0, "{" + gradient_prefix + "}");
 	}
 	return result;
 }

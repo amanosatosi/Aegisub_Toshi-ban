@@ -65,6 +65,7 @@ class SubtitlesPreview final : public wxWindow {
 	std::string provider_name;
 	wxString preview_error;
 	std::string preview_text;
+	bool has_mangetsu_metadata = false;
 
 	/// Regenerate the bitmap
 	void UpdateBitmap();

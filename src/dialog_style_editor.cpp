@@ -49,6 +49,7 @@
 #include "persist_location.h"
 #include "selection_controller.h"
 #include "subs_preview.h"
+#include "mangetsu_ui.h"
 #include "utils.h"
 #include "validators.h"
 
@@ -371,36 +372,20 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	gap = FromDIP(gap);
 #endif
 	auto ButtonSizer = new wxBoxSizer(wxHORIZONTAL);
-	mangetsu_actions = new wxBoxSizer(wxHORIZONTAL);
-	auto add_properties = [&](wxString const& label, mangetsu::StyleEditorPage page) {
-		auto button = new wxButton(this, wxID_ANY, label);
-		button->Bind(wxEVT_BUTTON, [this, page](wxCommandEvent&) {
-			UpdateWorkStyle();
-			if (mangetsu::EditStyleProperties(this, metadata, *work, this->c->ass->GetScriptInfoAsInt("WrapStyle"), page)) {
-				UpdateMangetsuControls(); UpdatePreview();
-			}
-		});
-		mangetsu_actions->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
-		mangetsu_controls.push_back(button);
-	};
-	add_properties(_(L"Furigana\u2026"), mangetsu::StyleEditorPage::Furigana);
-	add_properties(_(L"Vertical\u2026"), mangetsu::StyleEditorPage::Vertical);
-	add_properties(_(L"Multi-border\u2026"), mangetsu::StyleEditorPage::Borders);
-	mangetsu_actions->Add(new wxStaticText(this, wxID_ANY, _("Wrap Mode")), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, gap);
-	wxString wrapping[] = {_("Inherit Script"), _("Smart"), _("End-of-line"), _("No automatic wrap"), _("Alternative smart")};
-	WrapMode = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, 5, wrapping);
-	WrapMode->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
-		if (this->store) return;
+	auto extensions = new mangetsu::MangetsuButton(this, _("Mangetsu Extensions..."));
+	extensions->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
 		UpdateWorkStyle();
-		metadata.Set("q", WrapMode->GetSelection() == 0 ? std::nullopt : std::optional<std::string>(std::to_string(WrapMode->GetSelection() - 1)));
-		UpdatePreview();
+		if (mangetsu::EditStyleExtensions(this, metadata, *work, this->c->ass->GetScriptInfoAsInt("WrapStyle"),
+			from_wx(PreviewText->GetValue()))) UpdatePreview();
 	});
-	mangetsu_controls.push_back(WrapMode);
-	mangetsu_actions->Add(WrapMode, 0, wxALIGN_CENTER_VERTICAL);
-	ButtonSizer->Add(mangetsu_actions, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, gap);
+	ButtonSizer->Add(extensions, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, gap);
+	if (store) {
+		extensions->Disable();
+		extensions->SetToolTip(_("Style catalogs store ordinary ASS style fields only. Edit Mangetsu defaults in the current script."));
+		ButtonSizer->Add(new wxStaticText(this, wxID_ANY, _("Script styles only")), 0, wxALIGN_CENTER_VERTICAL | wxLEFT, gap);
+	}
 	ButtonSizer->AddStretchSpacer(1);
 	ButtonSizer->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxAPPLY | wxHELP), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, gap);
-	mangetsu_actions->ShowItems(OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu");
 
 	// Left side sizer
 	wxSizer *LeftSizer = new wxBoxSizer(wxVERTICAL);
@@ -426,8 +411,7 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	MainSizer->Add(ButtonSizer, 0, wxBOTTOM | wxEXPAND, 5);
 
 	SetSizerAndFit(MainSizer);
-	UpdateMangetsuControls();
-	renderer_changed = OPT_SUB("Subtitle/Provider", [this] { UpdateMangetsuControls(); UpdatePreview(); });
+	renderer_changed = OPT_SUB("Subtitle/Provider", [this] { UpdatePreview(); });
 
 	// Force the style name text field to scroll based on its final size, rather
 	// than its initial size
@@ -524,30 +508,13 @@ void DialogStyleEditor::Apply(bool apply, bool close) {
 		}
 
 		// Update preview
-		if (!close) { UpdateMangetsuControls(); UpdatePreview(); }
+		if (!close) UpdatePreview();
 	}
 
 	if (close) {
 		EndModal(apply);
 		if (PreviewText)
 			OPT_SET("Tool/Style Editor/Preview Text")->SetString(from_wx(PreviewText->GetValue()));
-	}
-}
-
-void DialogStyleEditor::UpdateMangetsuControls() {
-	bool shown = OPT_GET("Subtitle/Provider")->GetString() == "Mangetsu";
-	mangetsu_actions->ShowItems(shown);
-	for (auto control : mangetsu_controls) {
-		control->Enable(!store);
-		if (store) control->SetToolTip(_("Style catalogs store ordinary ASS style fields only. Edit Mangetsu defaults in the current script."));
-	}
-	auto value = metadata.Values(*work, c->ass->GetScriptInfoAsInt("WrapStyle")).at("q");
-	WrapMode->SetSelection(value.assigned ? std::stoi(value.value) + 1 : 0);
-	Layout();
-	if (GetSizer()) {
-		auto minimum = GetSizer()->GetMinSize();
-		SetMinSize(minimum);
-		if (GetSize().x < minimum.x) SetSize(wxSize(minimum.x, GetSize().y));
 	}
 }
 

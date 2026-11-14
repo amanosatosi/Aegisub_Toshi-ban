@@ -38,6 +38,7 @@ def run(portable, output, mangetsu_ui_dark=False):
         ("GetWindowThreadProcessId", [W.HWND, C.POINTER(W.DWORD)], W.DWORD),
         ("GetWindowTextW", [W.HWND, W.LPWSTR, C.c_int], C.c_int),
         ("GetClassNameW", [W.HWND, W.LPWSTR, C.c_int], C.c_int),
+        ("GetWindowLongW", [W.HWND, C.c_int], W.LONG),
         ("GetMenu", [W.HWND], W.HMENU),
         ("GetSubMenu", [W.HMENU, C.c_int], W.HMENU),
         ("GetMenuItemCount", [W.HMENU], C.c_int),

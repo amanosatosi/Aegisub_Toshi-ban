@@ -5,6 +5,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include "mangetsu_gradient_scope.h"
 
 class AssDialogue;
 class AssFile;
@@ -37,11 +38,13 @@ bool ImportMetadata(AssFile& destination, AssFile const& source, std::vector<std
 class StyleMetadataDraft {
 	std::vector<std::string> sources;
 	std::map<std::string, std::optional<std::string>> changes;
+	std::vector<GradientEdit> gradients;
 public:
 	StyleMetadataDraft() = default;
 	StyleMetadataDraft(AssFile const& file, AssStyle const& style);
 	void Set(std::string const& property, std::optional<std::string> value);
-	bool Dirty() const { return !changes.empty(); }
+	void SetGradient(GradientTarget target, std::string tag);
+	bool Dirty() const { return !changes.empty() || !gradients.empty(); }
 	StyleValues Values(AssStyle const& style, int script_wrap) const;
 	std::vector<std::string> Texts(AssStyle const& style, int script_wrap) const;
 	bool Apply(AssFile& file, AssStyle const *source, std::string const& name,

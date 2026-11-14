@@ -52,6 +52,9 @@
 #include "../subs_controller.h"
 #include "../subs_edit_box.h"
 #include "../text_selection_controller.h"
+#include "../mangetsu_ui.h"
+#include "../mangetsu_gradient_scope.h"
+#include "../mangetsu_style_metadata.h"
 #include "../time_range.h"
 #include "../utils.h"
 #include "../video_controller.h"
@@ -83,9 +86,12 @@
 #include <wx/clipbrd.h>
 #include <wx/colour.h>
 #include <wx/dcmemory.h>
+#include <wx/dialog.h>
 #include <wx/font.h>
 #include <wx/fontdlg.h>
 #include <wx/pen.h>
+#include <wx/sizer.h>
+#include <wx/stattext.h>
 #include <wx/textentry.h>
 
 namespace {
@@ -2545,6 +2551,58 @@ struct edit_color_gradient final : public Command {
 	}
 };
 
+struct edit_mangetsu_alignment final : public Command {
+	CMD_NAME("edit/mangetsu/alignment")
+	STR_MENU("Mangetsu Text Alignment...")
+	STR_DISP("Mangetsu Text Alignment")
+	STR_HELP("Align the logical subtitle line at the start of the text selection")
+	CMD_TYPE(COMMAND_VALIDATE)
+
+	bool Validate(agi::Context const *c) override {
+		auto line = c->selectionController->GetActiveLine();
+		return line && !line->Comment;
+	}
+
+	void operator()(agi::Context *c) override {
+		auto line = c->selectionController->GetActiveLine();
+		auto original = line->Text.get();
+		int start = c->textSelectionController->GetSelectionStart();
+		int end = c->textSelectionController->GetSelectionEnd();
+		bool mapped = c->subsEditBox && c->subsEditBox->BetterViewEnabled();
+		if (mapped && !c->subsEditBox->MapDisplayRangeToRaw(start, end, original, start, end)) return;
+		size_t caret = std::max(0, std::min(start, end));
+		int inherited = 2;
+		if (auto style = c->ass->GetStyle(line->Style)) {
+			auto defaults = mangetsu::StyleMetadataDraft(*c->ass, *style).Values(*style, 0);
+			inherited = std::stoi(defaults.at("ta").value);
+		}
+		wxDialog dialog(c->parent, wxID_ANY, _("Mangetsu Text Alignment"), wxDefaultPosition,
+			wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+		mangetsu::StyleSurface(&dialog);
+		auto root = new wxBoxSizer(wxVERTICAL);
+		auto gap = mangetsu::Dip(&dialog, 12);
+		root->Add(new wxStaticText(&dialog, wxID_ANY, mangetsu::CompatibilityText()), 0, wxALL, gap);
+		auto picker = new mangetsu::AlignmentPicker(&dialog, mangetsu::InlineAlignment(original, caret),
+			mangetsu::InheritedInlineAlignment(original, caret, inherited), _("Use inherited alignment"), [](int) {});
+		root->Add(picker, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, gap);
+		root->Add(dialog.CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, gap);
+		mangetsu::StyleLabels(&dialog);
+		dialog.SetSizerAndFit(root);
+		dialog.SetMinSize(dialog.GetSize());
+		dialog.CentreOnParent();
+		if (dialog.ShowModal() != wxID_OK) return;
+		auto changed = mangetsu::SetInlineAlignment(original, caret, picker->Value(), start, end);
+		if (changed == original) return;
+		line->Text = changed;
+		c->ass->Commit(_("set Mangetsu text alignment"), AssFile::COMMIT_DIAG_TEXT, -1, line);
+		if (mapped) {
+			start = c->subsEditBox->MapRawToDisplay(start, changed);
+			end = c->subsEditBox->MapRawToDisplay(end, changed);
+		}
+		c->textSelectionController->SetSelection(start, end);
+	}
+};
+
 struct edit_chat_style final : public Command {
 	CMD_NAME("edit/chat/style")
 	STR_MENU("Mangetsu Chat Style...")
@@ -3666,6 +3724,7 @@ namespace cmd {
 		reg(agi::make_unique<edit_color_shadow>());
 		reg(agi::make_unique<edit_color_insert_value>());
 		reg(agi::make_unique<edit_color_gradient>());
+		reg(agi::make_unique<edit_mangetsu_alignment>());
 		reg(agi::make_unique<edit_chat_style>());
 		reg(agi::make_unique<edit_font>());
 		reg(agi::make_unique<edit_find_replace>());

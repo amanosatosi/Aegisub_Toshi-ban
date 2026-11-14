@@ -59,7 +59,8 @@ SubtitlesPreview::SubtitlesPreview(wxWindow *parent, wxSize size, int winStyle, 
 
 	SetStyle(*style);
 
-	sub_file->LoadDefault();
+	sub_file->LoadDefault(false);
+	sub_file->Styles.clear_and_dispose([](AssStyle *entry) { delete entry; });
 	sub_file->Styles.push_back(*style);
 	sub_file->Events.push_back(*line);
 
@@ -76,6 +77,7 @@ SubtitlesPreview::~SubtitlesPreview() {
 }
 
 void SubtitlesPreview::SetMangetsuMetadata(std::vector<std::string> const& texts, int script_wrap) {
+	has_mangetsu_metadata = !texts.empty();
 	for (auto it = sub_file->Events.begin(); it != sub_file->Events.end();) {
 		auto current = it++;
 		if (&*current != line) delete &*current;
@@ -144,7 +146,8 @@ void SubtitlesPreview::UpdateBitmap() {
 		}
 		catch (...) { preview_error = _("The subtitle renderer could not render this preview."); }
 	}
-	SetToolTip(preview_error);
+	SetToolTip(preview_error.empty() && has_mangetsu_metadata && provider_name != "Mangetsu"
+		? _("Select Mangetsu to preview these extensions.") : preview_error);
 
 	// Convert frame to bitmap
 	*bmp = static_cast<wxBitmap>(GetImage(frame));

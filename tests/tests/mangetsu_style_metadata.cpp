@@ -19,6 +19,67 @@ AssDialogue& Add(AssFile& file, std::string text, std::string style = "Default",
 }
 using mangetsu::StyleMetadataDraft;
 
+TEST(MangetsuStyleMetadata, AlignmentSupportsNinePositionsAndInheritsAssAlignment) {
+	AssFile file;
+	auto& style = AddStyle(file);
+	style.alignment = 8;
+	for (int position = 1; position <= 9; ++position) {
+		auto& declaration = Add(file, "{\\ta" + std::to_string(position) + "\\ta0\\ta10\\tan2}");
+		auto value = StyleMetadataDraft(file, style).Values(style, 0).at("ta");
+		EXPECT_TRUE(value.assigned);
+		EXPECT_EQ(value.value, std::to_string(position));
+		delete &declaration;
+	}
+	Add(file, "{\\ta0\\ta10\\ta\\tan2}");
+	auto value = StyleMetadataDraft(file, style).Values(style, 0).at("ta");
+	EXPECT_FALSE(value.assigned);
+	EXPECT_EQ(value.value, "8");
+}
+
+TEST(MangetsuStyleMetadata, AlignmentEditAndResetPreserveOtherTagsAcrossDeclarations) {
+	AssFile file;
+	auto& style = AddStyle(file);
+	auto& first = Add(file, "{\\ta1\\grd(90,&H000000&,&HFFFFFF&)\\unknown}");
+	auto& second = Add(file, "{\\an3\\ta9\\ta0}");
+	StyleMetadataDraft draft(file, style);
+	EXPECT_EQ(draft.Values(style, 0).at("ta").value, "9");
+	draft.Set("ta", "7");
+	draft.Set("ta", "7");
+	ASSERT_TRUE(draft.Apply(file, &style, style.name, style, false));
+	EXPECT_EQ(first.Text.get(), "{\\grd(90,&H000000&,&HFFFFFF&)\\unknown}");
+	EXPECT_EQ(second.Text.get(), "{\\an3\\ta0\\ta7}");
+	StyleMetadataDraft reopened(file, style);
+	EXPECT_EQ(reopened.Values(style, 0).at("ta").value, "7");
+	EXPECT_FALSE(reopened.Apply(file, &style, style.name, style, false));
+	reopened.Set("ta", std::nullopt);
+	ASSERT_TRUE(reopened.Apply(file, &style, style.name, style, false));
+	EXPECT_FALSE(StyleMetadataDraft(file, style).Values(style, 0).at("ta").assigned);
+	EXPECT_EQ(second.Text.get(), "{\\an3\\ta0}");
+}
+
+TEST(MangetsuStyleMetadata, GradientChangesPreserveAlignmentAndOtherTargets) {
+	AssFile file;
+	auto& style = AddStyle(file);
+	Add(file, "{\\ta7\\grd(90,&H000000&,&HFFFFFF&)\\2grd(90,&H000000&,&HFFFFFF&)}");
+	StyleMetadataDraft draft(file, style);
+	draft.SetGradient({mangetsu::GradientTargetKind::Primary, 1, false}, "\\1grd(0,&H0000FF&,&HFF0000&)");
+	EXPECT_EQ(draft.Values(style, 0).at("ta").value, "7");
+	auto texts = draft.Texts(style, 0);
+	ASSERT_EQ(texts.size(), 1u);
+	EXPECT_EQ(texts.front(), "{\\1grd(0,&H0000FF&,&HFF0000&)}{\\ta7\\2grd(90,&H000000&,&HFFFFFF&)}");
+}
+
+TEST(MangetsuStyleMetadata, BoxPaddingResolvesScalarAndAsymmetricAxes) {
+	AssFile file;
+	auto& style = AddStyle(file);
+	Add(file, "{\\box1\\boxp10\\boxpx(4,9)\\boxr7}");
+	StyleMetadataDraft draft(file, style);
+	EXPECT_EQ(draft.Values(style, 0).at("boxp").value, "4,9,10,10");
+	draft.Set("boxp", "1,2,3,4");
+	EXPECT_EQ(draft.Texts(style, 0).front(), "{\\box1\\boxr7\\boxp(1,2,3,4)}");
+	draft.Set("boxp", std::nullopt);
+	EXPECT_EQ(draft.Texts(style, 0).front(), "{\\box1\\boxr7}");
+}
 TEST(MangetsuStyleMetadata, DefaultsFollowOrdinaryOutlineAndScriptWrap) {
 	AssStyle style; style.outline_w = 3.5;
 	auto values = StyleMetadataDraft().Values(style, 2);
@@ -267,7 +328,7 @@ TEST(MangetsuStyleMetadata, AssSerializationAndReparsePreserveMetadataOrderAndVa
 	Add(file, "{\\1c&HFFFFFF&}", "Default", "mangetsu-colorcoding", true, "Nene");
 	Add(file, "{\\vc(&HFFFFFF&,&H000000&,&HFFFFFF&,&H000000&)}");
 	Add(file, "ordinary", "Default", "", false);
-	StyleMetadataDraft draft(file, style); draft.Set("q", "3"); draft.Set("10bc", "&H123456&");
+	StyleMetadataDraft draft(file, style); draft.Set("q", "3"); draft.Set("10bc", "&H123456&"); draft.Set("ta", "4");
 	ASSERT_TRUE(draft.Apply(file, &style, style.name, style, false));
 	AssFile reopened;
 	AssParser parser(&reopened, 1);
@@ -279,6 +340,7 @@ TEST(MangetsuStyleMetadata, AssSerializationAndReparsePreserveMetadataOrderAndVa
 	EXPECT_EQ(actual, expected); ASSERT_EQ(reopened.Styles.size(), 1u);
 	auto values = StyleMetadataDraft(reopened, reopened.Styles.front()).Values(reopened.Styles.front(), 0);
 	EXPECT_EQ(values.at("q").value, "3"); EXPECT_EQ(values.at("furisx").value, "70");
+	EXPECT_EQ(values.at("ta").value, "4");
 	EXPECT_EQ(values.at("10bsx").value, "0"); EXPECT_EQ(values.at("10bc").value, "&H123456&");
 	EXPECT_EQ(mangetsu::InitialMetadata(reopened).size(), 3u);
 }

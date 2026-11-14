@@ -9,10 +9,17 @@ selection, never the ASS document.
 Hidden declarations are excluded from ordinary Find/Replace and adjoining timing
 operations. Sorting keeps the initial metadata header in its authored order.
 
-The familiar Style Editor retains its content. Its single bottom row adds
-**Furigana…**, **Vertical…**, **Multi-border…**, and **Wrap Mode** on the left,
-with the original action buttons on the right. Other renderers hide this group.
-The three property dialogs are independently resizable. Edit the displayed
+**Mangetsu Extensions** appears beside the Style Editor's standard ASS actions.
+On Windows its yellow button identifies a renderer extension. Windows contrast
+themes and other platforms use system controls. Extensions can be authored with
+any renderer. Select Mangetsu to see the extended output in the preview.
+
+**General** contains the logical-line alignment picker. It uses the ASS numpad
+arrangement and can inherit the ordinary style alignment. **Layout** contains
+Wrap Mode, Furigana and Vertical text. **Appearance** contains native border
+layers and extended boxes, including asymmetric padding. **Gradients** opens
+the attached color and alpha gradient editor for the selected style.
+The property dialogs are independently resizable. Edit the displayed
 values directly to set them for this style. **Reset** restores the inherited
 value. With linked reading scales or border sizes, editing or resetting X
 applies to both axes. Native
@@ -43,6 +50,12 @@ of metadata in their original interleaved initial-block order.
 The built-in Fix Styles and Transform Framerate export filters leave this
 initial header intact; subtitle preparation only reads attachments. ASS saving
 and exporting serialize a style-first view of the initial metadata block.
+
+**Subtitle → Mangetsu Extensions** also opens the dialogue alignment, gradient,
+and chat editors. Dialogue alignment edits the logical line at the caret or the
+start of the selection. The gradient editor's initial slide width writes
+the event's global \grds setting. Per-target widths and the contents of existing
+transforms stay intact.
 
 Current-script New, Copy, Rename and Delete manage associated style declarations.
 External Style Manager catalogs store ordinary ASS fields only: extended editors
