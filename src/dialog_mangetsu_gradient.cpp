@@ -742,7 +742,7 @@ void DialogMangetsuGradient::BuildControls() {
 	editor->Add(top, wxSizerFlags().Expand().Border(wxALL, 8));
 	if (!style_draft) {
 		auto slide = new wxBoxSizer(wxHORIZONTAL);
-		slide->Add(new wxStaticText(this, wxID_ANY, _("Global gradient slide width")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+		slide->Add(new wxStaticText(this, wxID_ANY, _("Initial gradient slide width")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
 		slide_width = new wxTextCtrl(this, wxID_ANY, to_wx(mangetsu::GradientSlideWidth(original_text)));
 		slide_width->SetToolTip(_("Sets the initial sliding transition width in script pixels. Zero gives a sharp edge. Clear the field to remove the global override."));
 		slide->Add(slide_width, 0);

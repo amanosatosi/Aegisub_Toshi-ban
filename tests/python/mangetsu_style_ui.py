@@ -276,13 +276,15 @@ def exercise(profile, pid, frame, user, windows, text, wait, send, entries, invo
         command("Style UI Snapshot")
         return wait(lambda: target.read_text(encoding="utf-8") if target.exists() and target.stat().st_size else None, "metadata snapshot")
 
-    def capture(hwnd, name):
+    def capture(hwnd, name, samples=()):
         # Print the actual native dialog (including children), using only .NET
         # already on hosted Windows. No Pillow or other runtime dependency.
         bounds = rect(hwnd)
         env = dict(os.environ, AEGISUB_UI_HWND=str(hwnd), AEGISUB_UI_WIDTH=str(bounds[2] - bounds[0]),
-                   AEGISUB_UI_HEIGHT=str(bounds[3] - bounds[1]), AEGISUB_UI_PATH=str(profile / (name + ".png")))
-        subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", r"""
+                   AEGISUB_UI_HEIGHT=str(bounds[3] - bounds[1]), AEGISUB_UI_PATH=str(profile / (name + ".png")),
+                   AEGISUB_UI_SAMPLES=";".join(f"{x - bounds[0]},{y - bounds[1]}" for x, y in samples))
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", r"""
+$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type 'using System; using System.Runtime.InteropServices; public class DialogCapture { [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags); }'
 $bitmap = New-Object System.Drawing.Bitmap ([int]$env:AEGISUB_UI_WIDTH), ([int]$env:AEGISUB_UI_HEIGHT)
@@ -291,8 +293,27 @@ $dc = $graphics.GetHdc()
 try { if (-not [DialogCapture]::PrintWindow([IntPtr][long]$env:AEGISUB_UI_HWND, $dc, 2)) { throw 'PrintWindow failed' } }
 finally { $graphics.ReleaseHdc($dc) }
 $bitmap.Save($env:AEGISUB_UI_PATH, [System.Drawing.Imaging.ImageFormat]::Png)
+if ($env:AEGISUB_UI_SAMPLES) {
+    foreach ($point in $env:AEGISUB_UI_SAMPLES.Split(';')) {
+        $x, $y = $point.Split(',')
+        $pixel = $bitmap.GetPixel([int]$x, [int]$y)
+        '{0:X2}{1:X2}{2:X2}' -f $pixel.R, $pixel.G, $pixel.B
+    }
+}
 $graphics.Dispose(); $bitmap.Dispose()
-"""], env=env, check=True, timeout=30, stdout=subprocess.DEVNULL)
+"""], env=env, check=True, timeout=30, capture_output=True, text=True)
+        return result.stdout.split()
+
+    def assert_native_palette(branded, normal):
+        branded_box, normal_box = rect(branded), rect(normal)
+        def sample(bounds):
+            return bounds[0] + (bounds[2] - bounds[0]) // 8, (bounds[1] + bounds[3]) // 2
+        # PrintWindow includes the rendered child controls. In wx master the
+        # system dark-mode button may itself use wx's own drawing path.
+        yellow, gray = capture(user.GetParent(branded), "style-editor", (sample(branded_box), sample(normal_box)))
+        accents = {"F2D46D", "FFE48A", "D9B94F"}
+        assert yellow in accents, ("Mangetsu button accent", yellow)
+        assert gray not in accents, ("Standard OK button keeps the system palette", gray)
 
     def editor(copy=False, name=None):
         invoke(frame, "Styles Manager...")
@@ -321,7 +342,7 @@ $graphics.Dispose(); $bitmap.Dispose()
         assert send(control, 0x130B) == index
 
     def property_dialog(parent, caption, title):
-        tab(parent, 2 if caption.startswith("Multi-border") else 1)
+        tab(parent, 2 if caption.startswith(("Multi-border", "Extended boxes")) else 1)
         click(parent, caption)
         return dialog(title)
 
@@ -421,10 +442,14 @@ $graphics.Dispose(); $bitmap.Dispose()
     style_button = button(style, "Mangetsu Extensions...")
     native_ok = button(style, "OK")
     assert user.GetWindowLongW(style_button, -16) & 0xF == 0xB, "The branded entry is owner drawn"
-    assert user.GetWindowLongW(native_ok, -16) & 0xF != 0xB, "OK retains its native appearance"
-    capture(style, "style-editor")
+    assert_native_palette(style_button, native_ok)
     ext = extensions(style)
     capture(ext, "mangetsu-extensions")
+    tab(ext, 3)
+    click(ext, "Edit gradient defaults...")
+    gradients = dialog("Mangetsu Style Gradients")
+    capture(gradients, "mangetsu-style-gradients")
+    close(gradients, "OK")
     tab(ext, 1)
     wrap = choice_control(ext, lambda values: values == ["Inherit Script", "Smart", "End-of-line", "No automatic wrap", "Alternative smart"])
     assert send(wrap, 0x147) == 3, "Existing q2 must be selected"  # CB_GETCURSEL
@@ -516,6 +541,11 @@ $graphics.Dispose(); $bitmap.Dispose()
     assign(border, "Border size X", "3")
     capture(border, "multi-border")
     close(border, "OK")
+    box = property_dialog(ext, "Extended boxes...", "Extended boxes")
+    assign(box, "Rectangular box", 1, choice=True)
+    assign(box, "Corner radius", "6")
+    capture(box, "mangetsu-extended-boxes")
+    close(box, "OK")
     tab(ext, 1)
     wrap = choice_control(ext, lambda values: "Inherit Script" in values)
     choose(wrap, 1)  # q0; metadata only, not Script Info WrapStyle
@@ -530,7 +560,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     close(style)
     close_manager(manager)
     committed = snapshot()
-    for tag in ("\\ta7", "\\furisx80", "\\vert1", "\\vtype3", "\\10bs3", "\\q0", "\\grd(45,", "\\vc(",
+    for tag in ("\\ta7", "\\box1", "\\boxr6", "\\furisx80", "\\vert1", "\\vtype3", "\\10bs3", "\\q0", "\\grd(45,", "\\vc(",
                 *(f"\\{layer}bs{layer}" for layer in range(2, 10))):
         assert tag in committed, (tag, committed)
     assert "\\furisy" not in committed and "\\1bs" not in committed and "\\q2" not in committed
@@ -638,4 +668,18 @@ $graphics.Dispose(); $bitmap.Dispose()
     assert "LINE||UI Sign|{\\ta3}" in snapshot(), "Inline alignment updates the active dialogue"
     history("Undo")
     assert document(snapshot()) == document(reloaded), "Inline alignment is a single undo step"
+    command("Select first dialogue")
+    invoke(frame, "Mangetsu Gradient Color/Alpha...")
+    gradient_editor = wait(lambda: next((h for h in windows(pid) if text(h).startswith("Gradient Editor")
+                                        and user.IsWindowVisible(h)), None), "dialogue gradient editor")
+    width = controls_of_kind(gradient_editor, "edit")
+    slide_label = required(gradient_editor, ("Initial gradient slide width",))[0]
+    matching = [c for c in width if c.bounds[0] >= slide_label.bounds[2]
+                and abs(sum(c.bounds[1::2]) - sum(slide_label.bounds[1::2])) < 16]
+    assert len(matching) == 1, "The slide-width input is beside its label"
+    set_text(matching[0].hwnd, "16")
+    close(gradient_editor, "OK")
+    assert "LINE||UI Sign|{\\grds16}" in snapshot(), "The gradient editor stores the initial slide width"
+    history("Undo")
+    assert document(snapshot()) == document(reloaded), "Slide width is a single undo step"
     (profile / "style-ui-result.txt").write_text("metadata visibility, direct edit/reset, ten layers, validation, transactions, copy/delete/rename, undo/redo, save/reload, renderer switching: passed\n", encoding="utf-8")
