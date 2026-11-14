@@ -747,7 +747,7 @@ void DialogMangetsuGradient::BuildControls() {
 		slide_width->SetToolTip(_("Sets the initial sliding transition width in script pixels. Zero gives a sharp edge. Clear the field to remove the global override."));
 		slide->Add(slide_width, 0);
 		editor->Add(slide, 0, wxLEFT | wxRIGHT | wxBOTTOM, 8);
-		slide_width->Bind(wxEVT_TEXT, [this](wxCommandEvent&) { SchedulePreview(_("set gradient")); });
+		slide_width->Bind(wxEVT_TEXT, [this](wxCommandEvent&) { SchedulePreview(_("set gradient"), false); });
 	}
 	editor->Add(outline_size_panel, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
 	editor->Add(stop_bar, wxSizerFlags(1).Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM, 8));
