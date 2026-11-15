@@ -66,7 +66,7 @@ void AssFile::LoadDefault(bool include_dialogue_line, std::string const& style_c
 		Events.push_back(*new AssDialogue);
 }
 
-AssFile::AssFile(const AssFile &from)
+AssFile::AssFile(const AssFile &from, bool preserve_dialogue_ids)
 : Info(from.Info)
 , Attachments(from.Attachments)
 , Extradata(from.Extradata)
@@ -77,7 +77,10 @@ AssFile::AssFile(const AssFile &from)
 		[](AssStyle const& e) { return new AssStyle(e); },
 		[](AssStyle *e) { delete e; });
 	Events.clone_from(from.Events,
-		[](AssDialogue const& e) { return new AssDialogue(e); },
+		[preserve_dialogue_ids](AssDialogue const& e) {
+			return preserve_dialogue_ids ? new AssDialogue(static_cast<AssDialogueBase const&>(e))
+			                             : new AssDialogue(e);
+		},
 		[](AssDialogue *e) { delete e; });
 }
 

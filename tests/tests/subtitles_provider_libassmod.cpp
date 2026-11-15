@@ -361,6 +361,34 @@ std::string Metadata(std::string const& effect, std::string const& tags, std::st
 }
 }
 
+TEST(CustomSubtitleMetadata, PreviewSnapshotPreservesPerspectiveEventIdentity) {
+	AssFile file;
+	AssParser parser(&file, 1);
+	std::istringstream input(Script(Metadata("mangetsu-style", "{\\furis70}")
+		+ "Dialogue: 0,0:00:10.00,0:00:20.00,Default,,0,0,0,,inactive\n"
+		+ Event("{\\mpersp(0,0,1,0,0.8,1,0,1)}active")));
+	for (std::string line; std::getline(input, line);) parser.AddLine(line);
+
+	AssFile ordinary_copy(file);
+	EXPECT_NE(ordinary_copy.Events.back().Id, file.Events.back().Id);
+	AssFile preview_copy(file, /*preserve_dialogue_ids=*/true);
+	ASSERT_EQ(preview_copy.Events.back().Id, file.Events.back().Id);
+
+	// The preview serializes only visible dialogues at this time. Metadata
+	// comments and skipped events must not take a renderer event index.
+	struct CaptureLayoutIds final : SubtitlesProvider {
+		void LoadSubtitles(const char *, size_t) override {}
+		void DrawSubtitles(VideoFrame &, double) override {}
+		std::vector<int> const& IDs() const { return rendered_line_ids; }
+	} capture;
+	static_cast<SubtitlesProvider&>(capture).LoadSubtitles(&preview_copy, 1000);
+	ASSERT_EQ(capture.IDs().size(), 1u);
+	EXPECT_EQ(capture.IDs()[0], file.Events.back().Id);
+
+	AssDialogue edited(static_cast<AssDialogueBase const&>(file.Events.back()));
+	EXPECT_EQ(edited.Id, capture.IDs()[0]);
+}
+
 TEST(CustomSubtitleMetadata, MixedInitialBlockIsForwardedInOrderRegardlessOfTime) {
 	auto first = Metadata("mangetsu-style", "{\\furis70}");
 	auto actor = Metadata("mangetsu-colorcoding", "{\\1c&HFF0000&}", "Nene");

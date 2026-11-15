@@ -84,6 +84,9 @@ class PerspectiveControls(unittest.TestCase):
         provider = (ROOT / "src/subtitles_provider_libassmod.cpp").read_text()
         self.assertIn('LoadOptionalSymbol(backend, "ass_get_perspective_layout"', provider)
         self.assertIn("frame.perspective_layouts.push_back(layout)", provider)
+        worker = (ROOT / "src/async_video_provider.cpp").read_text(encoding="utf-8")
+        self.assertIn("new AssFile(*new_subs, /*preserve_dialogue_ids=*/true)", worker)
+        self.assertIn("new AssDialogue(static_cast<AssDialogueBase const&>(*changed))", worker)
 
     def test_arch_assets_exist_in_both_themes_at_all_toolbar_sizes(self):
         manifest = (ROOT / "src/bitmaps/manifest.respack").read_text().splitlines()

@@ -165,7 +165,9 @@ AsyncVideoProvider::~AsyncVideoProvider() {
 void AsyncVideoProvider::LoadSubtitles(const AssFile *new_subs) throw() {
 	uint_fast32_t req_version = ++version;
 
-	auto copy = new AssFile(*new_subs);
+	// Keep document IDs so geometry from this worker snapshot identifies the
+	// same dialogue in the visual tool, even after filtering or reordering.
+	auto copy = new AssFile(*new_subs, /*preserve_dialogue_ids=*/true);
 	worker->Async([=]{
 		subs.reset(copy);
 		single_frame = NEW_SUBS_FILE;
@@ -178,7 +180,7 @@ void AsyncVideoProvider::UpdateSubtitles(const AssFile *new_subs, const AssDialo
 
 	// Copy just the line which were changed, then replace the line at the
 	// same index in the worker's copy of the file with the new entry
-	auto copy = new AssDialogue(*changed);
+	auto copy = new AssDialogue(static_cast<AssDialogueBase const&>(*changed));
 	bool new_line_affects_metadata = mangetsu::MayAffectMetadata(*new_subs, *copy);
 
 	worker->Async([=]{
