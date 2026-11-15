@@ -178,7 +178,7 @@ class SubsEditBox final : public wxPanel {
 	// Constructor helpers
 	wxTextCtrl *MakeMarginCtrl(wxString const& tooltip, int margin, wxString const& commit_msg);
 	TimeEdit *MakeTimeCtrl(wxString const& tooltip, TimeField field);
-	wxBitmapButton *MakeButton(const char *cmd_name);
+	wxButton *MakeButton(const char *cmd_name, bool mangetsu_feature = false);
 	wxButton *MakeBottomButton(const char *cmd_name);
 	wxComboBox *MakeComboBox(wxString const& initial_text, int style, void (SubsEditBox::*handler)(wxCommandEvent&), wxString const& tooltip);
 	wxRadioButton *MakeRadio(wxString const& text, bool start, wxString const& tooltip);
@@ -253,7 +253,8 @@ class SubsEditBox final : public wxPanel {
 	// [actor_MRU] END
 	FastNamingMode GetFastNamingMode() const;
 	void ToggleFastMode();
-	void InsertBracketPair(wxString const& left, wxString const& right);
+	enum class BracketCaret { Inside, Reading, Base };
+	void InsertBracketPair(wxString const& left, wxString const& right, BracketCaret placement = BracketCaret::Inside);
 	void FinalizeFastActiveFromActor(bool add_to_recent);
 	void ClearFastActiveName();
 	void ApplyFastActiveToCurrentLine();
@@ -277,6 +278,8 @@ public:
 	/// @param parent Parent window
 	SubsEditBox(wxWindow *parent, agi::Context *context);
 	~SubsEditBox();
+
+	void ShowBracketPicker();
 
 	/// Insert text into the main edit control, honouring the current selection.
 	/// @return True if text was inserted.

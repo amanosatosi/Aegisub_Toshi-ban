@@ -12,9 +12,9 @@ function Copy-New-Item {
     $DestinationFilePath = $args[1]
   
     If (-not (Test-Path $DestinationFilePath)) {
-        New-Item -ItemType Directory -Path $DestinationFilePath -Force
+        New-Item -ItemType Directory -Path $DestinationFilePath -Force -ErrorAction Stop
     } 
-    Copy-Item -Path $SourceFilePath -Destination $DestinationFilePath
+    Copy-Item -Path $SourceFilePath -Destination $DestinationFilePath -ErrorAction Stop
 }
 
 function Copy-New-Items {
@@ -22,9 +22,9 @@ function Copy-New-Items {
     $DestinationFilePath = $args[1]
   
     If (-not (Test-Path $DestinationFilePath)) {
-        New-Item -ItemType Directory -Path $DestinationFilePath -Force
+        New-Item -ItemType Directory -Path $DestinationFilePath -Force -ErrorAction Stop
     } 
-    Copy-Item -Path $SourceFilePath -Destination $DestinationFilePath -Recurse
+    Copy-Item -Path $SourceFilePath -Destination $DestinationFilePath -Recurse -ErrorAction Stop
 }
 
 
@@ -32,6 +32,10 @@ Write-Output BUILD_ROOT=$BuildRoot
 Write-Output SOURCE_ROOT=$SourceRoot
 $InstallerDir = Join-Path $BuildRoot "install"
 $InstallerDepsDir = Join-Path $BuildRoot "installer-deps"
+$XAudioSource = Join-Path $InstallerDepsDir "XAudio2_redist\build\native\release\bin\x64\xaudio2_9redist.dll"
+if (!(Test-Path -LiteralPath $XAudioSource -PathType Leaf)) {
+    throw "Required XAudio2 runtime DLL is missing: $XAudioSource"
+}
 $PortableOutputDir = Join-Path $BuildRoot "aegisub-portable"
 
 
@@ -46,6 +50,7 @@ Remove-Item -LiteralPath "install" -Force -Recurse
 
 Write-Output 'Make install'
 meson install --no-rebuild --destdir $InstallerDir
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Output 'Gathering files'
 Copy-New-Item $InstallerDir\bin\aegisub.exe  $PortableOutputDir
 Copy-New-Item $InstallerDepsDir\assdraw\ASSDraw3.exe  $PortableOutputDir
@@ -79,8 +84,8 @@ Copy-New-Item $InstallerDepsDir\VSFilter\x64\VSFilter.dll  $PortableOutputDir\cs
 Write-Output 'Copying - runtimes\MS-CRT'
 Copy-New-Item $InstallerDepsDir\VC_redist\VC_redist.x64.exe $PortableOutputDir\Microsoft.CRT
 Write-Output 'Copying - redist\XAudio2_9'
-Copy-New-Item $InstallerDepsDir\XAudio2_redist\build\native\release\bin\x64\xaudio2_9redist.dll $PortableOutputDir\Redist
-Rename-Item $PortableOutputDir\Redist\xaudio2_9redist.dll $PortableOutputDir\Redist\XAudio2_9.dll
+Copy-New-Item $XAudioSource $PortableOutputDir\Redist
+Rename-Item -LiteralPath "$PortableOutputDir\Redist\xaudio2_9redist.dll" -NewName "XAudio2_9.dll" -ErrorAction Stop
 Write-Output 'Copying - OCR runtime'
 if (Test-Path "$InstallerDepsDir\ocr") {
     Copy-New-Items "$InstallerDepsDir\ocr\*" "$PortableOutputDir\ocr" -Recurse
@@ -118,5 +123,8 @@ Copy-New-Items "$InstallerDir\share\aegisub\themes\*"  "$PortableOutputDir\theme
 
 
 Write-Output 'Creating portable zip'
-Remove-Item aegisub-portable-64.zip
+if (Test-Path -LiteralPath 'aegisub-portable-64.zip') {
+    Remove-Item -LiteralPath 'aegisub-portable-64.zip' -ErrorAction Stop
+}
 7z a aegisub-portable-64.zip aegisub-portable\
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

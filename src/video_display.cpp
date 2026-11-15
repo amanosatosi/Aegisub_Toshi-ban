@@ -179,8 +179,18 @@ bool VideoDisplay::InitContext() {
 	return true;
 }
 
+const VideoPerspectiveLayout *VideoDisplay::GetPerspectiveLayout(int line_id) const {
+	if (perspective_frame)
+		for (auto const &layout : perspective_frame->perspective_layouts)
+			if (layout.line_id == line_id)
+				return &layout;
+	return nullptr;
+}
+
 void VideoDisplay::UploadFrameData(FrameReadyEvent &evt) {
 	pending_frame = evt.frame;
+	perspective_frame = evt.frame;
+	if (tool) tool->OnRenderedFrame();
 	CancelImage2TextIfFrameChanged(false);
 	Render();
 }
@@ -1373,4 +1383,5 @@ void VideoDisplay::Unload() {
 	tool.reset();
 	glContext.reset();
 	pending_frame.reset();
+	perspective_frame.reset();
 }

@@ -313,6 +313,10 @@ static void load_protos() {
 	// original eight-value text-bounds corner pin.
 	proto[i].AddParam(VariableDataType::FLOAT, AssParameterClass::NORMAL, OPTIONAL_9);
 	++i;
+	proto[i].name = "\\mpersp";
+	for (int parameter = 0; parameter < 8; ++parameter)
+		proto[i].AddParam(VariableDataType::FLOAT);
+	++i;
 	proto[i].name = "\\distort";
 	for (int parameter = 0; parameter < 6; ++parameter)
 		proto[i].AddParam(VariableDataType::FLOAT);

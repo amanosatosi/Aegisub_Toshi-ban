@@ -104,7 +104,7 @@ public:
 	uint32_t next_extradata_id = 0;
 
 	AssFile();
-	AssFile(const AssFile &from);
+	AssFile(const AssFile &from, bool preserve_dialogue_ids = false);
 	AssFile& operator=(AssFile from);
 	~AssFile();
 

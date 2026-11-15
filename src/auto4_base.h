@@ -64,10 +64,12 @@ namespace Automation4 {
 		std::shared_ptr<agi::Path const> paths;
 		std::vector<agi::fs::path> include_paths;
 		std::atomic<bool> cancelled{false};
+		bool profile = false;
 	};
 	std::shared_ptr<ScriptLoadContext> GetScriptLoadContext();
 	// A cancellable UI request, also usable by Lua's clipboard FFI callbacks.
 	bool ScriptLoadOnMain(std::function<void()> task);
+	double ScriptLoadSynchronizationMs();
 	// Keep live Lua states and export-filter dialogs intact across nested event loops.
 	class ScriptExecutionGuard {
 	public:

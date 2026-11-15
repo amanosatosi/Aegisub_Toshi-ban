@@ -59,6 +59,7 @@ class wxTextCtrl;
 class wxToolBar;
 struct FrameReadyEvent;
 struct VideoFrame;
+struct VideoPerspectiveLayout;
 
 struct Image2TextThreadResult {
 	ocr::OCRResult result;
@@ -143,6 +144,7 @@ class VideoDisplay final : public wxGLCanvas {
 
 	/// Frame which will replace the currently visible frame on the next render
 	std::shared_ptr<VideoFrame> pending_frame;
+	std::shared_ptr<VideoFrame> perspective_frame;
 
 	std::unique_ptr<RetinaHelper> retina_helper;
 	std::unique_ptr<OpenGLText> image2text_text;
@@ -239,6 +241,7 @@ public:
 
 	/// @brief Render the currently visible frame
 	void Render();
+	const VideoPerspectiveLayout *GetPerspectiveLayout(int line_id) const;
 
 	/// @brief Set the zoom level
 	/// @param value The new zoom level

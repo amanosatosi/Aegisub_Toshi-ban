@@ -71,6 +71,8 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/scope_exit.hpp>
 #include <cassert>
+#include <chrono>
+#include <libaegisub/log.h>
 #include <mutex>
 #include <wx/clipbrd.h>
 #include <wx/log.h>
@@ -80,6 +82,45 @@ using namespace agi::lua;
 using namespace Automation4;
 
 namespace {
+	struct LuaLoadProfile {
+		agi::lua::LoadTimings files;
+		double state = 0, bootstrap = 0, execution = 0, modules = 0, includes = 0;
+		unsigned require_depth = 0;
+	};
+
+	int TimedRequire(lua_State *L) {
+		int args = lua_gettop(L);
+		lua_getfield(L, LUA_REGISTRYINDEX, "aegisub_load_profile");
+		auto profile = static_cast<LuaLoadProfile *>(lua_touserdata(L, -1));
+		lua_pop(L, 1);
+		lua_pushvalue(L, lua_upvalueindex(1));
+		lua_insert(L, 1);
+		if (!profile) { lua_call(L, args, LUA_MULTRET); return lua_gettop(L); }
+		auto start = std::chrono::steady_clock::now();
+		++profile->require_depth;
+		int failed = lua_pcall(L, args, LUA_MULTRET, 0);
+		if (!--profile->require_depth)
+			profile->modules += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+		if (failed) return lua_error(L);
+		return lua_gettop(L);
+	}
+
+	void BeginRequireProfiling(lua_State *L, LuaLoadProfile *profile) {
+		lua_pushlightuserdata(L, profile); lua_setfield(L, LUA_REGISTRYINDEX, "aegisub_load_profile");
+		lua_getglobal(L, "require");
+		lua_pushvalue(L, -1); lua_setfield(L, LUA_REGISTRYINDEX, "aegisub_original_require");
+		lua_pushcclosure(L, TimedRequire, 1); lua_setglobal(L, "require");
+	}
+
+	void EndRequireProfiling(lua_State *L) {
+		lua_getglobal(L, "require");
+		bool restore = lua_tocfunction(L, -1) == TimedRequire;
+		lua_pop(L, 1);
+		if (restore) { lua_getfield(L, LUA_REGISTRYINDEX, "aegisub_original_require"); lua_setglobal(L, "require"); }
+		lua_pushnil(L); lua_setfield(L, LUA_REGISTRYINDEX, "aegisub_load_profile");
+		lua_pushnil(L); lua_setfield(L, LUA_REGISTRYINDEX, "aegisub_original_require");
+	}
+
 	wxString get_wxstring(lua_State *L, int idx)
 	{
 		return wxString::FromUTF8(lua_tostring(L, idx));
@@ -543,6 +584,7 @@ namespace {
 	};
 	class LuaScript final : public Script {
 		lua_State *L = nullptr;
+		LuaLoadProfile profile;
 
 		std::string name;
 		std::string description;
@@ -595,6 +637,25 @@ namespace {
 	void LuaScript::Create()
 	{
 		Destroy();
+		profile = {};
+		auto context = GetScriptLoadContext();
+		auto previous = agi::lua::SetLoadTimings(context ? &profile.files : nullptr);
+		auto synchronization_start = ScriptLoadSynchronizationMs();
+		BOOST_SCOPE_EXIT_ALL(&) {
+			if (context && context->profile && L) EndRequireProfiling(L);
+			agi::lua::SetLoadTimings(previous);
+			if (context) LOG_I("startup/automation/script") << GetFilename().string()
+				<< "; state_ms=" << profile.state << "; bootstrap_ms=" << profile.bootstrap
+				<< "; read_ms=" << profile.files.read_ms << "; parse_ms=" << profile.files.parse_ms
+				<< "; execution_ms=" << profile.execution << "; require_ms=" << profile.modules
+				<< "; include_ms=" << profile.includes << "; sync_ms=" << ScriptLoadSynchronizationMs() - synchronization_start;
+		};
+		auto timed = [](double& duration, auto action) {
+			auto start = std::chrono::steady_clock::now();
+			BOOST_SCOPE_EXIT_ALL(&) { duration += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(); };
+			return action();
+		};
+		auto state_start = std::chrono::steady_clock::now();
 
 		name = GetPrettyFilename().string();
 
@@ -624,13 +685,16 @@ namespace {
 
 		// Replace the default lua module loader with our unicode compatible
 		// one and set the module search path
-		if (!Install(L, include_path)) {
+		profile.state += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - state_start).count();
+		if (context && context->profile) BeginRequireProfiling(L, &profile);
+		if (!timed(profile.bootstrap, [&] { return Install(L, include_path); })) {
 			description = get_string_or_default(L, 1);
 			lua_pop(L, 1);
 			return;
 		}
 		stackcheck.check_stack(0);
 
+		state_start = std::chrono::steady_clock::now();
 		// prepare stuff in the registry
 
 		// store the script's filename
@@ -676,6 +740,7 @@ namespace {
 		lua_settable(L, LUA_GLOBALSINDEX);
 		stackcheck.check_stack(0);
 
+		profile.state += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - state_start).count();
 		// load user script
 		if (!LoadFile(L, GetFilename())) {
 			description = get_string_or_default(L, 1);
@@ -690,7 +755,7 @@ namespace {
 
 		// and execute it
 		// this is where features are registered
-		if (lua_pcall(L, 0, 0, -2)) {
+		if (timed(profile.execution, [&] { return lua_pcall(L, 0, 0, -2); })) {
 			// error occurred, assumed to be on top of Lua stack
 			description = agi::format("Error initialising Lua script \"%s\":\n\n%s", GetPrettyFilename().string(), get_string_or_default(L, -1));
 			lua_pop(L, 2); // error + error handler
@@ -791,7 +856,9 @@ namespace {
 
 	int LuaScript::LuaInclude(lua_State *L)
 	{
-		const LuaScript *s = GetScriptObject(L);
+		auto s = GetScriptObject(L);
+		auto start = std::chrono::steady_clock::now();
+		BOOST_SCOPE_EXIT_ALL(&) { s->profile.includes += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(); };
 
 		const std::string filename(check_string(L, 1));
 		agi::fs::path filepath;

@@ -178,9 +178,9 @@ namespace {
 	struct visual_mode_perspective final : public visual_tool_command<VisualToolPerspective> {
 		CMD_NAME("video/tool/perspective")
 		CMD_ICON(visual_perspective)
-		STR_MENU("Perspective / Distort")
-		STR_DISP("Perspective / Distort")
-		STR_HELP("Edit Mangetsu eight-value distortion or use arch1t3cht's ASS-compatible perspective tool")
+		STR_MENU("Perspective")
+		STR_DISP("Perspective")
+		STR_HELP("Edit true perspective with Mangetsu or use arch1t3cht's ASS-compatible perspective tool")
 	};
 
 	struct visual_mode_curved_text final : public visual_tool_command<VisualToolCurvedText> {
@@ -238,12 +238,21 @@ namespace {
 		}
 	};
 
-	struct visual_mode_perspective_distort final : public visual_tool_persp_mode<PERSP_MODE_DISTORT> {
+	struct visual_mode_perspective_mangetsu final : public visual_tool_persp_mode<PERSP_MODE_MANGETSU> {
+		CMD_NAME("video/tool/perspective/mangetsu")
+		CMD_ICON(visual_perspective)
+		STR_MENU("Mangetsu Perspective")
+		STR_DISP("Mangetsu Perspective")
+		STR_HELP("Drag four relative \\mpersp corners. Requires a Mangetsu renderer with perspective support.")
+	};
+
+	// Preserve toolbar and hotkey IDs from earlier versions.
+	struct visual_mode_perspective_distort final : public visual_tool_persp_mode<PERSP_MODE_MANGETSU> {
 		CMD_NAME("video/tool/perspective/distort")
-		CMD_ICON(visual_distort)
-		STR_MENU("Mangetsu Distort")
-		STR_DISP("Mangetsu Distort")
-		STR_HELP("Edit Mangetsu eight-value \\distort with four corner handles")
+		CMD_ICON(visual_perspective)
+		STR_MENU("Mangetsu Perspective")
+		STR_DISP("Mangetsu Perspective")
+		STR_HELP("Drag four relative \\mpersp corners. Requires a Mangetsu renderer with perspective support.")
 	};
 
 	struct visual_mode_perspective_arch1t3cht final : public visual_tool_persp_mode<PERSP_MODE_ARCH1T3CHT> {
@@ -255,13 +264,12 @@ namespace {
 	};
 
 	// Compatibility with toolbars/hotkeys saved while Distort was standalone.
-	// This activates the Distort mode of the established perspective tool.
-	struct visual_mode_distort final : public visual_tool_persp_mode<PERSP_MODE_DISTORT> {
+	struct visual_mode_distort final : public visual_tool_persp_mode<PERSP_MODE_MANGETSU> {
 		CMD_NAME("video/tool/distort")
-		CMD_ICON(visual_distort)
-		STR_MENU("Mangetsu Distort")
-		STR_DISP("Mangetsu Distort")
-		STR_HELP("Edit Mangetsu eight-value \\distort with four corner handles")
+		CMD_ICON(visual_perspective)
+		STR_MENU("Mangetsu Perspective")
+		STR_DISP("Mangetsu Perspective")
+		STR_HELP("Drag four relative \\mpersp corners. Requires a Mangetsu renderer with perspective support.")
 
 		bool Validate(const agi::Context *c) override {
 			return !!c->project->VideoProvider();
@@ -269,7 +277,7 @@ namespace {
 
 		bool IsActive(const agi::Context *c) override {
 			return c->videoDisplay->ToolIsType(typeid(VisualToolPerspective)) &&
-				(c->videoDisplay->GetSubTool() & PERSP_MODE) == PERSP_MODE_DISTORT;
+				(c->videoDisplay->GetSubTool() & PERSP_MODE) == PERSP_MODE_MANGETSU;
 		}
 	};
 
@@ -581,6 +589,7 @@ namespace cmd {
 
 		reg(agi::make_unique<visual_mode_distort>());
 		reg(agi::make_unique<visual_mode_perspective_distort>());
+		reg(agi::make_unique<visual_mode_perspective_mangetsu>());
 		reg(agi::make_unique<visual_mode_perspective_arch1t3cht>());
 		reg(agi::make_unique<visual_mode_perspective_plane>());
 		reg(agi::make_unique<visual_mode_perspective_lock_inner>());

@@ -30,7 +30,7 @@ bool IsNativeLayer(std::string const& text, size_t start, size_t end) {
 }
 
 std::string Number(double v) {
-	if (!std::isfinite(v)) throw std::invalid_argument("Motion contains a non-finite value.");
+	if (!std::isfinite(v)) throw std::invalid_argument(motion_message("Motion contains a non-finite value."));
 	if (std::abs(v) < 0.0000005) v = 0;
 	std::ostringstream s;
 	s.imbue(std::locale::classic());
@@ -49,22 +49,22 @@ MotionTrackFrame const& Sample(MotionTrackResult const& track, int frame) {
 	if (it == track.frames.end() || it->frame != frame ||
 		(it->state != MotionTrackState::Tracked && it->state != MotionTrackState::WeakTracked &&
 		 it->state != MotionTrackState::Predicted))
-		throw std::invalid_argument("Track every selected subtitle frame and the current main-video reference frame before Apply.");
+		throw std::invalid_argument(motion_message("Track every selected subtitle frame and the current main-video reference frame before Apply."));
 	if (!std::isfinite(it->x) || !std::isfinite(it->y) || !std::isfinite(it->scale_x) ||
 		!std::isfinite(it->scale_y) || !std::isfinite(it->rotation_deg) || it->scale_x <= 0 || it->scale_y <= 0)
-		throw std::invalid_argument("Tracking contains an invalid sample.");
+		throw std::invalid_argument(motion_message("Tracking contains an invalid sample."));
 	return *it;
 }
 
 MotionTrackResult PrepareTrack(MotionTrackResult const& input) {
 	auto track = input;
 	if (track.source_width <= 0 || track.source_height <= 0)
-		throw std::invalid_argument("Tracking has no source video resolution.");
+		throw std::invalid_argument(motion_message("Tracking has no source video resolution."));
 	for (size_t i = 0; i < track.frames.size(); ++i) {
 		if (i && track.frames[i].frame <= track.frames[i-1].frame)
-			throw std::invalid_argument("Tracking samples must be ordered without duplicate frames.");
+			throw std::invalid_argument(motion_message("Tracking samples must be ordered without duplicate frames."));
 		if (!std::isfinite(track.frames[i].rotation_deg))
-			throw std::invalid_argument("Tracking contains a non-finite angle.");
+			throw std::invalid_argument(motion_message("Tracking contains a non-finite angle."));
 		if (i) {
 			// Both wrapped and already unwrapped tracker angles are supported.
 			double delta = std::remainder(input.frames[i].rotation_deg-input.frames[i-1].rotation_deg,360.0);
@@ -83,46 +83,46 @@ struct Scalars {
 // calls atof and would interpret "~+20" as zero.
 double Operand(AssOverrideTag const& tag, size_t index, double current, bool nonnegative, bool y = false) {
 	if (index >= tag.Params.size() || tag.Params[index].omitted)
-		throw std::invalid_argument("An authored motion tag has missing parameters.");
+		throw std::invalid_argument(motion_message("An authored motion tag has missing parameters."));
 	std::string token = tag.Params[index].Get<std::string>();
 	// Mangetsu permits bracket annotations and whitespace in override blocks.
 	for (size_t p = token.find('['); p != std::string::npos; p = token.find('[')) {
 		auto end = token.find(']',p);
-		if (end == std::string::npos) throw std::invalid_argument("An authored motion value has an unclosed annotation.");
+		if (end == std::string::npos) throw std::invalid_argument(motion_message("An authored motion value has an unclosed annotation."));
 		token.erase(p,end-p+1);
 	}
 	auto begin = token.find_first_not_of(" \t\r\n");
-	if (begin == std::string::npos) throw std::invalid_argument("An authored motion value is empty.");
+	if (begin == std::string::npos) throw std::invalid_argument(motion_message("An authored motion value is empty."));
 	token.erase(0,begin);
 	bool relative = token[0] == '~';
 	if (relative) {
 		token.erase(0,1);
 		if (token.empty() || (token[0] != '+' && token[0] != '-'))
-			throw std::invalid_argument("An authored relative motion value needs ~+N or ~-N.");
+			throw std::invalid_argument(motion_message("An authored relative motion value needs ~+N or ~-N."));
 	}
 	else relative = nonnegative && (token[0] == '+' || token[0] == '-');
 	std::istringstream stream(token);
 	stream.imbue(std::locale::classic());
 	double value;
 	if (!(stream >> value) || !std::isfinite(value))
-		throw std::invalid_argument("An authored motion value is not a finite number.");
+		throw std::invalid_argument(motion_message("An authored motion value is not a finite number."));
 	stream >> std::ws;
-	if (!stream.eof()) throw std::invalid_argument("An authored motion value cannot be composed safely.");
+	if (!stream.eof()) throw std::invalid_argument(motion_message("An authored motion value cannot be composed safely."));
 	return relative ? current + (y ? -value : value) : value;
 }
 
 void Evaluate(AssDialogueBlockOverride const& block, Scalars& state, double time,
 	double duration, MotionStyleResolver const& styles, bool object_scale, bool clip_scale, double weight = 1, int depth = 0) {
-	if (depth > 16) throw std::invalid_argument("Authored motion transforms are nested too deeply.");
+	if (depth > 16) throw std::invalid_argument(motion_message("Authored motion transforms are nested too deeply."));
 	for (auto const& t : block.Tags) {
 		if (t.Name == "\\t") {
 			if (t.Params.size() != 4 || t.Params[3].omitted)
-				throw std::invalid_argument("An authored transform is malformed.");
+				throw std::invalid_argument(motion_message("An authored transform is malformed."));
 			double start = t.Params[0].Get<double>(0), end = t.Params[1].Get<double>(duration);
 			if (end == 0) end = duration; // renderer convention
 			double accel = t.Params[2].Get<double>(1);
 			if (!std::isfinite(accel) || accel <= 0 || end < start)
-				throw std::invalid_argument("An authored transform has unsupported timing or acceleration.");
+				throw std::invalid_argument(motion_message("An authored transform has unsupported timing or acceleration."));
 			double p = end == start ? (time >= end ? 1 : 0) : std::clamp((time-start)/(end-start),0.0,1.0);
 			// Match Mangetsu: only a terminal nested transform is evaluated,
 			// and its own weight replaces the enclosing weight.
@@ -155,24 +155,24 @@ void Evaluate(AssDialogueBlockOverride const& block, Scalars& state, double time
 
 void Inspect(AssDialogueBlockOverride const& block, bool moving_position, bool clip,
 	bool& animated_scalar, int& shapes, bool& authored_clip_state, int depth = 0) {
-	if (depth > 16) throw std::invalid_argument("Authored transforms are nested too deeply.");
+	if (depth > 16) throw std::invalid_argument(motion_message("Authored transforms are nested too deeply."));
 	for (auto const& t : block.Tags) {
 		if (t.Name == "\\t") {
-			if (t.Params.size() != 4 || t.Params[3].omitted) throw std::invalid_argument("An authored transform is malformed.");
+			if (t.Params.size() != 4 || t.Params[3].omitted) throw std::invalid_argument(motion_message("An authored transform is malformed."));
 			Inspect(*t.Params[3].Get<AssDialogueBlockOverride*>(),moving_position,clip,animated_scalar,shapes,authored_clip_state,depth+1);
 		}
 		else {
 			if (moving_position && ((depth && t.Name == "\\pos") || t.Name == "\\move" ||
 				t.Name == "\\mover" || t.Name == "\\moves3" || t.Name == "\\moves4"))
-				throw std::invalid_argument("Authored animated position competes with tracked position in Mangetsu. Disable X/Y in Advanced Apply, or use a static authored position.");
+				throw std::invalid_argument(motion_message("Authored animated position competes with tracked position in Mangetsu. Disable X/Y in Advanced Apply, or use a static authored position."));
 			if (depth && (t.Name == "\\scale" || t.Name == "\\clips")) animated_scalar = true;
 			if (ClipTag(t)) {
 				++shapes;
-				if (clip && depth) throw std::invalid_argument("Animated clip geometry cannot safely compose with Track for \\clip. Keep the clip unchanged in Advanced Apply.");
+				if (clip && depth) throw std::invalid_argument(motion_message("Animated clip geometry cannot safely compose with Track for \\clip. Keep the clip unchanged in Advanced Apply."));
 			}
 			authored_clip_state |= t.Name == "\\clippos" || t.Name == "\\clips";
 			if (clip && t.Name == "\\movevc")
-				throw std::invalid_argument("Authored \\movevc cannot compose with clip transforms. Keep the clip unchanged in Advanced Apply.");
+				throw std::invalid_argument(motion_message("Authored \\movevc cannot compose with clip transforms. Keep the clip unchanged in Advanced Apply."));
 		}
 	}
 }
@@ -182,7 +182,7 @@ void Inspect(AssDialogueBlockOverride const& block, bool moving_position, bool c
 // scalar. Without this guard every formatting span got redundant +/-\\frz.
 bool ChangesTrackedScalar(AssDialogueBlockOverride const& block,
 	bool object_scale, bool rotation, bool clip_scale, int depth = 0) {
-	if (depth > 16) throw std::invalid_argument("Authored motion transforms are nested too deeply.");
+	if (depth > 16) throw std::invalid_argument(motion_message("Authored motion transforms are nested too deeply."));
 	for (auto const& tag : block.Tags) {
 		if (tag.Name == "\\t" && tag.Params.size() == 4 && !tag.Params[3].omitted) {
 			if (ChangesTrackedScalar(*tag.Params[3].Get<AssDialogueBlockOverride*>(),
@@ -298,9 +298,9 @@ MotionApplication BuildMotionApplication(AssDialogue const& input, MotionStyleRe
 	AssDialogue source(input);
 	source.Text = RemoveMotionLayers(input.Text.get());
 	if (!tc.IsLoaded() || width <= 0 || height <= 0 || source.End <= source.Start || source.Comment)
-		throw std::invalid_argument("Select positive-duration dialogue events with loaded video timing and script resolution.");
+		throw std::invalid_argument(motion_message("Select positive-duration dialogue events with loaded video timing and script resolution."));
 	int first = tc.FrameAtTime(source.Start,agi::vfr::START), last = tc.FrameAtTime(source.End,agi::vfr::END);
-	if (last < first) throw std::invalid_argument("The subtitle does not cover a video frame.");
+	if (last < first) throw std::invalid_argument(motion_message("The subtitle does not cover a video frame."));
 	bool want_main = o.object_motion && (o.position_x || o.position_y || o.scale || o.rotation);
 	MotionTrackResult main = want_main ? PrepareTrack(input_main) : MotionTrackResult{};
 	MotionTrackResult clip;
@@ -323,7 +323,7 @@ MotionApplication BuildMotionApplication(AssDialogue const& input, MotionStyleRe
 		if (auto b = dynamic_cast<AssDialogueBlockOverride const*>(block.get()))
 			Inspect(*b,moving_position,want_clip,animated_scalar,shapes,authored_clip_state);
 	if (want_clip && shapes > 1 && !authored_clip_state)
-		throw std::invalid_argument("Multiple authored clip shapes use legacy composition. Select one clip shape, or keep clips unchanged in Advanced Apply.");
+		throw std::invalid_argument(motion_message("Multiple authored clip shapes use legacy composition. Select one clip shape, or keep clips unchanged in Advanced Apply."));
 	if (want_clip && ((!o.rectangular_clips || !o.vector_clips))) {
 		for (auto const& group : groups) for (auto const& block : group.blocks)
 			if (auto b = dynamic_cast<AssDialogueBlockOverride const*>(block.get()))
@@ -336,9 +336,9 @@ MotionApplication BuildMotionApplication(AssDialogue const& input, MotionStyleRe
 		for (int f = first; f <= last; ++f) {
 			auto const& s = Sample(track,f);
 			if (zoom && std::abs(s.scale_x/r.scale_x-s.scale_y/r.scale_y) > 0.000001)
-				throw std::invalid_argument("Object/clip zoom must be uniform. Disable Scale in Advanced Apply for an anisotropic track.");
+				throw std::invalid_argument(motion_message("Object/clip zoom must be uniform. Disable Scale in Advanced Apply for an anisotropic track."));
 			if (clip_rotation && std::abs(s.rotation_deg-r.rotation_deg) > 0.000001)
-				throw std::invalid_argument("Mangetsu clippos/clips cannot rotate clip geometry. Disable Rotation in Advanced Apply, or keep the clip unchanged.");
+				throw std::invalid_argument(motion_message("Mangetsu clippos/clips cannot rotate clip geometry. Disable Rotation in Advanced Apply, or keep the clip unchanged."));
 		}
 	};
 	if (want_main) validate(main,o.scale,false);
@@ -441,6 +441,7 @@ MotionApplication BuildMotionApplication(AssDialogue const& input, MotionStyleRe
 	MotionApplication output;
 	output.events.push_back(std::move(event)); // exactly one, same identity and timing
 	output.used_clippos = want_clip;
+	output.transform_count = count;
 	output.summary = std::to_string(count) + (o.encoding == MotionEncoding::FrameByFrame ?
 		" frame-by-frame transforms; one event per subtitle" : " optimized transforms; one event per subtitle");
 	if (want_clip) output.summary += "; clippos/clips";
@@ -504,15 +505,15 @@ MotionSourceIdentity IdentifyMotionSource(AssDialogue const& input) {
 }
 std::string ValidateMotionSources(std::vector<MotionSourceIdentity> const& sources,
 	std::vector<AssDialogue const*> const& selected, int expected_active, int active, bool validate_clips) {
-	if (active != expected_active) return "Active subtitle changed. Start a new tracking session.";
-	if (sources.size() != selected.size()) return "Subtitle selection changed. Start a new tracking session.";
+	if (active != expected_active) return motion_message("Active subtitle changed. Start a new tracking session.");
+	if (sources.size() != selected.size()) return motion_message("Subtitle selection changed. Start a new tracking session.");
 	for (auto const& source : sources) {
 		auto it = std::find_if(selected.begin(),selected.end(),[&](auto p) { return p && p->Id == source.id; });
-		if (it == selected.end()) return "Subtitle selection changed. Start a new tracking session.";
+		if (it == selected.end()) return motion_message("Subtitle selection changed. Start a new tracking session.");
 		auto now = IdentifyMotionSource(**it);
-		if (source.start != now.start || source.end != now.end) return "Subtitle timing changed. Start a new tracking session.";
-		if (source.content != now.content) return "Subtitle content changed. Start a new tracking session.";
-		if (validate_clips && source.clip != now.clip) return "The tracked clip changed. Track the clip again.";
+		if (source.start != now.start || source.end != now.end) return motion_message("Subtitle timing changed. Start a new tracking session.");
+		if (source.content != now.content) return motion_message("Subtitle content changed. Start a new tracking session.");
+		if (validate_clips && source.clip != now.clip) return motion_message("The tracked clip changed. Track the clip again.");
 	}
 	return {};
 }

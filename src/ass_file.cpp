@@ -21,6 +21,8 @@
 #include "ass_info.h"
 #include "ass_style.h"
 #include "ass_style_storage.h"
+#include "mangetsu_metadata.h"
+#include "mangetsu_style_metadata.h"
 #include "async_video_provider.h"
 #include "options.h"
 #include "project.h"
@@ -64,7 +66,7 @@ void AssFile::LoadDefault(bool include_dialogue_line, std::string const& style_c
 		Events.push_back(*new AssDialogue);
 }
 
-AssFile::AssFile(const AssFile &from)
+AssFile::AssFile(const AssFile &from, bool preserve_dialogue_ids)
 : Info(from.Info)
 , Attachments(from.Attachments)
 , Extradata(from.Extradata)
@@ -75,7 +77,10 @@ AssFile::AssFile(const AssFile &from)
 		[](AssStyle const& e) { return new AssStyle(e); },
 		[](AssStyle *e) { delete e; });
 	Events.clone_from(from.Events,
-		[](AssDialogue const& e) { return new AssDialogue(e); },
+		[preserve_dialogue_ids](AssDialogue const& e) {
+			return preserve_dialogue_ids ? new AssDialogue(static_cast<AssDialogueBase const&>(e))
+			                             : new AssDialogue(e);
+		},
 		[](AssDialogue *e) { delete e; });
 }
 
@@ -139,6 +144,12 @@ AssStyle *AssFile::GetStyle(std::string const& name) {
 }
 
 int AssFile::Commit(wxString const& desc, int type, int amend_id, AssDialogue *single_line) {
+	// Canonicalize with the user's edit, not as an extra undo step. NEW also
+	// restores undo snapshots and must preserve the snapshot verbatim.
+	if (type != COMMIT_NEW && mangetsu::NormalizeInitialMetadata(*this)) {
+		type |= COMMIT_ORDER;
+		single_line = nullptr; // Reordering cannot use the single-line undo shortcut.
+	}
 	if (type == COMMIT_NEW || (type & COMMIT_DIAG_ADDREM) || (type & COMMIT_ORDER)) {
 		int i = 0;
 		for (auto& event : Events)
@@ -184,6 +195,17 @@ void AssFile::Sort(CompFunc comp, std::set<AssDialogue*> const& limit) {
 }
 
 void AssFile::Sort(EntryList<AssDialogue> &lst, CompFunc comp, std::set<AssDialogue*> const& limit) {
+	// These declarations are an ordered header, not timed dialogue. Moving
+	// them through an ordinary comment/event silently disables their defaults.
+	auto first_event = lst.begin();
+	while (first_event != lst.end() && mangetsu::IsMetadataComment(*first_event)) ++first_event;
+	if (first_event != lst.begin()) {
+		EntryList<AssDialogue> metadata;
+		metadata.splice(metadata.begin(), lst, lst.begin(), first_event);
+		Sort(lst, comp, limit);
+		lst.splice(lst.begin(), metadata);
+		return;
+	}
 	if (limit.empty()) {
 		lst.sort(comp);
 		return;

@@ -437,6 +437,7 @@
 			"Font Face" : "Tahoma",
 			"Font Size" : 8,
 			"Hide Overrides" : 1,
+			"Show Mangetsu Metadata" : false,
 			"Hide Overrides Char" : "☀",
 			"Highlight Subtitles in Frame" : true
 		},

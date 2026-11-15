@@ -174,6 +174,7 @@ public:
 	/// when a temporary tool restores an existing instance rather than creating
 	/// a fresh one.
 	virtual void OnAttached() { }
+	virtual void OnRenderedFrame() { }
 	/// Give temporary tools first refusal of keyboard input (for example Escape)
 	/// before normal video hotkeys run.
 	virtual bool OnKeyEvent(wxKeyEvent &) { return false; }

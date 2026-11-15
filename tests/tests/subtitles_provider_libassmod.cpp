@@ -3,6 +3,7 @@
 #include "subtitles_provider_libassmod_render.h"
 #include "video_frame.h"
 #include "mkv_subtitle_fixture.h"
+#include "mangetsu_metadata.h"
 
 #include <gtest/gtest.h>
 #include <libaegisub/exception.h>
@@ -203,6 +204,7 @@ public:
 	ASS_Track *(*read)(ASS_Library*,char*,size_t,const char*)=nullptr;
 	void (*free_track)(ASS_Track*)=nullptr;
 	int (*needs_rgba)(ASS_Renderer*)=nullptr;
+	int (*perspective_layout)(ASS_Renderer*,int,int*,double*,double*)=nullptr;
 	int (*set_image)(ASS_Renderer*,const char*,int,int,int,int,const uint8_t*)=nullptr;
 
 	template<class T> T Symbol(const char *name) {
@@ -231,6 +233,7 @@ public:
 		LOAD(fonts,"ass_set_fonts"); LOAD(frame_size,"ass_set_frame_size"); LOAD(storage_size,"ass_set_storage_size");
 		LOAD(read,"ass_read_memory"); LOAD(free_track,"ass_free_track"); LOAD(needs_rgba,"ass_frame_needs_rgba");
 		LOAD(set_image,"ass_set_tag_image_rgba");
+		LOAD(perspective_layout,"ass_get_perspective_layout");
 #undef LOAD
 		if (!api.HasDirectRgba() || !init || !done || !renderer_init || !renderer_done || !fonts || !frame_size ||
 			!storage_size || !read || !free_track || !needs_rgba || !api.ass_render_frame_auto) return false;
@@ -342,6 +345,144 @@ TEST_P(CustomSubtitleBackend, MatroskaImportReachesBackendWithoutNuls) {
 	}
 }
 
+namespace {
+std::string SerializeMetadata(std::string const& events, int time = -1) {
+	AssFile file;
+	AssParser parser(&file, 1);
+	std::istringstream input(Script(events));
+	for (std::string line; std::getline(input, line);) parser.AddLine(line);
+	mkv_test::CaptureProvider provider;
+	static_cast<SubtitlesProvider&>(provider).LoadSubtitles(&file, time);
+	return provider.script;
+}
+
+std::string Metadata(std::string const& effect, std::string const& tags, std::string const& actor = "", std::string const& style = "Default") {
+	return "Comment: 0,0:00:00.00,0:00:00.00," + style + ',' + actor + ",0,0,0," + effect + ',' + tags + '\n';
+}
+}
+
+TEST(CustomSubtitleMetadata, PreviewSnapshotPreservesPerspectiveEventIdentity) {
+	AssFile file;
+	AssParser parser(&file, 1);
+	std::istringstream input(Script(Metadata("mangetsu-style", "{\\furis70}")
+		+ "Dialogue: 0,0:00:10.00,0:00:20.00,Default,,0,0,0,,inactive\n"
+		+ Event("{\\mpersp(0,0,1,0,0.8,1,0,1)}active")));
+	for (std::string line; std::getline(input, line);) parser.AddLine(line);
+
+	AssDialogue ordinary_copy(file.Events.back());
+	EXPECT_NE(ordinary_copy.Id, file.Events.back().Id);
+	AssFile preview_copy;
+	for (auto const& event : file.Events)
+		preview_copy.Events.push_back(*new AssDialogue(static_cast<AssDialogueBase const&>(event)));
+	ASSERT_EQ(preview_copy.Events.back().Id, file.Events.back().Id);
+
+	// The preview serializes only visible dialogues at this time. Metadata
+	// comments and skipped events must not take a renderer event index.
+	struct CaptureLayoutIds final : SubtitlesProvider {
+		void LoadSubtitles(const char *, size_t) override {}
+		void DrawSubtitles(VideoFrame &, double) override {}
+		std::vector<int> const& IDs() const { return rendered_line_ids; }
+	} capture;
+	static_cast<SubtitlesProvider&>(capture).LoadSubtitles(&preview_copy, 1000);
+	ASSERT_EQ(capture.IDs().size(), 1u);
+	EXPECT_EQ(capture.IDs()[0], file.Events.back().Id);
+
+	AssDialogue edited(static_cast<AssDialogueBase const&>(file.Events.back()));
+	EXPECT_EQ(edited.Id, capture.IDs()[0]);
+}
+
+TEST(CustomSubtitleMetadata, MixedInitialBlockIsForwardedInOrderRegardlessOfTime) {
+	auto first = Metadata("mangetsu-style", "{\\furis70}");
+	auto actor = Metadata("mangetsu-colorcoding", "{\\1c&HFF0000&}", "Nene");
+	auto last = Metadata("mangetsu-style", "{\\furisx60}", "", "*Default");
+	auto unknown = Metadata("mangetsu-style", "{\\furis20}", "", "Missing");
+	auto serialized = SerializeMetadata(first + actor + last + unknown + Event("<A|reading>"), 2000);
+	auto pos = serialized.find(first);
+	ASSERT_NE(pos, std::string::npos);
+	EXPECT_EQ(serialized.substr(pos, first.size() + actor.size() + last.size() + unknown.size()), first + actor + last + unknown);
+	EXPECT_NE(serialized.find("Dialogue:"), std::string::npos);
+}
+
+TEST(CustomSubtitleMetadata, AnUnrelatedCommentOrDialogueClosesTheSharedBlock) {
+	auto late = Metadata("mangetsu-style", "{\\furis20}");
+	for (auto const& boundary : {Metadata("note", "ordinary comment"), Event("first dialogue"),
+		Metadata("Mangetsu-style", "{\\furis30}"), Metadata("mangetsu-colorcoding", "{}"),
+		Metadata("ordinary mangetsu-style{uketsugu}", "{\\furis30}"),
+		Metadata("{mangetsu-style}{uketsugu}", "{\\furis30}"),
+		Metadata("mangetsu-style mangetsu-colorcoding", "{\\furis30}", "Nene"),
+		Metadata("mangetsu-style{unclosed", "{\\furis30}")}) {
+		auto serialized = SerializeMetadata(Metadata("mangetsu-style", "{\\furis70}") + boundary + late);
+		EXPECT_EQ(serialized.find(late), std::string::npos);
+	}
+	// Filtering out an inactive dialogue must not promote metadata after it.
+	auto serialized = SerializeMetadata("Dialogue: 0,0:00:10.00,0:00:20.00,Default,,0,0,0,,later\n" + late + Event("active"), 1000);
+	EXPECT_EQ(serialized.find(late), std::string::npos);
+}
+
+TEST(CustomSubtitleMetadata, EffectAnnotationsAreRemovedOnlyFromRendererMetadata) {
+	auto first = Metadata("mangetsu-style", "{\\furis70}");
+	auto second = Metadata("mangetsu-style", "{\\q2}");
+	auto actor = Metadata("mangetsu-colorcoding", "{\\1c&HFF0000&}", "Nene");
+	std::string ordinary = "Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,code{uketsugu},visible\n";
+	auto serialized = SerializeMetadata(Metadata(" {uketsugu}mangetsu-style{other} ", "{\\furis70}")
+		+ Metadata("mangetsu-style{uketsugu}", "{\\q2}")
+		+ Metadata("{other}mangetsu-colorcoding{uketsugu}", "{\\1c&HFF0000&}", "Nene") + ordinary);
+	EXPECT_NE(serialized.find(first + second + actor + ordinary), std::string::npos);
+	EXPECT_EQ(serialized.find("{other}"), std::string::npos);
+}
+
+TEST(CustomSubtitleMetadata, EditingMetadataAndItsBoundaryInvalidatesThePreview) {
+	AssFile file;
+	for (auto const& raw : {Metadata("mangetsu-style", "{\\furis70}"),
+		Metadata("mangetsu-colorcoding", "{\\1c&HFF0000&}", "Nene"),
+		Metadata("note", "block ends here"), Metadata("mangetsu-style", "{\\furis20}"), Event("visible")}) {
+		auto line = new AssDialogue(raw);
+		line->Row = static_cast<int>(file.Events.size());
+		file.Events.push_back(*line);
+	}
+	for (auto const& line : file.Events) EXPECT_EQ(mangetsu::MayAffectMetadata(file, line), line.Row <= 2);
+}
+
+TEST_P(CustomSubtitleBackend, MangetsuStyleDefaultsSurviveHostSerializationAndMatchInlineTags) {
+	if (std::string(GetParam()).find("MANGETSU") == std::string::npos) return;
+	for (auto const& fixture : std::vector<std::pair<std::string, std::string>>{
+		{"\\furis70", "<A|reading>"},
+		{"\\2bs3\\2bc&HFFAA00&\\2ba&H40&", "border layers"},
+		{"\\q2\\vert1\\vtype3\\vdir2\\vsp2\\vcolsp8", "ABC\\NDEF"}}) {
+		SCOPED_TRACE(fixture.first);
+		Session subject(backend, SerializeMetadata(Metadata("{uketsugu}mangetsu-style{note}", '{' + fixture.first + '}') + Event(fixture.second)));
+		Session reference(backend, Script(Event('{' + fixture.first + '}' + fixture.second)));
+		Session ordinary(backend, Script(Event(fixture.second)));
+		for (bool legacy : {false, true}) {
+			auto api = backend.api;
+			if (legacy) { api.ass_render_frame_rgba = nullptr; api.ass_render_frame_auto = nullptr; }
+			auto frame = Background(), expected = frame, unchanged = frame;
+			DrawFrame(api, subject.renderer, subject.track, 1000, frame);
+			DrawFrame(api, reference.renderer, reference.track, 1000, expected);
+			DrawFrame(api, ordinary.renderer, ordinary.track, 1000, unchanged);
+			EXPECT_EQ(frame.data, expected.data);
+			EXPECT_NE(frame.data, unchanged.data) << "Fixture must actually exercise inherited defaults";
+		}
+	}
+}
+
+TEST_P(CustomSubtitleBackend, DecoratedActorColorcodingRetainsPriorityOverStyleDefaults) {
+	if (std::string(GetParam()).find("MANGETSU") == std::string::npos) return;
+	auto event = "Dialogue: 0,0:00:00.00,0:00:05.00,Default,Nene,0,0,0,,visible\n";
+	auto style = Metadata("mangetsu-style", "{\\1c&H00FF00&}");
+	auto actor = Metadata("mangetsu-colorcoding", "{\\1c&HFF0000&}", "Nene");
+	Session reference(backend, Script(style + actor + event));
+	Session style_only(backend, Script(style + event));
+	Session decorated(backend, SerializeMetadata(Metadata("mangetsu-style{uketsugu}", "{\\1c&H00FF00&}")
+		+ Metadata("{note}{uketsugu}mangetsu-colorcoding", "{\\1c&HFF0000&}", "Nene") + event));
+	auto expected = Background(), without_actor = expected, actual = expected;
+	DrawFrame(backend.api, reference.renderer, reference.track, 1000, expected);
+	DrawFrame(backend.api, style_only.renderer, style_only.track, 1000, without_actor);
+	DrawFrame(backend.api, decorated.renderer, decorated.track, 1000, actual);
+	EXPECT_EQ(actual.data, expected.data);
+	EXPECT_NE(actual.data, without_actor.data);
+}
+
 TEST_P(CustomSubtitleBackend, OrdinaryAssAppearance) {
 	const std::vector<std::string> fixtures{
 		Event("ordinary dialogue"), Event("{\\bord4\\shad3\\1a&H70&\\3a&H20&}borders shadows alpha"),
@@ -408,5 +549,31 @@ std::vector<const char*> ConfiguredBackends() {
 	return backends;
 }
 }
+TEST_P(CustomSubtitleBackend, PerspectivePreviewMatchesMangetsuOutput) {
+	if (std::string(GetParam()).find("MANGETSU") == std::string::npos)
+		return;
+	ASSERT_NE(backend.perspective_layout, nullptr);
+	const std::string style = "{\\an5\\pos(160,85)\\frx11\\fry-16\\bord2";
+	const std::string body = "\\1grd(0,&HFFFFFF&,&H88DCFF&)}A subtitle\\Nwith another line";
+	const auto warped = Event(style + "\\mpersp(0.1,0,1,0.08,0.8,1,0.2,0.92)" + body);
+	Check(warped, false, true);
+
+	Session ordinary(backend, Script(Event(style + body)));
+	Session projected(backend, Script(warped));
+	auto plain_frame = Background(false, 24), perspective_frame = plain_frame;
+	DrawFrame(backend.api, ordinary.renderer, ordinary.track, 1000, plain_frame);
+	DrawFrame(backend.api, projected.renderer, projected.track, 1000, perspective_frame);
+	EXPECT_NE(plain_frame.data, perspective_frame.data);
+
+	int event_index;
+	double rect[4], pins[8];
+	ASSERT_EQ(backend.perspective_layout(projected.renderer, 0, &event_index, rect, pins), 1);
+	EXPECT_EQ(event_index, 0);
+	EXPECT_GT(rect[2], rect[0]);
+	EXPECT_GT(rect[3], rect[1]);
+	EXPECT_NEAR((pins[0] - rect[0]) / (rect[2] - rect[0]), 0.1, 1e-8);
+	EXPECT_NEAR((pins[4] - rect[0]) / (rect[2] - rect[0]), 0.8, 1e-8);
+}
+
 INSTANTIATE_TEST_CASE_P(BundledRenderers,CustomSubtitleBackend,
 	::testing::ValuesIn(ConfiguredBackends()));

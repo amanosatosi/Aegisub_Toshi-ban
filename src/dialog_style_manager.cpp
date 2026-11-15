@@ -35,6 +35,8 @@
 #include "compat.h"
 #include "dialog_manager.h"
 #include "dialog_style_editor.h"
+#include "mangetsu_style_metadata.h"
+#include "mangetsu_metadata.h"
 #include "dialogs.h"
 #include "format.h"
 #include "help_button.h"
@@ -504,6 +506,14 @@ void DialogStyleManager::OnCatalogDelete() {
 void DialogStyleManager::OnCopyToStorage() {
 	wxArrayInt selections;
 	int n = CurrentList->GetSelections(selections);
+	for (int i = 0; i < n; ++i) {
+		auto source = styleMap.at(selections[i]);
+		if (!mangetsu::StyleMetadataDraft(*c->ass, *source).Texts(*source, c->ass->GetScriptInfoAsInt("WrapStyle")).empty()) {
+			if (wxMessageBox(_("Style catalogs cannot store Mangetsu defaults. Copy only the ordinary ASS style fields? The script's metadata will be kept."),
+				_("Copy style to catalog"), wxYES_NO | wxNO_DEFAULT | wxICON_INFORMATION, this) != wxYES) return;
+			break;
+		}
+	}
 	wxArrayString copied;
 	copied.reserve(n);
 	for (int i = 0; i < n; i++) {
@@ -661,10 +671,28 @@ void DialogStyleManager::OnCurrentDelete() {
 	int n = CurrentList->GetSelections(selections);
 
 	if (confirm_delete(n, this, _("Confirm delete from current")) == wxYES) {
+		Selection removed;
+		for (auto line : mangetsu::InitialMetadata(*c->ass)) {
+			if (!mangetsu::IsStyleMetadata(*line)) continue;
+			for (int i = 0; i < n; ++i) if (mangetsu::ResolveMetadataStyle(*c->ass, line->Style) == styleMap.at(selections[i])) removed.insert(line);
+		}
+		if (!removed.empty()) {
+			auto selected = c->selectionController->GetSelectedSet();
+			for (auto line : removed) selected.erase(line);
+			auto active = c->selectionController->GetActiveLine();
+			if (removed.count(active)) {
+				active = nullptr;
+				for (auto& line : c->ass->Events) if (!removed.count(&line)) { active = &line; break; }
+			}
+			if (selected.empty() && active) selected.insert(active);
+			c->selectionController->SetSelectionAndActive(std::move(selected), active);
+		}
+		bool metadata_removed = false;
 		for (int i = 0; i < n; i++) {
+			metadata_removed |= mangetsu::RemoveStyleMetadata(*c->ass, *styleMap.at(selections[i]));
 			delete styleMap.at(selections[i]);
 		}
-		c->ass->Commit(_("style delete"), AssFile::COMMIT_STYLES);
+		c->ass->Commit(_("style delete"), AssFile::COMMIT_STYLES | (metadata_removed ? AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_DIAG_FULL : 0));
 	}
 }
 
@@ -683,16 +711,18 @@ void DialogStyleManager::OnCurrentImport() {
 	AssFile temp;
 	try {
 		auto reader = SubtitleFormat::GetReader(filename, charset);
-		if (!reader)
-			wxMessageBox("Unsupported subtitle format", "Error", wxOK | wxICON_ERROR | wxCENTER, this);
-		else
-			reader->ReadFile(&temp, filename, 0, charset);
+		if (!reader) {
+			wxMessageBox(_("Unsupported subtitle format"), _("Error"), wxOK | wxICON_ERROR | wxCENTER, this);
+			return;
+		}
+		reader->ReadFile(&temp, filename, 0, charset);
 	}
 	catch (agi::Exception const& err) {
-		wxMessageBox(to_wx(err.GetMessage()), "Error", wxOK | wxICON_ERROR | wxCENTER, this);
+		wxMessageBox(to_wx(err.GetMessage()), _("Error"), wxOK | wxICON_ERROR | wxCENTER, this);
+		return;
 	}
 	catch (...) {
-		wxMessageBox("Unknown error", "Error", wxOK | wxICON_ERROR | wxCENTER, this);
+			wxMessageBox(_("Unknown error"), _("Error"), wxOK | wxICON_ERROR | wxCENTER, this);
 		return;
 	}
 
@@ -727,6 +757,19 @@ void DialogStyleManager::OnCurrentImport() {
 	wxArrayInt selections;
 	int res = GetSelectedChoices(this, selections, _("Choose styles to import:"), _("Import Styles"), to_wx(styles));
 	if (res == -1 || selections.empty()) return;
+
+	// Inherited events keep their authored style names. Add their real
+	// source styles to the same selection and conflict-resolution pass.
+	std::set<int> selected_indices(selections.begin(), selections.end());
+	for (auto const& line : temp.Events) {
+		if (!mangetsu::HasInheritanceMarker(line)
+			|| (mangetsu::IsMetadataComment(line) && !mangetsu::IsStyleMetadata(line))) continue;
+		auto style = mangetsu::ResolveMetadataStyle(temp, line.Style);
+		if (!style) continue;
+		auto position = std::find(styles.begin(), styles.end(), style->name);
+		auto index = static_cast<int>(position - styles.begin());
+		if (position != styles.end() && selected_indices.insert(index).second) selections.Add(index);
+	}
 	bool styles_modified = false;
 
 	// [Satoshi replace-all import] One-time conflict prompt with Replace All option
@@ -766,12 +809,14 @@ void DialogStyleManager::OnCurrentImport() {
 	}
 
 	// Loop through selection
+	std::vector<std::string> imported_styles;
 	for (auto const& sel : selections) {
 		auto source_style = temp.GetStyle(styles[sel]);
 		// Check if there is already a style with that name
 		if (c->ass->GetStyle(styles[sel])) {
 			if (replace_all) {
 				styles_modified |= ImportStyle(*c->ass, *source_style, true);
+				imported_styles.push_back(source_style->name);
 				continue;
 			}
 
@@ -782,6 +827,7 @@ void DialogStyleManager::OnCurrentImport() {
 					wxYES_NO);
 				if (answer == wxYES) {
 					styles_modified |= ImportStyle(*c->ass, *source_style, true);
+					imported_styles.push_back(source_style->name);
 				}
 			}
 			continue;
@@ -789,17 +835,41 @@ void DialogStyleManager::OnCurrentImport() {
 
 		// Copy
 		styles_modified |= ImportStyle(*c->ass, *source_style, false);
+		imported_styles.push_back(source_style->name);
 	}
 
-	// Keep runtime project state authoritative rather than importing metadata
+	// Capture selection IDs before replacing declarations, so visible
+	// selected metadata cannot leave dangling pointers in the editor.
+	std::set<int> selected_ids;
+	for (auto line : c->selectionController->GetSelectedSet()) selected_ids.insert(line->Id);
+	auto old_active = c->selectionController->GetActiveLine();
+	int active_id = old_active ? old_active->Id : -1;
+	bool events_modified = mangetsu::ImportStyleEvents(*c->ass, temp, imported_styles);
+	if (events_modified) {
+		Selection selected;
+		AssDialogue *active = nullptr;
+		int row = 0;
+		for (auto& line : c->ass->Events) {
+			line.Row = row++;
+			if (selected_ids.count(line.Id)) selected.insert(&line);
+			if (line.Id == active_id) active = &line;
+		}
+		if (!active && !c->ass->Events.empty()) active = &c->ass->Events.front();
+		if (selected.empty() && active) selected.insert(active);
+		c->selectionController->SetSelectionAndActive(std::move(selected), active);
+	}
+
+	// Keep runtime project paths authoritative rather than importing them
 	// from the subtitle which supplied the styles.
 	if (match_resolution && c->project->VideoProvider())
 		c->project->UpdateVideoRelativePath();
 
 	// Commit the subtitle transformations together after synchronizing project
 	// metadata, so an immediate save/autosave sees the current runtime paths.
-	if (match_resolution || styles_modified) {
+	if (match_resolution || styles_modified || events_modified) {
 		int commit_type = styles_modified ? AssFile::COMMIT_STYLES : 0;
+		if (events_modified)
+			commit_type |= AssFile::COMMIT_DIAG_ADDREM | AssFile::COMMIT_DIAG_FULL | AssFile::COMMIT_ORDER | AssFile::COMMIT_EXTRADATA;
 		if (match_resolution)
 			commit_type |= AssFile::COMMIT_SCRIPTINFO | AssFile::COMMIT_STYLES | AssFile::COMMIT_DIAG_FULL;
 		c->ass->Commit(match_resolution ? _("style import and resolution resampling") : _("style import"), commit_type);

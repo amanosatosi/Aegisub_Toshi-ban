@@ -119,7 +119,7 @@ void AssDialogue::Parse(std::string const& raw) {
 	Actor = tkn.next_str_trim();
 	for (int& margin : Margin)
 		margin = mid(-9999, boost::lexical_cast<int>(tkn.next_str()), 99999);
-	Effect = tkn.next_str_trim();
+	Effect = tkn.next_str();
 
 	std::string text{tkn.next_tok().begin(), str.end()};
 

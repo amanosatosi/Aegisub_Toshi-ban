@@ -4,6 +4,40 @@
 
 #include <utility>
 
+TEST(MangetsuInlineAlignment, EditUsesLogicalLineAndPreservesOtherTags) {
+	std::string original = "{\\ta7\\b1}one\\N{\\t(\\ta8)\\tan3}two{\\ta1}x\\Nthree";
+	int start = static_cast<int>(original.find("two")), end = start + 3;
+	EXPECT_EQ(mangetsu::InlineAlignment(original, start), 1);
+	EXPECT_EQ(mangetsu::InheritedInlineAlignment(original, start, 5), 7);
+	auto changed = mangetsu::SetInlineAlignment(original, start, 9, start, end);
+	EXPECT_EQ(changed, "{\\ta7\\b1}one\\N{\\t(\\ta8)\\tan3}two{\\ta9}x\\Nthree");
+	EXPECT_EQ(changed.substr(start, end - start), "two");
+	EXPECT_EQ(mangetsu::SetInlineAlignment(changed, start, 0, start, end),
+		"{\\ta7\\b1}one\\N{\\t(\\ta8)\\tan3}twox\\Nthree");
+}
+
+TEST(MangetsuInlineAlignment, InsertAndRejectInvalidAlignmentWithoutReplacingText) {
+	std::string original = "{\\an3}one\\N{\\b1}two";
+	int start = static_cast<int>(original.find("two")), end = start + 3;
+	EXPECT_EQ(mangetsu::SetInlineAlignment(original, start, 10, start, end), original);
+	auto changed = mangetsu::SetInlineAlignment(original, start, 3, start, end);
+	EXPECT_EQ(changed, "{\\an3}one\\N{\\ta3\\b1}two");
+	EXPECT_EQ(changed.substr(start, end - start), "two");
+	EXPECT_EQ(mangetsu::SetInlineAlignment(changed, start, 3, start, end), changed);
+}
+
+TEST(MangetsuGradientSlide, EditingGlobalWidthPreservesChannelsAndTransforms) {
+	std::string payload = "\\1grds0\\t(0,100,\\grds5\\1grd(0,&HFFFFFF&,&H000000&))}text{\\grds5}later";
+	std::string original = "{\\grdsoff" + payload;
+	EXPECT_EQ(mangetsu::GradientSlideWidth(original), "off");
+	auto start = original.find("text");
+	mangetsu::GradientScope selected{start, start + 4, true};
+	auto changed = mangetsu::SetGradientSlideWidth(original, "20", &selected);
+	EXPECT_EQ(changed, "{\\grds20" + payload);
+	EXPECT_EQ(changed.substr(selected.start, selected.end - selected.start), "text");
+	EXPECT_EQ(mangetsu::SetGradientSlideWidth(changed, ""), "{" + payload);
+}
+
 namespace {
 
 using mangetsu::GradientEdit;

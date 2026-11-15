@@ -104,13 +104,13 @@ std::string AegisubLocale::PickLanguage() {
 	// Generate names
 	wxArrayString langNames;
 	for (auto const& lang : langs)
-		langNames.push_back(LocalizedLanguageName(lang));
+		langNames.push_back(lang == "my" ? wxString::FromUTF8("\xe1\x80\x99\xe1\x80\xbc\xe1\x80\x94\xe1\x80\xba\xe1\x80\x99\xe1\x80\xac (Burmese)") : LocalizedLanguageName(lang));
 
 	long style = wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER | wxOK | wxCENTRE;
 	if (!active_language.empty())
 		style |= wxCANCEL;
 
-	wxSingleChoiceDialog dialog(nullptr, "Please choose a language:", "Language", langNames,
+	wxSingleChoiceDialog dialog(nullptr, _("Please choose a language:"), _("Language"), langNames,
 			(void **)nullptr,
 			style);
 	if (dialog.ShowModal() == wxID_OK) {

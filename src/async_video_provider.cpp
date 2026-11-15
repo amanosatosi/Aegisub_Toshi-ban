@@ -19,13 +19,13 @@
 #include "ass_dialogue.h"
 #include "ass_file.h"
 #include "export_fixstyle.h"
+#include "mangetsu_metadata.h"
 #include "include/aegisub/subtitles_provider.h"
 #include "video_frame.h"
 #include "video_provider_manager.h"
 
 #include <libaegisub/dispatch.h>
 
-#include <boost/algorithm/string/trim.hpp>
 
 #if BOOST_VERSION >= 106900
 #include <boost/gil.hpp>
@@ -37,28 +37,6 @@ enum {
 	NEW_SUBS_FILE = -1,
 	SUBS_FILE_ALREADY_LOADED = -2
 };
-
-namespace {
-	bool is_mangetsu_actor_colorcoding_metadata_comment(AssDialogue const& line) {
-		std::string effect = line.Effect.get();
-		boost::trim(effect);
-
-		return line.Comment
-			&& !line.Actor.get().empty()
-			&& effect == "mangetsu-colorcoding";
-	}
-
-	bool may_affect_top_mangetsu_actor_colorcoding_metadata(AssFile const& subs, AssDialogue const& target) {
-		for (auto const& line : subs.Events) {
-			if (line.Row == target.Row)
-				return line.Comment;
-			if (!is_mangetsu_actor_colorcoding_metadata_comment(line))
-				return false;
-		}
-
-		return false;
-	}
-}
 
 std::shared_ptr<VideoFrame> AsyncVideoProvider::ProcFrame(int frame_number, double time, bool raw) {
 	// Find an unused buffer to use or allocate a new one if needed
@@ -80,6 +58,7 @@ std::shared_ptr<VideoFrame> AsyncVideoProvider::ProcFrame(int frame_number, doub
 	}
 	catch (VideoProviderError const& err) { throw VideoProviderErrorEvent(err); }
 
+	frame->perspective_layouts.clear();
 	if (raw || !subs_provider || !subs) return frame;
 
 	try {
@@ -186,7 +165,9 @@ AsyncVideoProvider::~AsyncVideoProvider() {
 void AsyncVideoProvider::LoadSubtitles(const AssFile *new_subs) throw() {
 	uint_fast32_t req_version = ++version;
 
-	auto copy = new AssFile(*new_subs);
+	// Keep document IDs so geometry from this worker snapshot identifies the
+	// same dialogue in the visual tool, even after filtering or reordering.
+	auto copy = new AssFile(*new_subs, /*preserve_dialogue_ids=*/true);
 	worker->Async([=]{
 		subs.reset(copy);
 		single_frame = NEW_SUBS_FILE;
@@ -199,9 +180,8 @@ void AsyncVideoProvider::UpdateSubtitles(const AssFile *new_subs, const AssDialo
 
 	// Copy just the line which were changed, then replace the line at the
 	// same index in the worker's copy of the file with the new entry
-	auto copy = new AssDialogue(*changed);
-	bool new_line_affects_mangetsu_actor_colorcoding =
-		may_affect_top_mangetsu_actor_colorcoding_metadata(*new_subs, *copy);
+	auto copy = new AssDialogue(static_cast<AssDialogueBase const&>(*changed));
+	bool new_line_affects_metadata = mangetsu::MayAffectMetadata(*new_subs, *copy);
 
 	worker->Async([=]{
 		int i = 0;
@@ -209,15 +189,13 @@ void AsyncVideoProvider::UpdateSubtitles(const AssFile *new_subs, const AssDialo
 		std::advance(it, copy->Row - i);
 		i = copy->Row;
 
-		bool affects_mangetsu_actor_colorcoding =
-			may_affect_top_mangetsu_actor_colorcoding_metadata(*subs, *it) ||
-			new_line_affects_mangetsu_actor_colorcoding;
+		bool affects_metadata = mangetsu::MayAffectMetadata(*subs, *it) || new_line_affects_metadata;
 
 		subs->Events.insert(it, *copy);
 		delete &*it--;
 
 		single_frame = NEW_SUBS_FILE;
-		ProcAsync(req_version, !affects_mangetsu_actor_colorcoding);
+		ProcAsync(req_version, !affects_metadata);
 	});
 }
 

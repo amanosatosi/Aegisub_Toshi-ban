@@ -22,6 +22,7 @@
 #include "ass_file.h"
 #include "ass_style.h"
 #include "ass_parser.h"
+#include "mangetsu_style_metadata.h"
 #include "options.h"
 #include "string_codec.h"
 #include "text_file_reader.h"
@@ -30,6 +31,7 @@
 
 #include <libaegisub/ass/uuencode.h>
 #include <libaegisub/fs.h>
+#include <iterator>
 
 DEFINE_EXCEPTION(AssParseError, SubtitleFormatParseError);
 
@@ -70,21 +72,30 @@ struct Writer {
 	}
 
 	template<typename T>
-	void Write(T const& list) {
-		for (auto const& line : list) {
-			if (line.Group() != group) {
-				// Add a blank line between each group
-				file.WriteLineToFile("");
+	void WriteLine(T const& line) {
+		if (line.Group() != group) {
+			// Add a blank line between each group
+			file.WriteLineToFile("");
 
-				file.WriteLineToFile(line.GroupHeader());
-				if (const char *str = format(line.Group()))
-					file.WriteLineToFile(str, false);
+			file.WriteLineToFile(line.GroupHeader());
+			if (const char *str = format(line.Group()))
+				file.WriteLineToFile(str, false);
 
-				group = line.Group();
-			}
-
-			file.WriteLineToFile(line.GetEntryData());
+			group = line.Group();
 		}
+
+		file.WriteLineToFile(line.GetEntryData());
+	}
+	template<typename T>
+	void Write(T const& list) {
+		for (auto const& line : list) WriteLine(line);
+	}
+	void WriteEvents(AssFile const& source) {
+		auto header = mangetsu::OrderedInitialMetadata(source);
+		for (auto line : header) WriteLine(*line);
+		auto it = source.Events.begin();
+		std::advance(it, header.size());
+		for (; it != source.Events.end(); ++it) WriteLine(*it);
 	}
 
 	void Write(ProjectProperties const& properties) {
@@ -154,10 +165,12 @@ struct Writer {
 void AssSubtitleFormat::WriteFile(const AssFile *src, agi::fs::path const& filename, agi::vfr::Framerate const& fps, std::string const& encoding) const {
 	Writer writer(filename, encoding);
 	writer.Write(src->Info);
-	writer.Write(src->Properties);
+	auto properties = src->Properties;
+	properties.active_row = mangetsu::MetadataRowForSave(*src, properties.active_row);
+	writer.Write(properties);
 	writer.Write(src->Styles);
 	writer.Write(src->Attachments);
-	writer.Write(src->Events);
+	writer.WriteEvents(*src);
 	writer.WriteExtradata(src->Extradata);
 }
 
@@ -166,5 +179,5 @@ void AssSubtitleFormat::ExportFile(const AssFile *src, agi::fs::path const& file
 	writer.Write(src->Info);
 	writer.Write(src->Styles);
 	writer.Write(src->Attachments);
-	writer.Write(src->Events);
+	writer.WriteEvents(*src);
 }
