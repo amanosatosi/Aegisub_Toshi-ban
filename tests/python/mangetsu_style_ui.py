@@ -571,17 +571,27 @@ $graphics.Dispose(); $bitmap.Dispose()
         assert len(matches) == 1, matches
         command_id(matches[0][1])
 
+    def set_style_name(style, value):
+        left, top, right, bottom = required(style, ("Style Name",))[0].bounds
+        matches = [edit for edit in controls_of_kind(style, "edit")
+                   if left <= edit.bounds[0] < edit.bounds[2] <= right
+                   and top <= edit.bounds[1] < edit.bounds[3] <= bottom]
+        assert len(matches) == 1, ("Style Name field", matches)
+        set_text(matches[0].hwnd, value)
+        assert get_text(matches[0].hwnd) == value, "Style Name edit was accepted"
+
     history("Undo")
     undone = snapshot()
     assert "\\furis70" in undone and "\\ta7" not in undone, "One undo restores style metadata"
     history("Redo")
     assert "\\furisx80" in snapshot()
     manager, style = editor(copy=True)
-    edits = controls_of_kind(style, "edit")
-    set_text(min(edits, key=lambda c: (c.bounds[1], c.bounds[0])).hwnd, "UI Copy")
+    set_style_name(style, "UI Copy")
     close(style, "OK")
     close_manager(manager)
-    assert "LINE|mangetsu-style|UI Copy|" in snapshot(), "Copy includes inherited metadata"
+    copied = snapshot()
+    assert "STYLE|UI Copy" in copied, copied
+    assert "LINE|mangetsu-style|UI Copy|" in copied, copied
     invoke(frame, "Styles Manager...")
     manager = dialog("Styles Manager")
     select_style(manager, "UI Copy")
@@ -592,8 +602,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     assert "LINE|mangetsu-style|UI Copy|" not in snapshot(), "Delete removes only copied declarations"
 
     manager, style = editor()
-    edits = controls_of_kind(style, "edit")
-    set_text(min(edits, key=lambda c: (c.bounds[1], c.bounds[0])).hwnd, "UI Sign")
+    set_style_name(style, "UI Sign")
     click(style, "OK")
     close(dialog("Update script?"), "Yes")
     wait(lambda: not user.IsWindowVisible(style), "renamed Style Editor closes")
