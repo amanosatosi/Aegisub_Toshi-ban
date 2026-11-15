@@ -147,6 +147,10 @@ def run(portable, output, mangetsu_ui_dark=False):
             (profile / "config.json").write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
             from mangetsu_style_ui import prepare
             fixture = prepare(profile, autoload)
+            defaults = Path(__file__).resolve().parents[2] / "src/libresrc/default_hotkey.json"
+            manual_hotkeys = json.loads(defaults.read_text(encoding="utf-8"))
+            manual_hotkeys["Subtitle Edit Box"]["edit/bracket"] = ["F8"]
+            (profile / "hotkey.json").write_text(json.dumps(manual_hotkeys), encoding="utf-8")
         if scenario in ("success", "scripts"):
             (autoload / "000-fast.lua").write_text("aegisub.register_macro('Smoke First', '', function() end)", encoding="utf-8")
         if scenario == "success":

@@ -37,6 +37,8 @@ jobs:
         run: python -m py_compile tests/python/startup_smoke.py tests/python/mangetsu_style_ui.py tests/python/native_gui_snapshot.py
       - name: Check native GUI control lifecycle regressions
         run: python tests/python/test_native_gui_snapshot.py
+      - name: Check opt-in bracket picker command
+        run: python tests/python/test_bracket_picker.py
       - name: Check subtitle-relative readout fade menu wiring
         run: python tests/python/test_fade_controls.py
       - name: Check Shift-drag audio boundary wiring

@@ -747,4 +747,141 @@ $graphics.Dispose(); $bitmap.Dispose()
     choose_subtitle_file(round_trip)
     wait(lambda: round_trip.stem in text(frame), "inherited ASS reopens")
     assert document(snapshot()) == imported, "Save and reload retain annotations and event order"
-    (profile / "style-ui-result.txt").write_text("metadata visibility, direct edit/reset, ten layers, validation, transactions, copy/delete/rename, inheritance, undo/redo, save/reload, renderer switching: passed\n", encoding="utf-8")
+
+    bracket_source = profile / "bracket-picker.ass"
+    raw = r"{\an7}မြန်မာ\N漢字 かんじ"
+    bracket_source.write_text("\n".join((
+        "[Script Info]", "ScriptType: v4.00+", "PlayResX: 320", "PlayResY: 180",
+        "[V4+ Styles]", style_format, "Style: Default," + style_record.split(",", 1)[1],
+        "[Events]", event_format, "Dialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,," + raw, "",
+    )), encoding="utf-8")
+    invoke(frame, "Open Subtitles...")
+    choose_subtitle_file(bracket_source)
+    wait(lambda: bracket_source.stem in text(frame), "bracket fixture opens")
+    editors = controls_of_kind(frame, "scintilla", count=1)
+    edit = editors[0].hwnd
+    exercise_brackets(edit, raw, user, wait, send, dialog, controls_of_kind, snapshot, history)
+    command("Save Subtitles")
+    wait(lambda: "<漢字|かんじ>" in bracket_source.read_text(encoding="utf-8-sig"), "bracket fixture saved")
+    (profile / "style-ui-result.txt").write_text("metadata visibility, direct edit/reset, ten layers, validation, transactions, copy/delete/rename, inheritance, undo/redo, save/reload, renderer switching, bracket picker: passed\n", encoding="utf-8")
+
+
+def exercise_brackets(edit, raw, user, wait, send, dialog, controls_of_kind, snapshot, history):
+    class GuiThreadInfo(C.Structure):
+        _fields_ = [("cbSize", W.DWORD), ("flags", W.DWORD)] + [
+            (name, W.HWND) for name in ("active", "focus", "capture", "menu", "move_size", "caret")
+        ] + [("caret_rect", W.RECT)]
+
+    user.GetGUIThreadInfo.argtypes = (W.DWORD, C.POINTER(GuiThreadInfo))
+    user.GetGUIThreadInfo.restype = W.BOOL
+    thread = user.GetWindowThreadProcessId(edit, None)
+
+    def expect_focus():
+        info = GuiThreadInfo(C.sizeof(GuiThreadInfo))
+        assert user.GetGUIThreadInfo(thread, C.byref(info)) and info.focus == edit
+
+    def key(hwnd, vk):
+        assert user.PostMessageW(hwnd, 0x100, vk, 1)  # WM_KEYDOWN
+
+    def begin(expected_index):
+        key(edit, 0x77)  # F8, manually configured for this profile's Subtitle Edit Box context
+        picker = dialog("Brackets and Furigana")
+        items = controls_of_kind(picker, "listbox", count=1)[0].hwnd
+        assert send(items, 0x18B) == 14  # LB_GETCOUNT
+        assert send(items, 0x188) == expected_index  # LB_GETCURSEL
+        return picker, items
+
+    def select(items, vk, count, index):
+        key(items, vk)
+        wait(lambda: send(items, 0x18B) == count and send(items, 0x188) == index,
+             f"picker page has {count} rows and selection {index}")
+
+    def finish(picker, items, vk=0x0D):
+        key(items, vk)
+        wait(lambda: not user.IsWindowVisible(picker), "bracket picker closes")
+        wait(lambda: user.IsWindowEnabled(edit), "subtitle editor is enabled")
+
+    def expect_text(value):
+        actual = snapshot().splitlines()
+        assert "LINE||Default|" + value in actual, actual
+
+    def position(prefix):
+        return len(prefix.encode("utf-8"))
+
+    def select_text(start, end):
+        send(edit, 2160, start, end)  # SCI_SETSEL
+
+    def expect_caret(offset):
+        assert send(edit, 2008) == send(edit, 2009) == offset  # SCI_GETCURRENTPOS/SCI_GETANCHOR
+        expect_focus()
+
+    shown = raw.replace(r"\N", "\n")
+    assert send(edit, 2183) == position(shown), "Better View shows a visual line break"
+    prefix = r"{\an7}"
+    start = position(prefix)
+    select_text(start, position(shown))
+    picker, items = begin(1)
+    select(items, 0x26, 14, 0)  # Up
+    select(items, 0x28, 14, 1)  # Down
+    select(items, 0x26, 14, 0)
+    select(items, 0x25, 2, 0)  # Left
+    select(items, 0x27, 14, 0)  # Right restores the bracket choice
+    finish(picker, items)
+    wrapped = prefix + "「" + raw[len(prefix):] + "」"
+    expect_caret(position(shown + "「"))
+    expect_text(wrapped)
+    history("Undo")
+    expect_text(raw)
+    history("Redo")
+    expect_text(wrapped)
+    history("Undo")
+
+    select_text(start, start)
+    picker, items = begin(0)  # Last choice was retained.
+    finish(picker, items, 0x1B)
+    assert send(edit, 2008) == send(edit, 2009) == start
+    expect_text(raw)
+    # Escape creates no history entry. The last insertion is still redoable.
+    history("Redo")
+    expect_text(wrapped)
+    history("Undo")
+
+    select_text(start, start)
+    picker, items = begin(0)
+    finish(picker, items)
+    expect_caret(start + position("「"))
+    expect_text(prefix + "「」" + raw[len(prefix):])
+    history("Undo")
+
+    for reverse in (False, True):
+        select_text(start, start)
+        picker, items = begin(0)
+        select(items, 0x25, 2, 0)
+        if reverse:
+            select(items, 0x28, 2, 1)
+        finish(picker, items)
+        expect_caret(start + (1 if reverse else 2))
+        expect_text(prefix + "<|>" + raw[len(prefix):])
+        history("Undo")
+
+    base_at = position(shown.split("漢字")[0])
+    reading_at = position(shown.split("かんじ")[0])
+    select_text(reading_at, reading_at + position("かんじ"))
+    picker, items = begin(0)
+    select(items, 0x25, 2, 0)
+    select(items, 0x28, 2, 1)
+    finish(picker, items)
+    expect_caret(reading_at + 1)
+    expect_text(raw.replace("かんじ", "<|かんじ>"))
+    history("Undo")
+
+    select_text(base_at, base_at + position("漢字"))
+    picker, items = begin(0)
+    select(items, 0x25, 2, 0)
+    finish(picker, items)
+    expect_caret(base_at + position("<漢字|"))
+    expect_text(raw.replace("漢字", "<漢字|>"))
+    for char in "かんじ":
+        assert user.PostMessageW(edit, 0x102, ord(char), 1)  # WM_CHAR
+    wait(lambda: send(edit, 2183) == position(shown.replace("漢字", "<漢字|かんじ>")), "reading typed at caret")
+    expect_text(raw.replace("漢字", "<漢字|かんじ>"))

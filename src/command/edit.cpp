@@ -2603,6 +2603,17 @@ struct edit_mangetsu_alignment final : public Command {
 	}
 };
 
+struct edit_bracket final : public Command {
+	CMD_NAME("edit/bracket")
+	STR_MENU("Brackets and Furigana...")
+	STR_DISP("Brackets and Furigana")
+	STR_HELP("Open the keyboard picker for Japanese brackets and Mangetsu furigana")
+
+	void operator()(agi::Context *c) override {
+		if (c->subsEditBox) c->subsEditBox->ShowBracketPicker();
+	}
+};
+
 struct edit_chat_style final : public Command {
 	CMD_NAME("edit/chat/style")
 	STR_MENU("Mangetsu Chat Style...")
@@ -3718,6 +3729,7 @@ struct edit_insert_original final : public Command {
 
 namespace cmd {
 	void init_edit() {
+		reg(agi::make_unique<edit_bracket>());
 		reg(agi::make_unique<edit_color_primary>());
 		reg(agi::make_unique<edit_color_secondary>());
 		reg(agi::make_unique<edit_color_outline>());
