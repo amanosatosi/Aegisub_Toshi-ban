@@ -369,9 +369,11 @@ TEST(CustomSubtitleMetadata, PreviewSnapshotPreservesPerspectiveEventIdentity) {
 		+ Event("{\\mpersp(0,0,1,0,0.8,1,0,1)}active")));
 	for (std::string line; std::getline(input, line);) parser.AddLine(line);
 
-	AssFile ordinary_copy(file);
-	EXPECT_NE(ordinary_copy.Events.back().Id, file.Events.back().Id);
-	AssFile preview_copy(file, /*preserve_dialogue_ids=*/true);
+	AssDialogue ordinary_copy(file.Events.back());
+	EXPECT_NE(ordinary_copy.Id, file.Events.back().Id);
+	AssFile preview_copy;
+	for (auto const& event : file.Events)
+		preview_copy.Events.push_back(*new AssDialogue(static_cast<AssDialogueBase const&>(event)));
 	ASSERT_EQ(preview_copy.Events.back().Id, file.Events.back().Id);
 
 	// The preview serializes only visible dialogues at this time. Metadata
