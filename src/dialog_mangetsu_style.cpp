@@ -198,10 +198,14 @@ class PropertyDialog final : public wxDialog {
 			if (row->second) row->original_second = row->second->GetValue();
 		}
 	}
+	void ResetAxisLink() {
+		if (!linked) return;
+		auto x = AxisX();
+		linked->SetValue(rows[x]->original == rows[x + 1]->original
+			&& rows[x]->originally_assigned == rows[x + 1]->originally_assigned);
+		LinkAxes();
+	}
 	void Build() {
-		linked = nullptr;
-		rows.clear();
-		body->Clear(true);
 		auto form = new wxFlexGridSizer(3, Dip(5), Dip(8));
 		form->AddGrowableCol(1);
 		for (auto field : Fields()) {
@@ -255,11 +259,10 @@ class PropertyDialog final : public wxDialog {
 			linked = new wxCheckBox(this, wxID_ANY, page == StyleEditorPage::Furigana ? _("Use the same reading scale on both axes") : _("Use the same border size on both axes"));
 			if (UseBrandColours()) linked->SetForegroundColour(Colours().text);
 			auto x = AxisX();
-			linked->SetValue(rows[x]->original == rows[x + 1]->original && rows[x]->originally_assigned == rows[x + 1]->originally_assigned);
 			linked->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) { LinkAxes(); });
 			rows[x]->first->Bind(wxEVT_TEXT, [this](wxCommandEvent&) { LinkAxes(); });
 			body->Add(linked, 0, wxTOP, Dip(8));
-			LinkAxes();
+			ResetAxisLink();
 		}
 		StyleLabels(this);
 		Layout();
@@ -276,7 +279,14 @@ public:
 			if (UseBrandColours()) layers->SetForegroundColour(Colours().text);
 			layers->Bind(wxEVT_RADIOBOX, [this](wxCommandEvent&) {
 				if (!Save()) { layers->SetSelection(layer - 1); return; }
-				layer = layers->GetSelection() + 1; Build();
+				layer = layers->GetSelection() + 1;
+				// All layers share the same controls. Keep their native handles
+				// alive while wxMSW dispatches focus and control notifications.
+				auto fields = Fields();
+				for (size_t i = 0; i < rows.size(); ++i)
+					rows[i]->field.key = std::move(fields[i].key);
+				LoadValues(working.Values(style, wrap));
+				ResetAxisLink();
 			});
 			main->Add(layers, 0, wxALL | wxEXPAND, Dip(10));
 		}

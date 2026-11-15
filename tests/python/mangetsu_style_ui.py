@@ -757,7 +757,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     )), encoding="utf-8")
     invoke(frame, "Open Subtitles...")
     choose_subtitle_file(bracket_source)
-    wait(lambda: bracket_source.stem in text(frame), "bracket fixture opens")
+    wait(lambda: bracket_source.stem in text(frame) and user.IsWindowEnabled(frame), "bracket fixture ready for input")
     editors = controls_of_kind(frame, "scintilla", count=1)
     edit = editors[0].hwnd
     exercise_brackets(edit, raw, user, wait, send, dialog, controls_of_kind, snapshot, history)
@@ -774,14 +774,23 @@ def exercise_brackets(edit, raw, user, wait, send, dialog, controls_of_kind, sna
 
     user.GetGUIThreadInfo.argtypes = (W.DWORD, C.POINTER(GuiThreadInfo))
     user.GetGUIThreadInfo.restype = W.BOOL
+    user.GetForegroundWindow.restype = W.HWND
+    user.GetAncestor.argtypes = (W.HWND, W.UINT)
+    user.GetAncestor.restype = W.HWND
+    user.keybd_event.argtypes = (W.BYTE, W.BYTE, W.DWORD, C.c_size_t)
+    user.keybd_event.restype = None
     thread = user.GetWindowThreadProcessId(edit, None)
 
-    def expect_focus():
+    def editor_has_focus():
         info = GuiThreadInfo(C.sizeof(GuiThreadInfo))
-        assert user.GetGUIThreadInfo(thread, C.byref(info)) and info.focus == edit
+        return user.GetGUIThreadInfo(thread, C.byref(info)) and info.focus == edit
 
     def key(hwnd, vk):
-        assert user.PostMessageW(hwnd, 0x100, vk, 1)  # WM_KEYDOWN
+        root = user.GetAncestor(hwnd, 2)  # GA_ROOT
+        wait(lambda: user.GetForegroundWindow() == root, "picker input window is foreground")
+        flags = 1 if 0x25 <= vk <= 0x28 else 0  # Extended cursor keys, separate from the numpad.
+        user.keybd_event(vk, 0, flags, 0)
+        user.keybd_event(vk, 0, flags | 2, 0)  # KEYEVENTF_KEYUP
 
     def begin(expected_index):
         key(edit, 0x77)  # F8, manually configured for this profile's Subtitle Edit Box context
@@ -813,10 +822,16 @@ def exercise_brackets(edit, raw, user, wait, send, dialog, controls_of_kind, sna
 
     def expect_caret(offset):
         assert send(edit, 2008) == send(edit, 2009) == offset  # SCI_GETCURRENTPOS/SCI_GETANCHOR
-        expect_focus()
+        wait(editor_has_focus, "picker returns focus to the subtitle editor")
 
     shown = raw.replace(r"\N", "\n")
     assert send(edit, 2183) == position(shown), "Better View shows a visual line break"
+    if not editor_has_focus():
+        # Script opening can focus the grid. Give the identified Scintilla
+        # control focus before setting a selection or sending its hotkey.
+        send(edit, 0x201, 1, 0x00080008)  # WM_LBUTTONDOWN
+        send(edit, 0x202, 0, 0x00080008)  # WM_LBUTTONUP
+        wait(editor_has_focus, "subtitle editor is focused before sending F8")
     prefix = r"{\an7}"
     start = position(prefix)
     select_text(start, position(shown))

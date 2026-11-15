@@ -143,6 +143,9 @@ def run(portable, output, mangetsu_ui_dark=False):
         (profile / "config.json").write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
         fixture = None
         if scenario == "Mangetsu":
+            # This scenario opens dummy video explicitly. Keep it while
+            # switching between ASS fixtures without linked media.
+            config["App"]["Auto"]["Load Linked Files"] = 0
             config["Tool"] = {"Preferences": {"Page": 11}, "Style Editor": {"Preview Text": "မြန်မာ <漢字|かんじ> 日本語"}}
             (profile / "config.json").write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
             from mangetsu_style_ui import prepare
