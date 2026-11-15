@@ -437,15 +437,19 @@ $graphics.Dispose(); $bitmap.Dispose()
     second_row = [c.bounds for c in branded[3:]]
     wrap_label = required(style, ("Wrap Mode",))[0].bounds
     wrap_bounds = rect(wrap)
-    style_name = required(style, ("Style Name",))[0].bounds
+    margins, alignment = required(style, ("Margins", "Alignment"))
     for button_row in (first_row, second_row):
         assert all(left[2] <= right[0] for left, right in zip(button_row, button_row[1:])), button_row
         assert max(bounds[1] for bounds in button_row) < min(bounds[3] for bounds in button_row), button_row
     assert first_row[0][0] == second_row[0][0] == wrap_label[0], "The extension rows share a left edge"
+    assert max(margins.bounds[3], alignment.bounds[3]) <= min(bounds[1] for bounds in first_row)
     assert max(bounds[3] for bounds in first_row) <= min(bounds[1] for bounds in second_row)
     assert max(bounds[3] for bounds in second_row) <= min(wrap_label[1], wrap_bounds[1])
     assert wrap_label[2] <= wrap_bounds[0] and max(wrap_label[1], wrap_bounds[1]) < min(wrap_label[3], wrap_bounds[3])
-    assert max(wrap_label[3], wrap_bounds[3]) <= style_name[1], "Wrap Mode precedes the ordinary left-side controls"
+    for action in normal:
+        assert wrap_bounds[2] <= action.bounds[0], ("Wrap Mode belongs on the left", action.label)
+        assert max(wrap_bounds[1], action.bounds[1]) < min(wrap_bounds[3], action.bounds[3]), (
+            "Wrap Mode shares the action row", action.label)
     assert all(normalized_label(c.label) != normalized_label("Mangetsu Extensions...")
                for c in inventory(style)), "The original feature buttons are the direct entry points"
     for control in branded:

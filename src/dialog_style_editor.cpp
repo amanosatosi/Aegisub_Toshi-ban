@@ -386,7 +386,6 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 			if (edit(wrap)) UpdatePreview();
 		});
 		row->Add(button, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
-		button->MoveBeforeInTabOrder(StyleName);
 	};
 	auto properties = [this](mangetsu::StyleEditorPage page) {
 		return [this, page](int wrap) { return mangetsu::EditStyleProperties(this, metadata, *work, wrap, page); };
@@ -405,7 +404,6 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	wrap_controls->Add(new wxStaticText(this, wxID_ANY, _("Wrap Mode")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
 	wxString wrapping[] = {_("Inherit Script"), _("Smart"), _("End-of-line"), _("No automatic wrap"), _("Alternative smart")};
 	WrapMode = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, 5, wrapping);
-	WrapMode->MoveBeforeInTabOrder(StyleName);
 	WrapMode->Enable(!store);
 	WrapMode->SetToolTip(store ? _("Style catalogs store ordinary ASS style fields only. Edit Mangetsu defaults in the current script.")
 		: mangetsu::CompatibilityText());
@@ -417,19 +415,21 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 	});
 	wrap_controls->Add(WrapMode, 0, wxALIGN_CENTER_VERTICAL);
 
+	auto inset = mangetsu::Dip(this, 5);
 	auto ButtonSizer = new wxBoxSizer(wxHORIZONTAL);
+	ButtonSizer->Add(wrap_controls, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, inset);
 	ButtonSizer->AddStretchSpacer(1);
 	ButtonSizer->Add(CreateStdDialogButtonSizer(wxOK | wxCANCEL | wxAPPLY | wxHELP), 0, wxALIGN_CENTER_VERTICAL | wxLEFT | wxRIGHT, gap);
 
 	// Left side sizer
 	wxSizer *LeftSizer = new wxBoxSizer(wxVERTICAL);
-	LeftSizer->Add(feature_actions, 0, wxBOTTOM, gap);
-	LeftSizer->Add(more_features, 0, wxBOTTOM, gap);
-	LeftSizer->Add(wrap_controls, 0, wxBOTTOM, 2 * gap);
 	LeftSizer->Add(NameSizer, 0, wxBOTTOM | wxEXPAND, 5);
 	LeftSizer->Add(FontSizer, 0, wxBOTTOM | wxEXPAND, 5);
 	LeftSizer->Add(ColorsSizer, 0, wxBOTTOM | wxEXPAND, 5);
-	LeftSizer->Add(MarginAlign, 0, wxBOTTOM | wxEXPAND, 0);
+	LeftSizer->Add(MarginAlign, 0, wxBOTTOM | wxEXPAND, gap);
+	LeftSizer->AddStretchSpacer();
+	LeftSizer->Add(feature_actions, 0, wxBOTTOM, gap);
+	LeftSizer->Add(more_features);
 
 	// Right side sizer
 	wxSizer *RightSizer = new wxBoxSizer(wxVERTICAL);
@@ -444,7 +444,7 @@ DialogStyleEditor::DialogStyleEditor(wxWindow *parent, AssStyle *style, agi::Con
 
 	// General Layout
 	wxSizer *MainSizer = new wxBoxSizer(wxVERTICAL);
-	MainSizer->Add(ControlSizer, 1, wxALL | wxEXPAND, 5);
+	MainSizer->Add(ControlSizer, 1, wxALL | wxEXPAND, inset);
 	MainSizer->Add(ButtonSizer, 0, wxBOTTOM | wxEXPAND, 5);
 
 	SetSizerAndFit(MainSizer);

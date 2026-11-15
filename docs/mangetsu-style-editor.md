@@ -10,8 +10,9 @@ Hidden declarations are excluded from ordinary Find/Replace and adjoining timing
 operations. Sorting keeps the initial metadata header in its authored order.
 
 The Style Editor groups **Furigana**, **Vertical**, **Multi-border**,
-**Text alignment**, **Extended boxes**, and **Gradient defaults** on the left.
-**Wrap Mode** sits directly below the buttons, before the ordinary style fields. On
+**Text alignment**, **Extended boxes**, and **Gradient defaults** below Margins
+and Alignment. **Wrap Mode** sits beneath the buttons at the left of the
+bottom row, opposite OK, Cancel, Apply, and Help. On
 Windows, yellow identifies an extension button. The standard Style Editor
 actions use the system palette. Windows contrast themes and other platforms
 use system controls. Extensions can be authored with any renderer. Select
