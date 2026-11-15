@@ -46,6 +46,9 @@ class SubtitlesProvider {
 	virtual void LoadSubtitles(const char *data, size_t len)=0;
 	virtual void PrepareSubtitles(AssFile *, int) { }
 
+protected:
+	std::vector<int> rendered_line_ids;
+
 public:
 	virtual ~SubtitlesProvider() = default;
 	void LoadSubtitles(AssFile *subs, int time = -1);

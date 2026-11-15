@@ -121,7 +121,7 @@ aegisub_src = files(
     'initial_line_state.cpp',
     'main.cpp',
     'mangetsu_renderer_offer.cpp',
-    'mangetsu_distort.cpp',
+    'mangetsu_perspective.cpp',
     'mangetsu_curved_text.cpp',
     'mangetsu_gradient_placement.cpp',
     'mangetsu_gradient_scope.cpp',

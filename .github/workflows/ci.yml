@@ -45,7 +45,7 @@ jobs:
         run: python tests/python/test_audio_dialog_time_changer.py
       - name: Check Mangetsu chat style toolbar wiring
         run: python tests/python/test_chat_style_controls.py
-      - name: Check Perspective and Distort mode wiring
+      - name: Check Perspective mode wiring
         run: python tests/python/test_perspective_controls.py
       - name: Check native motion Apply reference and session wiring
         run: python tests/python/test_motion_apply_controls.py
@@ -75,7 +75,7 @@ jobs:
           meson setup build -Dbuildtype=debugoptimized -Dopencv=disabled -Dwith_mangetsu=true
           meson compile -C build gtest-main libassmod_copy mangetsu_copy
       - name: Check pixel correctness, ownership and 600-event stress paths
-        run: meson test -C build --no-rebuild --verbose "gtest main" --test-args=--gtest_filter=CustomSubtitle*:BundledRenderers/*:MangetsuStyleMetadata.*
+        run: meson test -C build --no-rebuild --verbose "gtest main" --test-args=--gtest_filter=CustomSubtitle*:BundledRenderers/*:MangetsuStyleMetadata.*:MangetsuPerspective.*
       - name: Check Matroska text packet import and libass serialization
         run: meson test -C build --no-rebuild --verbose "gtest main" --test-args=--gtest_filter=Matroska*
 

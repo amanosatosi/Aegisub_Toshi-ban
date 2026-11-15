@@ -204,6 +204,7 @@ public:
 	ASS_Track *(*read)(ASS_Library*,char*,size_t,const char*)=nullptr;
 	void (*free_track)(ASS_Track*)=nullptr;
 	int (*needs_rgba)(ASS_Renderer*)=nullptr;
+	int (*perspective_layout)(ASS_Renderer*,int,int*,double*,double*)=nullptr;
 	int (*set_image)(ASS_Renderer*,const char*,int,int,int,int,const uint8_t*)=nullptr;
 
 	template<class T> T Symbol(const char *name) {
@@ -232,6 +233,7 @@ public:
 		LOAD(fonts,"ass_set_fonts"); LOAD(frame_size,"ass_set_frame_size"); LOAD(storage_size,"ass_set_storage_size");
 		LOAD(read,"ass_read_memory"); LOAD(free_track,"ass_free_track"); LOAD(needs_rgba,"ass_frame_needs_rgba");
 		LOAD(set_image,"ass_set_tag_image_rgba");
+		LOAD(perspective_layout,"ass_get_perspective_layout");
 #undef LOAD
 		if (!api.HasDirectRgba() || !init || !done || !renderer_init || !renderer_done || !fonts || !frame_size ||
 			!storage_size || !read || !free_track || !needs_rgba || !api.ass_render_frame_auto) return false;
@@ -517,5 +519,31 @@ std::vector<const char*> ConfiguredBackends() {
 	return backends;
 }
 }
+TEST_P(CustomSubtitleBackend, PerspectivePreviewMatchesMangetsuOutput) {
+	if (std::string(GetParam()).find("MANGETSU") == std::string::npos)
+		return;
+	ASSERT_NE(backend.perspective_layout, nullptr);
+	const std::string style = "{\\an5\\pos(160,85)\\frx11\\fry-16\\bord2";
+	const std::string body = "\\1grd(0,&HFFFFFF&,&H88DCFF&)}A subtitle\\Nwith another line";
+	const auto warped = Event(style + "\\mpersp(0.1,0,1,0.08,0.8,1,0.2,0.92)" + body);
+	Check(warped, false, true);
+
+	Session ordinary(backend, Script(Event(style + body)));
+	Session projected(backend, Script(warped));
+	auto plain_frame = Background(false, 24), perspective_frame = plain_frame;
+	DrawFrame(backend.api, ordinary.renderer, ordinary.track, 1000, plain_frame);
+	DrawFrame(backend.api, projected.renderer, projected.track, 1000, perspective_frame);
+	EXPECT_NE(plain_frame.data, perspective_frame.data);
+
+	int event_index;
+	double rect[4], pins[8];
+	ASSERT_EQ(backend.perspective_layout(projected.renderer, 0, &event_index, rect, pins), 1);
+	EXPECT_EQ(event_index, 0);
+	EXPECT_GT(rect[2], rect[0]);
+	EXPECT_GT(rect[3], rect[1]);
+	EXPECT_NEAR((pins[0] - rect[0]) / (rect[2] - rect[0]), 0.1, 1e-8);
+	EXPECT_NEAR((pins[4] - rect[0]) / (rect[2] - rect[0]), 0.8, 1e-8);
+}
+
 INSTANTIATE_TEST_CASE_P(BundledRenderers,CustomSubtitleBackend,
 	::testing::ValuesIn(ConfiguredBackends()));

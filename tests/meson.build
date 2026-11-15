@@ -50,6 +50,7 @@ all_test_sources += [
     '../src/motion_tracking/motion_track_apply.cpp',
     '../src/motion_tracking/motion_track_commit.cpp',
     '../src/mangetsu_distort.cpp',
+    '../src/mangetsu_perspective.cpp',
     '../src/mangetsu_renderer_offer.cpp',
     '../src/mangetsu_curved_text.cpp',
     '../src/mangetsu_gradient_placement.cpp',

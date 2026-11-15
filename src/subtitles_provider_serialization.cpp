@@ -26,6 +26,7 @@
 void SubtitlesProvider::LoadSubtitles(AssFile *subs, int time) {
 	PrepareSubtitles(subs, time);
 	buffer.clear();
+	rendered_line_ids.clear();
 
 	auto push_header = [&](const char *str) {
 		buffer.insert(buffer.end(), str, str + strlen(str));
@@ -71,8 +72,10 @@ void SubtitlesProvider::LoadSubtitles(AssFile *subs, int time) {
 	}
 
 	for (auto const& line : subs->Events) {
-		if (!line.Comment && (time < 0 || !(line.Start > time || line.End <= time)))
+		if (!line.Comment && (time < 0 || !(line.Start > time || line.End <= time))) {
+			rendered_line_ids.push_back(line.Id);
 			push_line(line.GetEntryData());
+		}
 	}
 
 	LoadSubtitles(&buffer[0], buffer.size());

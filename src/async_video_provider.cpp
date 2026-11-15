@@ -58,6 +58,7 @@ std::shared_ptr<VideoFrame> AsyncVideoProvider::ProcFrame(int frame_number, doub
 	}
 	catch (VideoProviderError const& err) { throw VideoProviderErrorEvent(err); }
 
+	frame->perspective_layouts.clear();
 	if (raw || !subs_provider || !subs) return frame;
 
 	try {

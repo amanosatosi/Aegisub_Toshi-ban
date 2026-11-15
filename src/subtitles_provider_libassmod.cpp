@@ -109,6 +109,7 @@ using AssSetTagImageRGBAFunc = int (*)(ASS_Renderer *, const char *, ASS_TagImag
 #endif
 
 struct LibassModApi : custom_subtitles::RenderApi {
+	int (*ass_get_perspective_layout)(ASS_Renderer *, int, int *, double *, double *) = nullptr;
 	int (*ass_process_mangetsu_metadata_line)(ASS_Track*, const char*, const char*, const char*, const char*, int, int) = nullptr;
 	LibassModHandle handle = nullptr;
 	AssLibraryInitFunc ass_library_init = nullptr;
@@ -319,6 +320,7 @@ bool LoadLibassModApi(AssCompatBackend &backend, std::string &error) {
 #endif
 	LoadOptionalSymbol(backend, "ass_composite_images_bgra", api.ass_composite_images_bgra);
 	LoadOptionalSymbol(backend, "ass_process_mangetsu_metadata_line", api.ass_process_mangetsu_metadata_line);
+	LoadOptionalSymbol(backend, "ass_get_perspective_layout", api.ass_get_perspective_layout);
 	LoadOptionalSymbol(backend, "ass_render_frame_rgba", api.ass_render_frame_rgba);
 	LoadOptionalSymbol(backend, "ass_free_images_rgba", api.ass_free_images_rgba);
 	LoadOptionalSymbol(backend, "ass_render_frame_auto", api.ass_render_frame_auto);
@@ -1004,6 +1006,23 @@ void LibassModSubtitlesProvider::DrawSubtitles(VideoFrame &frame, double time) {
 	api.ass_set_storage_size(ass_renderer, frame.width, frame.height);
 	const long long time_ms = static_cast<long long>(std::floor(time * 1000.0 + 1e-6));
 	custom_subtitles::DrawFrame(api, ass_renderer, ass_track, time_ms, frame);
+	if (!api.ass_get_perspective_layout || !frame.width || !frame.height)
+		return;
+	for (int index = 0;; ++index) {
+		int event_index;
+		VideoPerspectiveLayout layout;
+		int result = api.ass_get_perspective_layout(ass_renderer, index, &event_index,
+			layout.rect.data(), layout.corners.data());
+		if (result < 0) break;
+		if (!result || event_index < 0 || static_cast<size_t>(event_index) >= rendered_line_ids.size())
+			continue;
+		layout.line_id = rendered_line_ids[event_index];
+		for (size_t i = 0; i < layout.rect.size(); ++i)
+			layout.rect[i] /= i % 2 ? frame.height : frame.width;
+		for (size_t i = 0; i < layout.corners.size(); ++i)
+			layout.corners[i] /= i % 2 ? frame.height : frame.width;
+		frame.perspective_layouts.push_back(layout);
+	}
 }
 }
 
