@@ -285,7 +285,7 @@ public:
 				auto fields = Fields();
 				for (size_t i = 0; i < rows.size(); ++i)
 					rows[i]->field.key = std::move(fields[i].key);
-				LoadValues(working.Values(style, wrap));
+				LoadValues(working.Values(this->style, this->wrap));
 				ResetAxisLink();
 			});
 			main->Add(layers, 0, wxALL | wxEXPAND, Dip(10));
