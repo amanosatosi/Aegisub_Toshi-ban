@@ -100,6 +100,11 @@ namespace Automation4 {
 		auto finished = std::make_shared<std::promise<void>>();
 		auto future = finished->get_future();
 		agi::dispatch::Main().Async([context, finished, task = std::move(task)] {
+			auto start = std::chrono::steady_clock::now();
+			BOOST_SCOPE_EXIT_ALL(&) {
+				if (context->measure_ui) LOG_I("startup/automation/ui_request")
+					<< std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+			};
 			try {
 				if (!context->cancelled) task();
 				finished->set_value();
@@ -498,8 +503,9 @@ namespace Automation4 {
 	};
 
 	AutoloadScriptManager::AutoloadScriptManager(std::string path)
-	: path(std::move(path)), timer(this) {
-		Bind(wxEVT_TIMER, &AutoloadScriptManager::OnTimer, this);
+	: path(std::move(path)), timer(this), ui_probe(this) {
+		Bind(wxEVT_TIMER, &AutoloadScriptManager::OnTimer, this, timer.GetId());
+		Bind(wxEVT_TIMER, &AutoloadScriptManager::OnUiProbe, this, ui_probe.GetId());
 	}
 
 	AutoloadScriptManager::~AutoloadScriptManager() {
@@ -531,6 +537,12 @@ namespace Automation4 {
 		auto context = std::make_shared<ScriptLoadContext>();
 		wxString profiling;
 		context->profile = wxGetEnv("AEGISUB_AUTOMATION_PROFILE", &profiling) && profiling == "1";
+		context->measure_ui = wxGetEnv("AEGISUB_AUTOMATION_MEASURE_UI", &profiling) && profiling == "1";
+		if (context->measure_ui) {
+			longest_ui_gap = 0;
+			last_ui_probe = std::chrono::steady_clock::now();
+			ui_probe.Start(10);
+		}
 		context->paths = std::make_shared<agi::Path>(*config::path);
 		for (auto tok : agi::Split(OPT_GET("Path/Automation/Include")->GetString(), '|')) {
 			auto include = context->paths->Decode(agi::str(tok));
@@ -548,6 +560,13 @@ namespace Automation4 {
 			workers = static_cast<unsigned>(std::max<long>(1, std::min<long>(4, requested)));
 		batch = agi::make_unique<Batch>(std::move(directories), std::move(context), reload_target, scripts.empty() && !reload_target, workers);
 		timer.Start(100); // At most ten real progress updates per second.
+	}
+
+	void AutoloadScriptManager::OnUiProbe(wxTimerEvent&) {
+		auto now = std::chrono::steady_clock::now();
+		longest_ui_gap = std::max(longest_ui_gap,
+			std::chrono::duration<double, std::milli>(now - last_ui_probe).count());
+		last_ui_probe = now;
 	}
 
 	void AutoloadScriptManager::OnTimer(wxTimerEvent&) {
@@ -621,6 +640,12 @@ namespace Automation4 {
 		}
 		if (done && !busy && !reload_pending) {
 			timer.Stop();
+			if (ui_probe.IsRunning()) {
+				wxTimerEvent event(ui_probe);
+				OnUiProbe(event);
+				ui_probe.Stop();
+				LOG_I("startup/automation/ui_gap") << longest_ui_gap;
+			}
 			errors = batch->errors;
 			next.loading = false;
 			next.failed = errors.size();

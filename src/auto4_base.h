@@ -43,6 +43,7 @@
 
 #include <boost/filesystem/path.hpp>
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -65,6 +66,7 @@ namespace Automation4 {
 		std::vector<agi::fs::path> include_paths;
 		std::atomic<bool> cancelled{false};
 		bool profile = false;
+		bool measure_ui = false;
 	};
 	std::shared_ptr<ScriptLoadContext> GetScriptLoadContext();
 	// A cancellable UI request, also usable by Lua's clipboard FFI callbacks.
@@ -260,6 +262,9 @@ namespace Automation4 {
 		struct Batch;
 		std::unique_ptr<Batch> batch;
 		wxTimer timer;
+		wxTimer ui_probe;
+		std::chrono::steady_clock::time_point last_ui_probe;
+		double longest_ui_gap = 0;
 		bool reload_pending = false;
 		std::optional<agi::fs::path> reload_target;
 		AutoloadProgress progress;
@@ -267,6 +272,7 @@ namespace Automation4 {
 		agi::signal::Signal<AutoloadProgress const&> ProgressChanged;
 		void StartReload();
 		void OnTimer(wxTimerEvent&);
+		void OnUiProbe(wxTimerEvent&);
 	public:
 		AutoloadScriptManager(std::string path);
 		~AutoloadScriptManager();

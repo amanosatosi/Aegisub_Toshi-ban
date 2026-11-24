@@ -32,45 +32,36 @@ def records(directory):
     return result
 
 
-def fixtures(root, source):
-    for scenario in ("empty", "small", "large", "cpu", "broken"):
+SCENARIOS = ("bundled", "mixed", "dependency-heavy")
+
+
+def fixtures(root):
+    include = root / "include"
+    (include / "l0").mkdir(parents=True, exist_ok=True)
+    (include / "l0/DependencyControl.lua").write_text(
+        "local n=0; for i=1,8000000 do n=n+i%97 end; assert(n>0); return {}\n")
+    (include / "indirect.lua").write_text(
+        "local parts = {'l0', 'DependencyControl'}; return require(table.concat(parts, '.'))\n")
+    for scenario in SCENARIOS:
         folder = root / scenario
         folder.mkdir(parents=True, exist_ok=True)
-        if scenario == "empty":
+        if scenario == "bundled":
             continue
-        (folder / "000-fast.lua").write_text("aegisub.register_macro('First macro', '', function() end)\n")
-        if scenario in ("small", "large"):
-            for path in sorted((source / "automation/autoload").iterdir()):
-                if path.suffix in (".lua", ".moon"):
-                    shutil.copy2(path, folder / path.name)
-        if scenario == "large":
-            for index in range(40):
-                # Real bundled includes exercise module IO/compilation and state
-                # setup; alternating MoonScript tests the existing compiler.
-                if index % 4 == 0:
-                    script = f"util = require 'aegisub.util'\naegisub.register_macro 'Large {index}', '', ->\n  return nil\n"
-                    suffix = "moon"
-                else:
-                    script = f"require('aegisub.util'); require('aegisub.re'); aegisub.register_macro('Large {index}', '', function() end)\n"
-                    suffix = "lua"
-                (folder / f"large-{index:02}.{suffix}").write_text(script)
-        if scenario == "cpu":
-            for index in range(12):
-                script = "local n=0; for i=1,16000000 do n=n+i%97 end; assert(n>0); "
-                script += f"aegisub.register_macro('CPU {index}', '', function() end)\n"
-                (folder / f"cpu-{index:02}.lua").write_text(script)
-        if scenario == "broken":
-            (folder / "010-invalid.lua").write_text("aegisub.register_macro('Must not publish', '', function() end); error('expected benchmark failure')")
-            (folder / "020-invalid.moon").write_text("this is ) invalid moonscript\n")
-            (folder / "030-good.moon").write_text("aegisub.register_macro 'Survivor', '', ->\n  return nil\n")
-        (folder / "ignored.txt").write_text("error('unsupported file loaded')")
+        (folder / "000-first.lua").write_text("aegisub.register_macro('First external', '', function() end)\n")
+        (folder / "z-last.moon").write_text("aegisub.register_macro 'Last independent', '', -> nil\n")
+        count = 4 if scenario == "mixed" else 36
+        for index in range(count):
+            module = "l0.DependencyControl" if index % 2 == 0 else "indirect"
+            (folder / f"dependency-{index:02}.lua").write_text(
+                f"require('{module}'); aegisub.register_macro('Dependency {index}', '', function() end)\n")
+    return include
 
 
 class DisplayInitializationFailure(RuntimeError):
     """The process could not connect to the test runner's virtual display."""
 
 
-def _sample_once(executable, collection, include, folder, workers, profiling=False):
+def _sample_once(executable, collection, bundled, includes, folder, workers, profiling=False):
     home = folder / "home"
     profile = home / ".aegisub"
     profile.mkdir(parents=True, exist_ok=True)
@@ -78,11 +69,11 @@ def _sample_once(executable, collection, include, folder, workers, profiling=Fal
         "App": {"First Start": False, "Language": "en_US", "Auto": {"Check For Updates": False},
                 "Mangetsu Renderer Offer Seen": True},
         "Subtitle": {"Provider": "libass"},
-        "Path": {"Automation": {"Autoload": str(collection), "Include": str(include)}},
+        "Path": {"Automation": {"Autoload": "|".join(map(str, (bundled, collection))), "Include": "|".join(map(str, includes))}},
     }
     (profile / "config.json").write_text(json.dumps(config))
     env = dict(os.environ, HOME=str(home), CI="true", AEGISUB_AUTOMATION_WORKERS=str(workers),
-               AEGISUB_AUTOMATION_PROFILE="1" if profiling else "0")
+               AEGISUB_AUTOMATION_PROFILE="1" if profiling else "0", AEGISUB_AUTOMATION_MEASURE_UI="1")
     started = time.monotonic()
     with (folder / "console.txt").open("w") as console:
         process = subprocess.Popen([str(executable)], env=env, stdout=console, stderr=subprocess.STDOUT)
@@ -131,9 +122,9 @@ def _sample_once(executable, collection, include, folder, workers, profiling=Fal
             totals = re.search(r"(\d+) / (\d+), failures: (\d+), ([\d.eE+-]+) ms", completed["message"])
             assert totals, completed
             assert totals[1] == totals[2], completed
-            expected = len([p for p in collection.iterdir() if p.suffix in (".lua", ".moon")])
+            expected = sum(p.suffix in (".lua", ".moon") for path in (bundled, collection) for p in path.iterdir())
             assert int(totals[2]) == expected, (expected, completed)
-            assert int(totals[3]) == (2 if collection.name == "broken" else 0), completed
+            assert int(totals[3]) == 0, completed
             scripts = []
             for record in log:
                 if record["section"] == "startup/automation/script":
@@ -145,7 +136,19 @@ def _sample_once(executable, collection, include, folder, workers, profiling=Fal
                 # and screen capture overhead never enter the timing samples.
                 time.sleep(2.3)
                 subprocess.run(["scrot", "-o", str(folder / "completed.png")], check=True)
-            return {"responsive_ms": round(max(visible_ms or 0, stamp(idle)), 3),
+            sections = lambda name: [r for r in log if r["section"] == "startup/automation/" + name]
+            phases = {}
+            for entry in sections("phase"):
+                name = entry["message"].split(";", 1)[0]
+                phases[name] = round(stamp(entry), 3)
+            publication = sections("publication")
+            blocking = sum(float(value) for r in publication
+                           for value in re.findall(r"(?:registration|notifications)_ms=([\d.eE+-]+)", r["message"]))
+            blocking += sum(float(r["message"]) for r in sections("ui_request"))
+            return {"phases_ms": phases, "publication_batches": len(publication),
+                    "menu_rebuilds": len(sections("menu")), "blocking_ms": round(blocking, 3),
+                    "longest_ui_gap_ms": max(float(r["message"]) for r in sections("ui_gap")),
+                    "responsive_ms": round(max(visible_ms or 0, stamp(idle)), 3),
                     "first_macro_ms": round(stamp(first), 3) if expected else None,
                     "all_ms": round(stamp(completed), 3), "autoload_ms": float(totals[4]),
                     "cpu_ms": cpu_ms, "peak_rss_mib": round(peak_kib / 1024, 3),
@@ -161,7 +164,7 @@ def _sample_once(executable, collection, include, folder, workers, profiling=Fal
                 process.wait()
 
 
-def sample(executable, collection, include, folder, workers, profiling=False):
+def sample(executable, collection, bundled, includes, folder, workers, profiling=False):
     """Retry only a pre-initialization GTK/Xvfb failure, never an app crash.
 
     Each attempt uses a new process and measurement clock. Failed display
@@ -169,7 +172,7 @@ def sample(executable, collection, include, folder, workers, profiling=False):
     """
     for attempt in range(3):
         try:
-            result = _sample_once(executable, collection, include, folder, workers, profiling)
+            result = _sample_once(executable, collection, bundled, includes, folder, workers, profiling)
             result["display_retries"] = attempt
             return result
         except DisplayInitializationFailure as exc:
@@ -191,34 +194,36 @@ def main(args):
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     source = args.source.resolve()
-    fixtures(output / "fixtures", source)
+    includes = (fixtures(output / "fixtures"), source / "automation/include")
+    bundled = args.bundled_dir.resolve()
     observations = []
-    variants = [("baseline", args.baseline.resolve(), 1)] + [("candidate", args.candidate.resolve(), n) for n in (1, 2, 3, 4)]
+    variants = [("baseline", args.baseline.resolve(), 2)] if args.baseline else []
+    variants.append(("candidate", args.candidate.resolve(), 2))
     # Alternate variants within each sample to reduce warm-cache/run-order bias.
-    for scenario in ("empty", "small", "large", "cpu", "broken"):
+    for scenario in SCENARIOS:
         for repeat in range(args.repeats):
             ordered = variants if repeat % 2 == 0 else list(reversed(variants))
             for version, executable, workers in ordered:
                 name = f"{scenario}-{version}-{workers}-{repeat}"
-                result = sample(executable, output / "fixtures" / scenario, source / "automation/include",
+                result = sample(executable, output / "fixtures" / scenario, bundled, includes,
                                 output / name, workers)
                 observations.append(dict(scenario=scenario, version=version, workers=workers, repeat=repeat, **result))
                 print("AUTOMATION_SAMPLE " + json.dumps({k: v for k, v in observations[-1].items() if k not in ("diagnostics", "menu")}), flush=True)
                 (output / "samples.json").write_text(json.dumps(observations, indent=2))
-    for scenario in ("small", "large", "cpu", "broken"):
-        result = sample(args.candidate.resolve(), output / "fixtures" / scenario, source / "automation/include",
-                        output / f"profile-{scenario}", 2, profiling=True)
-        (output / f"phases-{scenario}.json").write_text(json.dumps(result, indent=2))
-    lines = ["|Collection|Version|Workers|Responsive ms|First macro ms|All ms|Autoload ms|CPU ms|Peak RSS MiB|Slowest ms|",
-             "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
-    for scenario in ("empty", "small", "large", "cpu", "broken"):
+    lines = ["|Collection|Version|Responsive ms|First macro ms|Bundled available ms|Independent available ms|Dependency available ms|All ms|Main-thread work ms|Longest UI gap ms|Registration batches|Menu rebuilds|",
+             "|---|---|" + "|".join(["---:"] * 10) + "|"]
+    for scenario in SCENARIOS:
         for version, _, workers in variants:
             group = [r for r in observations if (r["scenario"], r["version"], r["workers"]) == (scenario, version, workers)]
-            values = []
-            for key in ("responsive_ms", "first_macro_ms", "all_ms", "autoload_ms", "cpu_ms", "peak_rss_mib"):
-                values.append(f"{statistics.median(r[key] for r in group):.1f}" if group[0][key] is not None else "—")
-            values.append(f"{statistics.median(r['slowest'][0]['ms'] for r in group):.1f}" if group[0]["slowest"] else "—")
-            lines.append(f"|{scenario}|{version}|{workers}|" + "|".join(values) + "|")
+            def median(values):
+                values = [value for value in values if value is not None]
+                return f"{statistics.median(values):.1f}" if values else "—"
+            values = [median([r[key] for r in group]) for key in ("responsive_ms", "first_macro_ms")]
+            values += [median([r["phases_ms"].get(phase) for r in group])
+                       for phase in ("bundled", "external", "dependency_control")]
+            values += [median([r[key] for r in group]) for key in
+                       ("all_ms", "blocking_ms", "longest_ui_gap_ms", "publication_batches", "menu_rebuilds")]
+            lines.append(f"|{scenario}|{version}|" + "|".join(values) + "|")
     report = "\n".join(lines) + "\n"
     print(report, flush=True)
     (output / "summary.md").write_text(report)
@@ -229,7 +234,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--baseline", type=Path, required=True)
+    parser.add_argument("--baseline", type=Path)
+    parser.add_argument("--bundled-dir", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--source", type=Path, default=Path.cwd())
     parser.add_argument("--output", type=Path, required=True)

@@ -14,6 +14,19 @@ on:
       - 'tests/python/startup_smoke.py'
       - '.github/workflows/automation-loading.yml'
   workflow_dispatch:
+    inputs:
+      baseline:
+        description: Baseline commit (omit to measure the checked-out build only)
+        type: string
+  push:
+    branches: [codex/compact-automation-loading]
+    paths:
+      - 'src/auto4*'
+      - 'src/frame_main.*'
+      - 'src/menu.cpp'
+      - 'automation/meson.build'
+      - 'tests/python/benchmark_automation_loading.py'
+      - '.github/workflows/automation-loading.yml'
 
 permissions:
   contents: read
@@ -28,8 +41,9 @@ jobs:
           fetch-depth: 0
           submodules: recursive
       - uses: actions/checkout@v4
+        if: inputs.baseline != ''
         with:
-          ref: c7c51a6edf9589f15fd2580141111ee75e8f76e4
+          ref: ${{ inputs.baseline }}
           fetch-depth: 0
           path: baseline
           submodules: recursive
@@ -43,9 +57,14 @@ jobs:
           sudo apt-get install -y ninja-build build-essential libx11-dev libwxgtk3.0-gtk3-dev libfreetype6-dev pkg-config libfontconfig1-dev libass-dev libasound2-dev libffms2-dev intltool libboost-all-dev libhunspell-dev libuchardet-dev libpulse-dev libopenal-dev libxxhash-dev nasm libsoundtouch-dev libcurl4-openssl-dev fonts-dejavu-core xvfb xdotool scrot
       - name: Build identical release configurations
         run: |
-          meson setup baseline/build baseline -Dbuildtype=release -Dopencv=disabled
-          meson compile -C baseline/build aegisub:executable
-          meson setup build -Dbuildtype=release -Dopencv=disabled
+          prefix="$RUNNER_TEMP/aegisub-benchmark"
+          mkdir -p "$prefix/share/aegisub/automation"
+          cp -R automation/autoload "$prefix/share/aegisub/automation/"
+          if [ -d baseline ]; then
+            meson setup baseline/build baseline --prefix "$prefix" -Dbuildtype=release -Dopencv=disabled
+            meson compile -C baseline/build aegisub:executable
+          fi
+          meson setup build --prefix "$prefix" -Dbuildtype=release -Dopencv=disabled
           meson compile -C build aegisub:executable gtest-main
       - name: Preserve Lua cancellation and JIT preferences; measure finite JIT controls
         env:
@@ -53,8 +72,11 @@ jobs:
         run: |
           mkdir -p build/automation-benchmark
           meson test -C build --no-rebuild --verbose 'gtest main' --test-args=--gtest_filter=AutomationInitialization.*:AutomationLoadingProfile.* | tee build/automation-benchmark/jit.txt
-      - name: Compare application loading with 1 through 4 workers
-        run: xvfb-run -a python tests/python/benchmark_automation_loading.py --baseline baseline/build/aegisub --candidate build/aegisub --output build/automation-benchmark
+      - name: Measure phase availability and UI responsiveness
+        run: |
+          baseline=()
+          if [ -d baseline ]; then baseline=(--baseline baseline/build/aegisub); fi
+          xvfb-run -a python tests/python/benchmark_automation_loading.py "${baseline[@]}" --candidate build/aegisub --bundled-dir "$RUNNER_TEMP/aegisub-benchmark/share/aegisub/automation/autoload" --output build/automation-benchmark
       - name: Retain measurements and phase profiles
         if: always()
         uses: actions/upload-artifact@v4
