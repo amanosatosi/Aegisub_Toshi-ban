@@ -3,6 +3,7 @@
 
 #include <libaegisub/timing39_session.h>
 #include <algorithm>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -68,17 +69,20 @@ inline size_t LegalMergeCandidateCount(Analysis const& analysis) {
 		if(edge.count>1 && edge.features.type!=Join::Rhythmic)++count;
 	return count;
 }
-inline std::string PossibleGroupingGuidance(Analysis const& analysis) {
+// Keep this model usable by non-GUI tests; the UI supplies gettext lookup.
+inline char const* t39_message(char const* message) { return message; }
+inline std::string PossibleGroupingGuidance(Analysis const& analysis,
+    std::function<std::string(char const*)> const& translate = [](char const* text) { return std::string(text); }) {
 	std::string text;
 	for(auto const& edges:analysis.graph)for(auto const& edge:edges)
 		if(edge.count>1 && edge.features.type!=Join::Rhythmic) {
 			std::string group;
 			for(size_t i=0;i<edge.count;++i)group+=analysis.morae[edge.first+i].text;
 			if(!text.empty())text+="   ";
-			text+="["+group+"] "+(edge.features.strength==CandidateStrength::Soft?"soft": "strong");
+			text+="["+group+"] "+translate(edge.features.strength==CandidateStrength::Soft?t39_message("soft"):t39_message("strong"));
 		}
-	if(text.empty())text="No confident phonetic joins identified.";
-	text+=" Rhythmic fallback (up to four morae) is considered only when needed and requires review.";
+	if(text.empty())text=translate(t39_message("No confident phonetic joins identified."));
+	text+=" "+translate(t39_message("Rhythmic fallback (up to four morae) is considered only when needed and requires review."));
 	return text;
 }
 

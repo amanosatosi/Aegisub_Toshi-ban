@@ -268,9 +268,9 @@ void Video(wxTreebook *book, Preferences *parent) {
 	p->CellSkip(general);
 	p->OptionAdd(general, _("Automatically open audio when opening video"), "Video/Open Audio");
 	p->OptionAdd(general, _("Default to Video Zoom"), "Video/Default to Video Zoom")
-		->SetToolTip("Reverses the behavior of Ctrl while scrolling the video display. If not set, scrolling will default to UI zoom and Ctrl+scrolling will zoom the video. If set, this will be reversed.");
+		->SetToolTip(_("Reverses the behavior of Ctrl while scrolling the video display. If not set, scrolling will default to UI zoom and Ctrl+scrolling will zoom the video. If set, this will be reversed."));
 	p->OptionAdd(general, _("Disable zooming with scroll bar"), "Video/Disable Scroll Zoom")
-		->SetToolTip("Makes the scroll bar not zoom the video. Useful when using a track pad that often scrolls accidentally.");
+		->SetToolTip(_("Makes the scroll bar not zoom the video. Useful when using a track pad that often scrolls accidentally."));
 	p->OptionAdd(general, _("Reverse zoom direction"), "Video/Reverse Zoom");
 
 	auto relative = p->PageSizer(_("Relative time readouts"));
@@ -593,7 +593,7 @@ void Advanced_Audio(wxTreebook *book, Preferences *parent) {
 
 	p->OptionAdd(ffms, _("Always index all audio tracks"), "Provider/FFmpegSource/Index All Tracks");
 	wxControl* stereo = p->OptionAdd(ffms, _("Downmix to stereo"), "Provider/Audio/FFmpegSource/Downmix");
-	stereo->SetToolTip("Reduces memory usage on surround audio, but may cause audio tracks to sound blank in specific circumstances. This will not affect audio with two channels or less.");
+	stereo->SetToolTip(_("Reduces memory usage on surround audio, but may cause audio tracks to sound blank in specific circumstances. This will not affect audio with two channels or less."));
 #endif
 
 #ifdef WITH_BESTSOURCE

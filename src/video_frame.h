@@ -16,9 +16,17 @@
 
 #pragma once
 
+#include <array>
 #include <vector>
 
 class wxImage;
+
+struct VideoPerspectiveLayout {
+	int line_id;
+	// Fractions of the actual frame dimensions, in TL, TR, BR, BL order.
+	std::array<double, 4> rect;
+	std::array<double, 8> corners;
+};
 
 struct VideoFrame {
 	std::vector<unsigned char> data;
@@ -26,6 +34,7 @@ struct VideoFrame {
 	size_t height;
 	size_t pitch;
 	bool flipped;
+	std::vector<VideoPerspectiveLayout> perspective_layouts;
 };
 
 wxImage GetImage(VideoFrame const& frame);

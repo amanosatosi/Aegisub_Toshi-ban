@@ -7,6 +7,7 @@
 #include "compat.h"
 #include "include/aegisub/context.h"
 #include "mangetsu_chat_style.h"
+#include "mangetsu_ui.h"
 #include "options.h"
 #include "persist_location.h"
 #include "selection_controller.h"
@@ -325,6 +326,7 @@ public:
 	explicit ChatStyleDialog(agi::Context* context)
 	: wxDialog(context->parent, wxID_ANY, _("Mangetsu Chat Style Editor"), wxDefaultPosition, wxDefaultSize,
 		wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER), context(context) {
+		mangetsu::StyleSurface(this);
 		auto line = context->selectionController->GetActiveLine();
 		defaults = DefaultChatPalette();
 		state = LoadChatStyle(line->Text.get(), defaults);
@@ -358,7 +360,7 @@ public:
 		root->Add(inspector, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, DialogPixels(this, 12));
 		auto footer = new wxBoxSizer(wxHORIZONTAL);
 		origin_label = new wxStaticText(this, wxID_ANY, wxString()); footer->Add(origin_label, 1, wxALIGN_CENTER_VERTICAL);
-		auto swap = new wxButton(this, wxID_ANY, _("Swap Left / Right")); footer->Add(swap, 0, wxRIGHT, DialogPixels(this, 6));
+		auto swap = new mangetsu::MangetsuButton(this, _("Swap Left / Right")); footer->Add(swap, 0, wxRIGHT, DialogPixels(this, 6));
 		auto reset = new wxButton(this, wxID_ANY, _("Reset selected")); footer->Add(reset, 0, wxRIGHT, DialogPixels(this, 6));
 		auto reset_all = new wxButton(this, wxID_ANY, _("Reset All")); footer->Add(reset_all, 0);
 		root->Add(footer, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, DialogPixels(this, 12));
@@ -367,6 +369,7 @@ public:
 		if (!valid_presets) status += wxS("  ") + _("Saved presets could not be read.");
 		root->Add(new wxStaticText(this, wxID_ANY, status), 0, wxLEFT | wxRIGHT | wxBOTTOM, DialogPixels(this, 12));
 		root->Add(CreateSeparatedButtonSizer(wxOK | wxAPPLY | wxCANCEL), 0, wxEXPAND | wxALL, DialogPixels(this, 10));
+		mangetsu::StyleLabels(this);
 		SetSizer(root);
 		RefreshPresets(); RefreshInspector();
 		SetMinSize(root->CalcMin() + (GetSize() - GetClientSize()));

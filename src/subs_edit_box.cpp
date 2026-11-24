@@ -33,6 +33,7 @@
 /// @ingroup main_ui
 
 #include "subs_edit_box.h"
+#include "mangetsu_ui.h"
 
 // [actor_MRU] BEGIN
 #include "actor_MRU.h"
@@ -76,6 +77,8 @@
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/combobox.h>
+#include <wx/dialog.h>
+#include <wx/display.h>
 #include <wx/fontenum.h>
 #include <wx/listbox.h>
 #include <wx/menu.h>
@@ -128,7 +131,7 @@ struct CaseInsensitiveLess {
 	}
 };
 
-// Japanese bracket options for the toolbar popup
+// Japanese bracket options shared by the toolbar and keyboard picker.
 struct BracketPair {
 	wxString left;
 	wxString right;
@@ -150,6 +153,10 @@ const std::array<BracketPair, 14> kBracketPairs = {{
 	{wxS("＜"), wxS("＞")},
 	{wxS("≪"), wxS("≫")}
 }};
+
+wxString BracketLabel(BracketPair const& pair) {
+	return pair.left + wxS(" ") + pair.right;
+}
 
 }
 
@@ -255,7 +262,7 @@ SubsEditBox::SubsEditBox(wxWindow *parent, agi::Context *context)
 
 	// Middle-bottom controls
 	middle_right_sizer = new wxBoxSizer(wxHORIZONTAL);
-	wxBitmapButton *bold_button = MakeButton("edit/style/bold");
+	auto bold_button = MakeButton("edit/style/bold");
 	MakeButton("edit/style/italic");
 	MakeButton("edit/style/underline");
 	MakeButton("edit/style/strikeout");
@@ -296,8 +303,8 @@ SubsEditBox::SubsEditBox(wxWindow *parent, agi::Context *context)
 	MakeButton("edit/color/outline");
 	MakeButton("edit/color/shadow");
 	MakeButton("edit/color/insert_value");
-	MakeButton("edit/color/gradient");
-	auto chat_style_button = MakeButton("edit/chat/style");
+	MakeButton("edit/color/gradient", true);
+	auto chat_style_button = MakeButton("edit/chat/style", true);
 	chat_style_button->Bind(wxEVT_UPDATE_UI, [this](wxUpdateUIEvent& event) {
 		event.Enable(cmd::get("edit/chat/style")->Validate(c));
 	});
@@ -425,9 +432,14 @@ TimeEdit *SubsEditBox::MakeTimeCtrl(wxString const& tooltip, TimeField field) {
 	return ctrl;
 }
 
-wxBitmapButton *SubsEditBox::MakeButton(const char *cmd_name) {
+wxButton *SubsEditBox::MakeButton(const char *cmd_name, bool mangetsu_feature) {
 	cmd::Command *command = cmd::get(cmd_name);
-	wxBitmapButton *btn = new wxBitmapButton(this, -1, command->Icon(OPT_GET("App/Toolbar Icon Size")->GetInt(), retina_helper->GetScaleFactor()));
+	auto icon = command->Icon(OPT_GET("App/Toolbar Icon Size")->GetInt(), retina_helper->GetScaleFactor());
+	wxButton *btn;
+	if (mangetsu_feature && mangetsu::UseBrandColours())
+		btn = new mangetsu::MangetsuButton(this, command->StrDisplay(c), icon);
+	else
+		btn = new wxBitmapButton(this, -1, icon);
 	ToolTipManager::Bind(btn, command->StrHelp(), "Subtitle Edit Box", cmd_name);
 
 	middle_right_sizer->Add(btn, wxSizerFlags().Expand());
@@ -517,38 +529,120 @@ void SubsEditBox::FocusTextCtrl() {
 		edit_ctrl->SetFocus();
 }
 
-void SubsEditBox::InsertBracketPair(wxString const& left, wxString const& right) {
-	// Wrap selected text or insert a bracket pair at the caret.
+void SubsEditBox::InsertBracketPair(wxString const& left, wxString const& right, BracketCaret placement) {
 	if (!line) return;
 
 	int sel_start = edit_ctrl->GetSelectionStart();
 	int sel_end = edit_ctrl->GetSelectionEnd();
 	int start = std::min(sel_start, sel_end);
 	int end = std::max(sel_start, sel_end);
+	if (better_view_enabled_) {
+		auto const& raw = line->Text.get();
+		int raw_start, raw_end;
+		if (!MapDisplayRangeToRaw(start, end, raw, raw_start, raw_end)) return;
+		start = MapRawToDisplay(raw_start, raw);
+		end = MapRawToDisplay(raw_end, raw);
+	}
 
-	std::string left_utf8 = from_wx(left);
-	int left_len = static_cast<int>(left_utf8.size());
-
+	// Insert around the selection without round-tripping its display text.
+	// Better View can show ASS line breaks and motion blocks as placeholders.
+	commit_id = -1;
 	edit_ctrl->BeginUndoAction();
-	if (start == end) {
+	if (start == end)
 		edit_ctrl->InsertText(start, left + right);
-		int caret = start + left_len;
-		edit_ctrl->SetSelection(caret, caret);
-		edit_ctrl->GotoPos(caret);
-	}
 	else {
-		wxString selected = edit_ctrl->GetTextRange(start, end);
-		std::string selected_utf8 = from_wx(selected);
-		edit_ctrl->SetTargetStart(start);
-		edit_ctrl->SetTargetEnd(end);
-		edit_ctrl->ReplaceTarget(left + selected + right);
-		int new_start = start + left_len;
-		int new_end = new_start + static_cast<int>(selected_utf8.size());
-		edit_ctrl->SetSelection(new_start, new_end);
-		edit_ctrl->GotoPos(new_end);
+		edit_ctrl->InsertText(end, right);
+		edit_ctrl->InsertText(start, left);
 	}
+	int caret = end + static_cast<int>(from_wx(left).size());
+	if (placement == BracketCaret::Reading) ++caret; // After the suffix's pipe.
+	if (placement == BracketCaret::Base) caret = start + 1; // After the opening '<'.
+	edit_ctrl->GotoPos(caret);
 	edit_ctrl->EndUndoAction();
+	commit_id = -1;
 	edit_ctrl->SetFocus();
+}
+
+void SubsEditBox::ShowBracketPicker() {
+	if (!line || !edit_ctrl || !edit_ctrl->IsShownOnScreen() || edit_ctrl->GetReadOnly()) return;
+
+	auto anchor = edit_ctrl->GetAnchor();
+	auto caret = edit_ctrl->GetCurrentPos();
+	auto line_id = line->Id;
+	wxDialog picker(this, wxID_ANY, _("Brackets and Furigana"), wxDefaultPosition, wxDefaultSize, wxCAPTION | wxCLOSE_BOX);
+	auto list = new wxListBox(&picker, wxID_ANY);
+	auto hint = new wxStaticText(&picker, wxID_ANY, wxString{});
+	auto layout = new wxBoxSizer(wxVERTICAL);
+	int gap = mangetsu::Dip(&picker, 8);
+	layout->Add(list, 1, wxEXPAND | wxALL, gap);
+	layout->Add(hint, 0, wxLEFT | wxRIGHT | wxBOTTOM, gap);
+	picker.SetSizer(layout);
+
+	wxArrayString brackets;
+	for (auto const& pair : kBracketPairs) brackets.Add(BracketLabel(pair));
+	wxArrayString furigana;
+	furigana.Add(wxS("<T|>"));
+	furigana.Add(wxS("<|T>"));
+	int bracket_index = std::min(last_bracket_pair_index_, kBracketPairs.size() - 1);
+	bool showing_furigana = false;
+	auto display = wxDisplay::GetFromWindow(edit_ctrl);
+	auto work_area = wxDisplay(display == wxNOT_FOUND ? 0 : display).GetClientArea();
+	auto anchor_point = edit_ctrl->ClientToScreen(wxPoint(0, 0));
+	auto show_page = [&] {
+		list->Set(showing_furigana ? furigana : brackets);
+		list->SetSelection(showing_furigana ? 0 : bracket_index);
+		hint->SetLabel(showing_furigana ? _(L"\u2192 Brackets    Enter: Insert    Esc: Cancel")
+			: _(L"\u2190 Furigana    Enter: Insert    Esc: Cancel"));
+		int rows = showing_furigana ? 2 : static_cast<int>(kBracketPairs.size());
+		list->SetMinSize(wxSize(mangetsu::Dip(&picker, 180), rows * (list->GetCharHeight() + gap / 2) + gap));
+		picker.Fit();
+		auto size = picker.GetSize();
+		int x = std::clamp(anchor_point.x, work_area.x, std::max(work_area.x, work_area.GetRight() + 1 - size.x));
+		int y = anchor_point.y - size.y;
+		if (y < work_area.y) y = anchor_point.y + edit_ctrl->GetSize().y;
+		y = std::clamp(y, work_area.y, std::max(work_area.y, work_area.GetBottom() + 1 - size.y));
+		picker.Move(x, y);
+		list->SetFocus();
+	};
+	picker.Bind(wxEVT_CHAR_HOOK, [&](wxKeyEvent& event) {
+		int index = list->GetSelection();
+		int count = static_cast<int>(list->GetCount());
+		switch (event.GetKeyCode()) {
+			case WXK_UP: list->SetSelection((index + count - 1) % count); break;
+			case WXK_DOWN: list->SetSelection((index + 1) % count); break;
+			case WXK_LEFT:
+				if (!showing_furigana) {
+					bracket_index = index;
+					showing_furigana = true;
+					show_page();
+				}
+				break;
+			case WXK_RIGHT:
+				if (showing_furigana) {
+					showing_furigana = false;
+					show_page();
+				}
+				break;
+			case WXK_RETURN:
+			case WXK_NUMPAD_ENTER: picker.EndModal(wxID_OK); break;
+			case WXK_ESCAPE: picker.EndModal(wxID_CANCEL); break;
+			default: event.Skip(); break;
+		}
+	});
+	list->Bind(wxEVT_LISTBOX_DCLICK, [&](wxCommandEvent&) { picker.EndModal(wxID_OK); });
+	show_page();
+	if (picker.ShowModal() != wxID_OK || !line || line->Id != line_id) return;
+
+	edit_ctrl->SetSelection(anchor, caret);
+	int index = list->GetSelection();
+	if (showing_furigana) {
+		if (index == 0) InsertBracketPair(wxS("<"), wxS("|>"), BracketCaret::Reading);
+		else InsertBracketPair(wxS("<|"), wxS(">"), BracketCaret::Base);
+	}
+	else if (index >= 0 && static_cast<size_t>(index) < kBracketPairs.size()) {
+		last_bracket_pair_index_ = index;
+		InsertBracketPair(kBracketPairs[index].left, kBracketPairs[index].right);
+	}
 }
 
 void SubsEditBox::OnBracketButton(wxCommandEvent &) {
@@ -562,8 +656,7 @@ void SubsEditBox::OnBracketButton(wxCommandEvent &) {
 	wxMenu menu;
 	for (size_t i = 0; i < kBracketPairs.size(); ++i) {
 		int id = base_id + static_cast<int>(i);
-		wxString label = kBracketPairs[i].left + wxS(" ") + kBracketPairs[i].right;
-		menu.Append(id, label);
+		menu.Append(id, BracketLabel(kBracketPairs[i]));
 	}
 
 	menu.Bind(wxEVT_MENU, [=](wxCommandEvent &evt) {

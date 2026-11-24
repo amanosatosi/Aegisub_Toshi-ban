@@ -28,6 +28,7 @@
 // Aegisub Project http://www.aegisub.org/
 
 #include "auto4_base.h"
+#include "automation/bundled_automation.h"
 
 #include "ass_file.h"
 #include "ass_style.h"
@@ -51,10 +52,13 @@
 #include <boost/scope_exit.hpp>
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <exception>
 #include <future>
+#include <map>
 #include <mutex>
 #include <set>
+#include <system_error>
 #include <thread>
 #include <utility>
 
@@ -63,6 +67,7 @@
 #include <wx/log.h>
 #include <wx/sizer.h>
 #include <wx/thread.h>
+#include <wx/utils.h>
 
 #ifdef __WINDOWS__
 #define WIN32_LEAN_AND_MEAN
@@ -75,15 +80,22 @@ namespace Automation4 {
 	namespace {
 		thread_local std::shared_ptr<ScriptLoadContext> load_context;
 		std::atomic<unsigned> script_execution_count{0};
+		thread_local double synchronization_ms = 0;
+		thread_local std::function<bool()> dependency_gate;
 	}
+
+	double ScriptLoadSynchronizationMs() { return synchronization_ms; }
 
 	ScriptExecutionGuard::ScriptExecutionGuard() { ++script_execution_count; }
 	ScriptExecutionGuard::~ScriptExecutionGuard() { --script_execution_count; }
 
 	std::shared_ptr<ScriptLoadContext> GetScriptLoadContext() { return load_context; }
+	bool WaitForDependencyControl() { return !dependency_gate || dependency_gate(); }
 
 	bool ScriptLoadOnMain(std::function<void()> task) {
 		if (wxIsMainThread()) { task(); return true; }
+		auto start = std::chrono::steady_clock::now();
+		BOOST_SCOPE_EXIT_ALL(&) { synchronization_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(); };
 		auto context = load_context;
 		if (!context) {
 			agi::dispatch::Main().Sync(std::move(task));
@@ -93,6 +105,11 @@ namespace Automation4 {
 		auto finished = std::make_shared<std::promise<void>>();
 		auto future = finished->get_future();
 		agi::dispatch::Main().Async([context, finished, task = std::move(task)] {
+			auto start = std::chrono::steady_clock::now();
+			BOOST_SCOPE_EXIT_ALL(&) {
+				if (context->measure_ui) LOG_I("startup/automation/ui_request")
+					<< std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+			};
 			try {
 				if (!context->cancelled) task();
 				finished->set_value();
@@ -374,91 +391,280 @@ namespace Automation4 {
 		return macros;
 	}
 
-	// Workers own unpublished scripts; only the UI thread touches live registries.
+	// One coordinator advances phases. Lua states stay on their loading thread
+	// until that script is finished, including when a module import parks it.
 	struct AutoloadScriptManager::Batch {
+		struct Result {
+			std::unique_ptr<Script> script;
+			std::string error;
+		};
 		std::shared_ptr<ScriptLoadContext> context;
 		std::optional<agi::fs::path> target;
+		std::function<void()> wake;
 		std::thread worker;
 		std::mutex mutex;
+		std::condition_variable changed;
 		AutoloadProgress progress;
-		std::vector<std::unique_ptr<Script>> scripts;
+		std::vector<agi::fs::path> files;
+		std::set<agi::fs::path> scanned_files;
+		std::vector<Result> results;
+		std::map<size_t, std::string> active;
 		std::vector<std::string> errors;
+		std::vector<size_t> ready;
+		bool phase_ready = false;
+		bool final_phase = false;
+		bool first_macro = false;
 		std::atomic<bool> done{false};
 		std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+		std::chrono::steady_clock::time_point phase_started = started;
 
-		Batch(std::vector<agi::fs::path> directories, std::shared_ptr<ScriptLoadContext> context, std::optional<agi::fs::path> target)
-		: context(std::move(context)), target(std::move(target)) {
-			worker = std::thread([this, directories = std::move(directories)] {
-				load_context = this->context;
-				BOOST_SCOPE_EXIT_ALL(&) { load_context.reset(); done = true; };
+		void SetPhase(AutoloadPhase phase, size_t total) {
+			std::lock_guard<std::mutex> lock(mutex);
+			progress.phase = phase;
+			progress.phase_completed = 0;
+			progress.phase_total = total;
+			phase_started = std::chrono::steady_clock::now();
+		}
+
+		bool FinishPhase(std::vector<size_t> indices, bool last) {
+			if (indices.empty()) return !context->cancelled;
+			std::unique_lock<std::mutex> lock(mutex);
+			if (context->cancelled) return false;
+			ready = std::move(indices);
+			final_phase = last;
+			phase_ready = true;
+			wake();
+			changed.wait(lock, [&] { return !phase_ready || context->cancelled; });
+			return !context->cancelled;
+		}
+
+		void FinishScript(size_t index, Result result) {
+			// Called with mutex held.
+			if (!result.error.empty()) {
+				++progress.failed;
+				errors.push_back(files[index].string() + ": " + result.error);
+			}
+			results[index] = std::move(result);
+			active.erase(index);
+			++progress.phase_completed;
+			++progress.completed;
+		}
+
+		void LoadScript(size_t index) {
+			load_context = context;
+			BOOST_SCOPE_EXIT_ALL(&) { load_context.reset(); };
+			auto const& file = files[index];
+			{
+				std::lock_guard<std::mutex> lock(mutex);
+				active[index] = file.string();
+			}
+			auto start = std::chrono::steady_clock::now();
+			Result result;
+			try {
+				result.script = ScriptFactory::CreateFromFile(file, false, false);
+				if (result.script && !result.script->GetLoadedState()) result.error = result.script->GetDescription();
+			}
+			catch (agi::Exception const& e) { result.error = e.GetMessage(); }
+			catch (std::exception const& e) { result.error = e.what(); }
+			catch (...) { result.error = "Unknown error"; }
+			if (!result.script) {
+				if (result.error.empty()) result.error = "No Automation engine accepted this script";
+				result.script = agi::make_unique<UnknownScript>(file, result.error);
+			}
+			LOG_I("startup/automation/script") << file.string() << ": "
+				<< std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() << " ms";
+			std::lock_guard<std::mutex> lock(mutex);
+			if (!context->cancelled) FinishScript(index, std::move(result));
+		}
+
+		void LoadBundled(std::vector<size_t> const& indices, unsigned workers) {
+			std::atomic<size_t> next{0};
+			auto load = [&] {
+				while (!context->cancelled) {
+					auto position = next.fetch_add(1);
+					if (position >= indices.size()) break;
+					LoadScript(indices[position]);
+				}
+			};
+			std::vector<std::thread> pool;
+			BOOST_SCOPE_EXIT_ALL(&) { for (auto& thread : pool) thread.join(); };
+			for (unsigned id = 1; id < std::min<size_t>(workers, indices.size()); ++id) {
+				try { pool.emplace_back(load); }
+				catch (std::system_error const&) { break; }
+			}
+			load();
+		}
+
+		void LoadExternal(std::vector<size_t> const& indices, unsigned workers) {
+			if (indices.empty() || context->cancelled) return;
+			SetPhase(AutoloadPhase::External, indices.size());
+			std::vector<size_t> independent, deferred;
+			independent.reserve(indices.size());
+			deferred.reserve(indices.size());
+			size_t cursor = 0, active_workers = 0;
+			std::optional<size_t> resume;
+			bool resumed_script_finished = false;
+			std::vector<std::thread> pool;
+			bool finished = false;
+			// If this phase unwinds, also wake parked states before joining.
+			BOOST_SCOPE_EXIT_ALL(&) {
+				if (!finished) Cancel();
+				for (auto& thread : pool) thread.join();
+			};
+			auto load = [&] {
+				bool parked = false;
+				while (!context->cancelled) {
+					size_t index;
+					{
+						std::lock_guard<std::mutex> lock(mutex);
+						if (cursor == indices.size()) break;
+						index = indices[cursor++];
+					}
+					dependency_gate = [&] {
+						if (parked) return !context->cancelled;
+						std::unique_lock<std::mutex> lock(mutex);
+						if (context->cancelled) return false;
+						deferred.push_back(index);
+						parked = true;
+						active.erase(index);
+						--progress.phase_total;
+						--active_workers;
+						changed.notify_all();
+						changed.wait(lock, [&] { return resume == index || context->cancelled; });
+						if (context->cancelled) return false;
+						active[index] = files[index].string();
+						return true;
+					};
+					LoadScript(index);
+					dependency_gate = {};
+					if (parked) break;
+				}
+				std::lock_guard<std::mutex> lock(mutex);
+				if (parked) resumed_script_finished = true;
+				else --active_workers;
+				changed.notify_all();
+			};
+
+			{
+				std::unique_lock<std::mutex> lock(mutex);
+				while (!context->cancelled) {
+					while (cursor < indices.size() && active_workers < workers) {
+						try {
+							pool.emplace_back(load);
+							++active_workers;
+						}
+						catch (std::system_error const& e) {
+							if (active_workers) break;
+							// At the platform's thread limit, fail the unstarted
+							// jobs explicitly instead of deadlocking parked states.
+							while (cursor < indices.size()) {
+								auto index = indices[cursor++];
+								std::string message = std::string("Cannot start Automation worker: ") + e.what();
+								FinishScript(index, {agi::make_unique<UnknownScript>(files[index], message), message});
+							}
+						}
+					}
+					if (cursor == indices.size() && !active_workers) break;
+					changed.wait(lock);
+				}
+			}
+			if (context->cancelled) return;
+			std::sort(deferred.begin(), deferred.end());
+			std::set_difference(indices.begin(), indices.end(), deferred.begin(), deferred.end(), std::back_inserter(independent));
+			if (!FinishPhase(std::move(independent), deferred.empty())) return;
+			if (!deferred.empty()) {
+				SetPhase(AutoloadPhase::DependencyControl, deferred.size());
+				// DependencyControl shares updater/configuration files. Resume
+				// its original Lua stacks serially in discovery order.
+				for (auto index : deferred) {
+					std::unique_lock<std::mutex> lock(mutex);
+					if (context->cancelled) return;
+					resumed_script_finished = false;
+					resume = index;
+					changed.notify_all();
+					changed.wait(lock, [&] { return resumed_script_finished || context->cancelled; });
+				}
+				FinishPhase(std::move(deferred), true);
+			}
+			finished = true;
+		}
+
+		Batch(std::vector<agi::fs::path> directories, std::shared_ptr<ScriptLoadContext> context,
+			std::optional<agi::fs::path> target, unsigned workers, std::function<void()> wake)
+		: context(std::move(context)), target(std::move(target)), wake(std::move(wake)) {
+			worker = std::thread([this, directories = std::move(directories), workers] {
+				BOOST_SCOPE_EXIT_ALL(&) { done = true; this->wake(); };
 				try {
-					std::vector<agi::fs::path> files;
-					if (this->target) files.push_back(*this->target);
+					std::vector<size_t> bundled, external;
+					if (this->target) {
+						files.push_back(*this->target);
+						bundled.push_back(0);
+					}
+					auto bundled_dir = this->context->paths->Decode("?data/automation/autoload");
+					if (agi::fs::DirectoryExists(bundled_dir)) bundled_dir = agi::fs::Canonicalize(bundled_dir);
 					std::set<agi::fs::path> seen;
 					for (auto const& directory : directories) {
-						if (this->target) break;
-						if (this->context->cancelled) return;
+						if (this->target || this->context->cancelled) break;
 						try {
 							if (!agi::fs::DirectoryExists(directory)) continue;
 							auto dir = agi::fs::Canonicalize(directory);
 							if (!seen.insert(dir).second) continue;
+							std::vector<agi::fs::path> entries;
 							for (auto const& filename : agi::fs::DirectoryIterator(dir, "*.*")) {
 								auto file = dir / filename;
-								if (ScriptFactory::Supports(file) && agi::fs::FileExists(file)) files.push_back(file);
+								if (ScriptFactory::Supports(file) && agi::fs::FileExists(file)) entries.push_back(file);
+							}
+							std::sort(entries.begin(), entries.end());
+							static std::set<std::string> const names{BUNDLED_AUTOLOAD_NAMES};
+							for (auto& file : entries) {
+								scanned_files.insert(file);
+								auto& group = dir == bundled_dir && names.count(file.filename().string()) ? bundled : external;
+								group.push_back(files.size());
+								files.push_back(std::move(file));
 							}
 						}
 						catch (agi::Exception const& e) { errors.push_back(directory.string() + ": " + e.GetMessage()); }
 						catch (std::exception const& e) { errors.push_back(directory.string() + ": " + e.what()); }
 					}
+					LOG_I("startup/automation/enumeration") << files.size() << " scripts, "
+						<< std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count() << " ms";
 					{
 						std::lock_guard<std::mutex> lock(mutex);
+						results.resize(files.size());
 						progress.total = files.size();
 						progress.failed = errors.size();
 						progress.loading = !files.empty();
 					}
-					// One worker bounds resource usage and preserves directory order.
-					for (auto const& file : files) {
-						if (this->context->cancelled) return;
-						{
-							std::lock_guard<std::mutex> lock(mutex);
-							progress.filename = file.filename().string();
-						}
-						auto start = std::chrono::steady_clock::now();
-						std::unique_ptr<Script> script;
-						std::string error;
-						try {
-							script = ScriptFactory::CreateFromFile(file, false, false);
-							if (script && !script->GetLoadedState()) error = script->GetDescription();
-						}
-						catch (agi::Exception const& e) { error = e.GetMessage(); }
-						catch (std::exception const& e) { error = e.what(); }
-						catch (...) { error = "Unknown error"; }
-						LOG_I("startup/automation/script") << file.string() << ": "
-							<< std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() << " ms";
-						if (!script && error.empty()) error = "No Automation engine accepted this script";
-						if (!error.empty()) errors.push_back(file.string() + ": " + error);
-						if (!script) script = agi::make_unique<UnknownScript>(file, error);
-						scripts.push_back(std::move(script));
-						std::lock_guard<std::mutex> lock(mutex);
-						++progress.completed;
-						progress.failed = errors.size();
+					if (!bundled.empty()) {
+						SetPhase(this->target ? AutoloadPhase::SingleScript : AutoloadPhase::Bundled, bundled.size());
+						LoadBundled(bundled, workers);
+						if (!FinishPhase(std::move(bundled), external.empty())) return;
 					}
+					LoadExternal(external, workers);
 				}
-				catch (agi::Exception const& e) { errors.push_back(e.GetMessage()); }
-				catch (std::exception const& e) { errors.push_back(e.what()); }
-				catch (...) { errors.push_back("Unknown error scanning Automation scripts"); }
+				catch (agi::Exception const& e) { std::lock_guard<std::mutex> lock(mutex); errors.push_back(e.GetMessage()); }
+				catch (std::exception const& e) { std::lock_guard<std::mutex> lock(mutex); errors.push_back(e.what()); }
+				catch (...) { std::lock_guard<std::mutex> lock(mutex); errors.push_back("Unknown error scanning Automation scripts"); }
 			});
 		}
 
-		~Batch() {
+		void Cancel() {
+			std::lock_guard<std::mutex> lock(mutex);
 			context->cancelled = true;
+			changed.notify_all();
+		}
+
+		~Batch() {
+			Cancel();
 			if (worker.joinable()) worker.join();
 		}
 	};
 
 	AutoloadScriptManager::AutoloadScriptManager(std::string path)
-	: path(std::move(path)), timer(this) {
-		Bind(wxEVT_TIMER, &AutoloadScriptManager::OnTimer, this);
+	: path(std::move(path)), timer(this), ui_probe(this) {
+		Bind(wxEVT_TIMER, &AutoloadScriptManager::OnTimer, this, timer.GetId());
+		Bind(wxEVT_TIMER, &AutoloadScriptManager::OnUiProbe, this, ui_probe.GetId());
+		Bind(wxEVT_THREAD, [this](wxThreadEvent&) { PollLoad(); });
 	}
 
 	AutoloadScriptManager::~AutoloadScriptManager() {
@@ -469,7 +675,7 @@ namespace Automation4 {
 	void AutoloadScriptManager::Reload() {
 		reload_target.reset();
 		if (batch) {
-			batch->context->cancelled = true;
+			batch->Cancel();
 			reload_pending = true; // Coalesce rescans; never create unbounded workers.
 			return;
 		}
@@ -479,7 +685,7 @@ namespace Automation4 {
 	void AutoloadScriptManager::Reload(Script *script) {
 		reload_target = script->GetFilename();
 		if (batch) {
-			batch->context->cancelled = true;
+			batch->Cancel();
 			reload_pending = true;
 			return;
 		}
@@ -488,6 +694,14 @@ namespace Automation4 {
 
 	void AutoloadScriptManager::StartReload() {
 		auto context = std::make_shared<ScriptLoadContext>();
+		wxString profiling;
+		context->profile = wxGetEnv("AEGISUB_AUTOMATION_PROFILE", &profiling) && profiling == "1";
+		context->measure_ui = wxGetEnv("AEGISUB_AUTOMATION_MEASURE_UI", &profiling) && profiling == "1";
+		if (context->measure_ui) {
+			longest_ui_gap = 0;
+			last_ui_probe = std::chrono::steady_clock::now();
+			ui_probe.Start(10);
+		}
 		context->paths = std::make_shared<agi::Path>(*config::path);
 		for (auto tok : agi::Split(OPT_GET("Path/Automation/Include")->GetString(), '|')) {
 			auto include = context->paths->Decode(agi::str(tok));
@@ -497,71 +711,135 @@ namespace Automation4 {
 		for (auto tok : agi::Split(path, '|')) directories.push_back(context->paths->Decode(agi::str(tok)));
 		progress = {};
 		ProgressChanged(progress);
-		batch = agi::make_unique<Batch>(std::move(directories), std::move(context), reload_target);
+		// The diagnostic override is bounded as well; benchmark 1..4 on the same fixtures.
+		unsigned workers = 2;
+		wxString setting;
+		long requested;
+		if (wxGetEnv("AEGISUB_AUTOMATION_WORKERS", &setting) && setting.ToLong(&requested))
+			workers = static_cast<unsigned>(std::max<long>(1, std::min<long>(4, requested)));
+		batch = agi::make_unique<Batch>(std::move(directories), std::move(context), reload_target, workers,
+			[this] { wxQueueEvent(this, new wxThreadEvent); });
 		timer.Start(100); // At most ten real progress updates per second.
 	}
 
-	void AutoloadScriptManager::OnTimer(wxTimerEvent&) {
-		if (!batch) return;
-		if (batch->done) {
-			if (!reload_pending && script_execution_count) {
-				AutoloadProgress waiting;
-				{
-					std::lock_guard<std::mutex> lock(batch->mutex);
-					waiting = batch->progress;
-				}
-				waiting.filename = from_wx(_("Waiting for running Automation or export dialog"));
-				if (waiting.completed != progress.completed || waiting.filename != progress.filename) {
-					progress = std::move(waiting);
-					ProgressChanged(progress);
-				}
-				return;
-			}
-			timer.Stop();
-			if (reload_pending) {
-				batch.reset(); // Discard every result of the cancelled generation.
-				reload_pending = false;
-				StartReload();
-				return;
-			}
-			{
-				std::lock_guard<std::mutex> lock(batch->mutex);
-				progress = batch->progress;
-			}
-			progress.loading = false;
-			progress.failed = batch->errors.size();
-			// Delete old features before publishing replacements with the same names.
-			if (batch->target) {
-				scripts.erase(std::remove_if(scripts.begin(), scripts.end(), [&](std::unique_ptr<Script> const& script) {
-					return script->GetFilename() == *batch->target;
-				}), scripts.end());
-			}
-			else scripts.clear();
-			for (auto& script : batch->scripts) {
-				bool loaded = script->GetLoadedState();
-				script->Publish();
-				if (loaded && !script->GetLoadedState()) batch->errors.push_back(script->GetFilename().string() + ": " + script->GetDescription());
-				scripts.push_back(std::move(script));
-			}
-			errors = batch->errors;
-			progress.failed = errors.size();
-			for (auto const& error : errors) LOG_E("automation/autoload") << error;
-			LOG_I("startup/automation") << progress.completed << " / " << progress.total
-				<< ", failures: " << progress.failed << ", "
-				<< std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - batch->started).count() << " ms";
+	void AutoloadScriptManager::OnUiProbe(wxTimerEvent&) {
+		auto now = std::chrono::steady_clock::now();
+		longest_ui_gap = std::max(longest_ui_gap,
+			std::chrono::duration<double, std::milli>(now - last_ui_probe).count());
+		last_ui_probe = now;
+	}
+
+	void AutoloadScriptManager::OnTimer(wxTimerEvent&) { PollLoad(); }
+
+	void AutoloadScriptManager::PollLoad() {
+		if (!batch || polling) return;
+		polling = true;
+		BOOST_SCOPE_EXIT_ALL(&) { polling = false; };
+		bool done = batch->done;
+		if (done && reload_pending) {
 			batch.reset();
-			ScriptsChanged();
-			ProgressChanged(progress);
+			reload_pending = false;
+			StartReload();
 			return;
 		}
+
 		AutoloadProgress next;
+		bool busy = script_execution_count != 0;
+		bool publish = false;
+		bool prune = false;
+		std::vector<std::unique_ptr<Script>> loaded;
+		std::chrono::steady_clock::time_point phase_started;
+		auto start = std::chrono::steady_clock::now();
 		{
 			std::lock_guard<std::mutex> lock(batch->mutex);
 			next = batch->progress;
+			for (auto const& entry : batch->active)
+				next.filename += (next.filename.empty() ? "" : "\n") + entry.second;
+			publish = !reload_pending && !busy && batch->phase_ready;
+			if (publish) {
+				phase_started = batch->phase_started;
+				prune = batch->final_phase && !batch->target;
+				for (auto index : batch->ready) loaded.push_back(std::move(batch->results[index].script));
+			}
+			else if (busy && (batch->phase_ready || done)) {
+				next.filename = from_wx(_("Waiting for running Automation or export dialog"));
+				if (progress.filename != next.filename)
+					LOG_I("startup/automation/wait") << "publication deferred until Automation/export completes";
+			}
+			else if (done && !reload_pending && !batch->target)
+				prune = true;
 		}
-		if (next.completed != progress.completed || next.total != progress.total || next.filename != progress.filename) {
+
+		bool scripts_changed = !loaded.empty();
+		if (publish || prune) {
+			std::set<agi::fs::path> replaced;
+			for (auto const& script : loaded) replaced.insert(script->GetFilename());
+			auto existing = scripts.size();
+			scripts.erase(std::remove_if(scripts.begin(), scripts.end(), [&](std::unique_ptr<Script> const& script) {
+				auto const& filename = script->GetFilename();
+				return replaced.count(filename) || (prune && !batch->scanned_files.count(filename));
+			}), scripts.end());
+			scripts_changed |= scripts.size() != existing;
+		}
+		bool first = false;
+		for (auto& script : loaded) {
+			bool ok = script->GetLoadedState();
+			script->Publish();
+			if (ok && !script->GetLoadedState()) {
+				std::lock_guard<std::mutex> lock(batch->mutex);
+				batch->errors.push_back(script->GetFilename().string() + ": " + script->GetDescription());
+				++batch->progress.failed;
+				++next.failed;
+			}
+			if (!batch->first_macro && !script->GetMacros().empty()) {
+				batch->first_macro = true;
+				first = true;
+			}
+			scripts.push_back(std::move(script));
+		}
+		if (scripts_changed) {
+			auto registered = std::chrono::steady_clock::now();
+			ScriptsChanged();
+			auto notified = std::chrono::steady_clock::now();
+			auto ms = [](auto elapsed) { return std::chrono::duration<double, std::milli>(elapsed).count(); };
+			LOG_I("startup/automation/publication") << loaded.size() << " scripts; registration_ms="
+				<< ms(registered - start) << "; notifications_ms=" << ms(notified - registered);
+			if (first) LOG_I("startup/automation/first_macro") << ms(notified - batch->started) << " ms";
+			if (publish) {
+				auto phase = next.phase == AutoloadPhase::Bundled ? "bundled"
+					: next.phase == AutoloadPhase::External ? "external"
+					: next.phase == AutoloadPhase::DependencyControl ? "dependency_control" : "single";
+				LOG_I("startup/automation/phase") << phase << "; scripts=" << loaded.size()
+					<< "; elapsed_ms=" << ms(notified - phase_started);
+			}
+		}
+
+		if (done && !busy && !reload_pending) {
+			timer.Stop();
+			if (ui_probe.IsRunning()) {
+				wxTimerEvent event(ui_probe);
+				OnUiProbe(event);
+				ui_probe.Stop();
+				LOG_I("startup/automation/ui_gap") << longest_ui_gap;
+			}
+			errors = batch->errors;
+			next.loading = false;
+			next.failed = errors.size();
+			for (auto const& error : errors) LOG_E("automation/autoload") << error;
+			LOG_I("startup/automation") << next.completed << " / " << next.total << ", failures: " << next.failed << ", "
+				<< std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - batch->started).count() << " ms";
+			batch.reset();
+		}
+		if (next.completed != progress.completed || next.total != progress.total || next.failed != progress.failed
+			|| next.filename != progress.filename || next.loading != progress.loading || next.phase != progress.phase
+			|| next.phase_completed != progress.phase_completed || next.phase_total != progress.phase_total) {
 			progress = std::move(next);
 			ProgressChanged(progress);
+		}
+		if (publish && batch) {
+			std::lock_guard<std::mutex> lock(batch->mutex);
+			batch->phase_ready = false; // Next phase starts after publication on the main thread.
+			batch->changed.notify_all();
 		}
 	}
 

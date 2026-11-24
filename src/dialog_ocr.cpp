@@ -805,7 +805,7 @@ void DialogOCR::Impl::OnComplete(ValueEvent<OCRThreadResult>& event) {
 	}
 
 	if (result.text.empty())
-		status->SetLabelText(to_wx(result.diagnostic.empty() ? "No text found." : result.diagnostic));
+		status->SetLabelText(result.diagnostic.empty() ? _("No text found.") : to_wx(result.diagnostic));
 	else
 		status->SetLabelText(fmt_tl("Recognized %d line(s).", static_cast<int>(result.lines.size())));
 

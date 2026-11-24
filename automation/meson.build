@@ -3,15 +3,23 @@ subdir('vapoursynth')
 
 automation_dir = dataroot / 'automation'
 
-install_data(
-    'autoload/cleantags-autoload.lua',
-    'autoload/karaoke-auto-leadin.lua',
-    'autoload/kara-templater.lua',
-    'autoload/macro-1-edgeblur.lua',
-    'autoload/macro-2-mkfullwitdh.lua',
-    'autoload/select-overlaps.moon',
-    'autoload/strip-tags.lua',
-    install_dir: automation_dir / 'autoload')
+bundled_autoload_names = [
+    'cleantags-autoload.lua',
+    'karaoke-auto-leadin.lua',
+    'kara-templater.lua',
+    'macro-1-edgeblur.lua',
+    'macro-2-mkfullwitdh.lua',
+    'select-overlaps.moon',
+    'strip-tags.lua',
+]
+bundled_autoload_files = []
+foreach name : bundled_autoload_names
+    bundled_autoload_files += 'autoload' / name
+endforeach
+install_data(bundled_autoload_files, install_dir: automation_dir / 'autoload')
+bundled_autoload_conf = configuration_data()
+bundled_autoload_conf.set('BUNDLED_AUTOLOAD_NAMES', '"' + '", "'.join(bundled_autoload_names) + '"')
+configure_file(output: 'bundled_automation.h', configuration: bundled_autoload_conf)
 
 install_data(
     'demos/future-windy-blur.lua',

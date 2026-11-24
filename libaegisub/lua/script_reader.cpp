@@ -23,9 +23,17 @@
 
 #include <boost/algorithm/string/replace.hpp>
 #include <lauxlib.h>
+#include <chrono>
 
 namespace agi { namespace lua {
+	namespace { thread_local LoadTimings *load_timings = nullptr; }
+	LoadTimings *SetLoadTimings(LoadTimings *timings) {
+		auto previous = load_timings;
+		load_timings = timings;
+		return previous;
+	}
 	bool LoadFile(lua_State *L, agi::fs::path const& raw_filename) {
+		auto start = std::chrono::steady_clock::now();
 		auto filename = raw_filename;
 		try {
 			filename = agi::fs::Canonicalize(raw_filename);
@@ -37,6 +45,12 @@ namespace agi { namespace lua {
 		agi::read_file_mapping file(filename);
 		auto buff = file.read();
 		size_t size = static_cast<size_t>(file.size());
+		auto parsed = std::chrono::steady_clock::now();
+		if (load_timings) load_timings->read_ms += std::chrono::duration<double, std::milli>(parsed - start).count();
+		struct ParseTimer {
+			std::chrono::steady_clock::time_point start;
+			~ParseTimer() { if (load_timings) load_timings->parse_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(); }
+		} parse_timer{parsed};
 
 		// Discard the BOM if present
 		if (size >= 3 && buff[0] == -17 && buff[1] == -69 && buff[2] == -65) {
@@ -119,7 +133,8 @@ namespace agi { namespace lua {
 		return lua_gettop(L) - pretop;
 	}
 
-	bool Install(lua_State *L, std::vector<fs::path> const& include_path) {
+	bool Install(lua_State *L, std::vector<fs::path> const& include_path,
+		int (*first_searcher)(lua_State *)) {
 		// set the module load path to include_path
 		lua_getglobal(L, "package");
 		push_value(L, "path");
@@ -144,6 +159,11 @@ namespace agi { namespace lua {
 		lua_getfield(L, -1, "loaders");
 		push_value(L, exception_wrapper<module_loader>);
 		lua_rawseti(L, -2, 2);
+		if (first_searcher) {
+			lua_rawgeti(L, -1, 1);
+			lua_pushcclosure(L, first_searcher, 1);
+			lua_rawseti(L, -2, 1);
+		}
 		lua_pop(L, 2); // loaders, package
 
 #ifdef _WIN32

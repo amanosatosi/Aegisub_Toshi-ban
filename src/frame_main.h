@@ -39,7 +39,7 @@ class VideoBox;
 class wxWindow;
 class wxGauge;
 class wxStaticText;
-class wxHyperlinkCtrl;
+class wxStaticBitmap;
 namespace Automation4 { struct AutoloadProgress; }
 namespace agi { class AudioProvider; }
 namespace agi { struct Context; class OptionValue; }
@@ -64,10 +64,13 @@ class FrameMain : public wxFrame {
 	agi::signal::Connection automation_progress_connection;
 	wxWindow *automation_panel = nullptr;
 	wxStaticText *automation_title = nullptr;
-	wxStaticText *automation_file = nullptr;
+	wxStaticBitmap *automation_icon = nullptr;
+	int automation_status_width = 0;
+	void InitAutomationProgress();
+	void ScaleAutomationProgress();
+	void PositionAutomationProgress();
 	wxStaticText *automation_count = nullptr;
 	wxGauge *automation_gauge = nullptr;
-	wxHyperlinkCtrl *automation_warning = nullptr;
 	void UpdateAutomationProgress(Automation4::AutoloadProgress const& progress);
 	wxWindow *alignmentPicker = nullptr;
 	wxWindow *mainPanel = nullptr;

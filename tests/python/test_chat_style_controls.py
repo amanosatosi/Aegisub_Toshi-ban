@@ -9,10 +9,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 class ChatStyleControls(unittest.TestCase):
     def test_toolbar_position_keeps_the_existing_spacer_and_commit_button(self):
         source = (ROOT / "src/subs_edit_box.cpp").read_text(encoding="utf-8-sig")
-        calls = re.findall(r'MakeButton\("([^"]+)"\)', source)
-        index = calls.index("edit/color/gradient")
-        self.assertEqual(["edit/color/gradient", "edit/chat/style", "grid/line/next/create"], calls[index:index + 3])
-        region = source.split('MakeButton("edit/chat/style")', 1)[1].split('MakeButton("grid/line/next/create")', 1)[0]
+        calls = re.findall(r'MakeButton\("([^"]+)"(, true)?\)', source)
+        index = calls.index(("edit/color/gradient", ", true"))
+        self.assertEqual([("edit/color/gradient", ", true"), ("edit/chat/style", ", true"),
+                          ("grid/line/next/create", "")], calls[index:index + 3])
+        region = source.split('MakeButton("edit/chat/style", true)', 1)[1].split('MakeButton("grid/line/next/create")', 1)[0]
         self.assertIn("AddSpacer(5)", region)
         self.assertIn("wxEVT_UPDATE_UI", region)
         self.assertIn("Validate(c)", region)

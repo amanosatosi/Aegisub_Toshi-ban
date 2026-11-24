@@ -222,7 +222,7 @@ bool AegisubApp::OnInit() {
 		config::opt->Remove("Video/Playback/Speed");
 	}
 	catch (agi::Exception const& err) {
-		wxMessageBox("Configuration file is invalid. Error reported:\n" + to_wx(err.GetMessage()), "Error");
+		wxMessageBox(_("Configuration file is invalid. Error reported:\n") + to_wx(err.GetMessage()), _("Error"));
 	}
 
 #ifdef _WIN32
@@ -316,11 +316,15 @@ bool AegisubApp::OnInit() {
 		// Open main frame
 		StartupLog("Create main window");
 		NewProjectContext();
-		// Start only after the event loop has had an opportunity to paint and
-		// service the frame. The manager constructor performs no file or Lua work.
+		// Observe application idle: MSW need not dispatch idle to each frame.
+		// Ignore nested initialization loops; this must be a genuine idle after
+		// OnInit, with a live editor. Minimized windows must still start autoload.
+		// No timer or posted callback emits timing.
 		Bind(wxEVT_IDLE, [this, pending = true](wxIdleEvent& event) mutable {
-			if (pending && !frames.empty()) {
+			if (pending && startup_initialized && !frames.empty()) {
 				pending = false;
+				LogStartupTiming("First responsive idle event");
+				// The manager constructor performs no file or Lua work.
 				config::global_scripts->Reload();
 				CallAfter([this] {
 					if (frames.empty() || config::opt->Has(MangetsuRendererOfferKey)) return;
@@ -353,7 +357,7 @@ bool AegisubApp::OnInit() {
 				config::opt->Flush();
 			}
 			catch (agi::fs::FileSystemError const& e) {
-				wxMessageBox(to_wx(e.GetMessage()), "Error saving config file", wxOK | wxICON_ERROR | wxCENTER);
+				wxMessageBox(to_wx(e.GetMessage()), _("Error saving config file"), wxOK | wxICON_ERROR | wxCENTER);
 			}
 #endif
 		}
@@ -369,16 +373,16 @@ bool AegisubApp::OnInit() {
 			OpenFiles(wxArrayStringsAdapter(args.size() - 1, &args[1]));
 	}
 	catch (agi::Exception const& e) {
-		wxMessageBox(to_wx(e.GetMessage()), "Fatal error while initializing");
+		wxMessageBox(to_wx(e.GetMessage()), _("Fatal error while initializing"));
 		return false;
 	}
 	catch (std::exception const& e) {
-		wxMessageBox(to_wx(e.what()), "Fatal error while initializing");
+		wxMessageBox(to_wx(e.what()), _("Fatal error while initializing"));
 		return false;
 	}
 #ifndef _DEBUG
 	catch (...) {
-		wxMessageBox("Unhandled exception","Fatal error while initializing");
+		wxMessageBox(_("Unhandled exception"),_("Fatal error while initializing"));
 		return false;
 	}
 #endif
@@ -388,6 +392,8 @@ bool AegisubApp::OnInit() {
 
 	StartupLog("Initialization complete");
 	LogStartupTiming("Application initialization");
+	startup_initialized = true;
+	wxWakeUpIdle(); // Request delivery once the native message queue becomes idle.
 	return true;
 }
 
@@ -505,7 +511,7 @@ void AegisubApp::UnhandledException(bool stackWalk) {
 		wxMessageBox(agi::wxformat(exception_message, path), _("Program error"), wxOK | wxICON_ERROR | wxCENTER, nullptr);
 	}
 	else if (LastStartupState) {
-		wxMessageBox(fmt_wx("Aegisub has crashed while starting up!\n\nThe last startup step attempted was: %s.", LastStartupState), _("Program error"), wxOK | wxICON_ERROR | wxCENTER);
+		wxMessageBox(fmt_tl("Aegisub has crashed while starting up!\n\nThe last startup step attempted was: %s.", LastStartupState), _("Program error"), wxOK | wxICON_ERROR | wxCENTER);
 	}
 #endif
 }
@@ -515,6 +521,7 @@ void AegisubApp::OnUnhandledException() {
 }
 
 void AegisubApp::OnFatalException() {
+	LOG_E("crash/fatal") << "Windows fatal exception handler entered";
 	UnhandledException(true);
 }
 
@@ -551,6 +558,7 @@ int AegisubApp::OnRun() {
 
 	// Report errors
 	if (!error.empty()) {
+		LOG_E("crash/unhandled") << error;
 		crash_writer::Write(error);
 		OnUnhandledException();
 	}

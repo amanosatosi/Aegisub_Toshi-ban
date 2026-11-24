@@ -46,11 +46,15 @@ class SubtitlesProvider {
 	virtual void LoadSubtitles(const char *data, size_t len)=0;
 	virtual void PrepareSubtitles(AssFile *, int) { }
 
+protected:
+	std::vector<int> rendered_line_ids;
+
 public:
 	virtual ~SubtitlesProvider() = default;
 	void LoadSubtitles(AssFile *subs, int time = -1);
 	virtual void DrawSubtitles(VideoFrame &dst, double time)=0;
 	virtual void Reinitialize() { }
+	virtual bool SupportsMangetsuStyleMetadata() const { return false; }
 };
 
 namespace agi { class BackgroundRunner; }

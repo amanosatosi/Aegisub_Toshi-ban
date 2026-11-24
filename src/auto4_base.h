@@ -43,6 +43,7 @@
 
 #include <boost/filesystem/path.hpp>
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -64,10 +65,15 @@ namespace Automation4 {
 		std::shared_ptr<agi::Path const> paths;
 		std::vector<agi::fs::path> include_paths;
 		std::atomic<bool> cancelled{false};
+		bool profile = false;
+		bool measure_ui = false;
 	};
 	std::shared_ptr<ScriptLoadContext> GetScriptLoadContext();
 	// A cancellable UI request, also usable by Lua's clipboard FFI callbacks.
 	bool ScriptLoadOnMain(std::function<void()> task);
+	double ScriptLoadSynchronizationMs();
+	// Called from Lua's module/include loaders before any DependencyControl code.
+	bool WaitForDependencyControl();
 	// Keep live Lua states and export-filter dialogs intact across nested event loops.
 	class ScriptExecutionGuard {
 	public:
@@ -245,10 +251,14 @@ namespace Automation4 {
 	};
 
 	/// Manager for scripts in the autoload directory
+	enum class AutoloadPhase { NoPhase, Bundled, External, DependencyControl, SingleScript };
 	struct AutoloadProgress {
 		size_t completed = 0;
 		size_t total = 0;
 		size_t failed = 0;
+		AutoloadPhase phase = AutoloadPhase::NoPhase;
+		size_t phase_completed = 0;
+		size_t phase_total = 0;
 		std::string filename;
 		bool loading = false;
 	};
@@ -258,13 +268,19 @@ namespace Automation4 {
 		struct Batch;
 		std::unique_ptr<Batch> batch;
 		wxTimer timer;
+		wxTimer ui_probe;
+		std::chrono::steady_clock::time_point last_ui_probe;
+		double longest_ui_gap = 0;
 		bool reload_pending = false;
+		bool polling = false;
 		std::optional<agi::fs::path> reload_target;
 		AutoloadProgress progress;
 		std::vector<std::string> errors;
 		agi::signal::Signal<AutoloadProgress const&> ProgressChanged;
 		void StartReload();
 		void OnTimer(wxTimerEvent&);
+		void PollLoad();
+		void OnUiProbe(wxTimerEvent&);
 	public:
 		AutoloadScriptManager(std::string path);
 		~AutoloadScriptManager();

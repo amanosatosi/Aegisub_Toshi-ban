@@ -77,6 +77,7 @@
     ],
     "main/subtitle" : [
         { "command" : "tool/style/manager" },
+        { "submenu" : "main/subtitle/mangetsu", "text" : "Mangetsu Extensions" },
         { "command" : "tool/style/assistant" },
         { "command" : "tool/translation_assistant" },
         { "command" : "tool/resampleres" },
@@ -102,6 +103,11 @@
         { "command" : "grid/swap" },
         { "command" : "tool/line/select" },
         { "command" : "subtitle/select/all" }
+    ],
+    "main/subtitle/mangetsu" : [
+        { "command" : "edit/mangetsu/alignment" },
+        { "command" : "edit/color/gradient" },
+        { "command" : "edit/chat/style" }
     ],
     "main/subtitle/insert lines" : [
         { "command" : "subtitle/insert/before" },
@@ -237,6 +243,7 @@
         { "command" : "grid/tags/show" },
         { "command" : "grid/tags/simplify" },
         { "command" : "grid/tags/hide" },
+        { "command" : "grid/mangetsu_metadata" },
         {},
         { "command" : "app/toggle/toolbar" }
     ],

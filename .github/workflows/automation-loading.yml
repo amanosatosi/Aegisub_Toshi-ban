@@ -1,0 +1,84 @@
+name: Automation loading measurements
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/auto4*'
+      - 'src/frame_main.*'
+      - 'src/menu.cpp'
+      - 'libaegisub/**/script_reader.*'
+      - 'tests/tests/automation_loading_profile.cpp'
+      - 'tests/tests/auto4_lua_init.cpp'
+      - 'tests/python/benchmark_automation_loading.py'
+      - 'tests/python/startup_smoke.py'
+      - '.github/workflows/automation-loading.yml'
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: Baseline commit (defaults to the instrumented pre-batch loader)
+        type: string
+  push:
+    branches: [codex/compact-automation-loading]
+    paths:
+      - 'src/auto4*'
+      - 'src/frame_main.*'
+      - 'src/menu.cpp'
+      - 'automation/meson.build'
+      - 'tests/python/benchmark_automation_loading.py'
+      - '.github/workflows/automation-loading.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.baseline || '275d645fbad541584caf3588292dd8e872eb3ad1' }}
+          fetch-depth: 0
+          path: baseline
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install benchmark dependencies
+        run: |
+          python -m pip install meson==1.7.2
+          sudo apt-get update
+          sudo apt-get install -y ninja-build build-essential libx11-dev libwxgtk3.0-gtk3-dev libfreetype6-dev pkg-config libfontconfig1-dev libass-dev libasound2-dev libffms2-dev intltool libboost-all-dev libhunspell-dev libuchardet-dev libpulse-dev libopenal-dev libxxhash-dev nasm libsoundtouch-dev libcurl4-openssl-dev fonts-dejavu-core xvfb xdotool scrot
+      - name: Build identical release configurations
+        run: |
+          prefix="$RUNNER_TEMP/aegisub-benchmark"
+          mkdir -p "$prefix/share/aegisub/automation"
+          cp -R automation/autoload "$prefix/share/aegisub/automation/"
+          if [ -d baseline ]; then
+            meson setup baseline/build baseline --prefix "$prefix" -Dbuildtype=release -Dopencv=disabled
+            meson compile -C baseline/build aegisub:executable
+          fi
+          meson setup build --prefix "$prefix" -Dbuildtype=release -Dopencv=disabled
+          meson compile -C build aegisub:executable gtest-main
+      - name: Preserve Lua cancellation and JIT preferences; measure finite JIT controls
+        env:
+          AEGISUB_LOAD_BENCH: '1'
+        run: |
+          mkdir -p build/automation-benchmark
+          meson test -C build --no-rebuild --verbose 'gtest main' --test-args=--gtest_filter=AutomationInitialization.*:AutomationLoadingProfile.* | tee build/automation-benchmark/jit.txt
+      - name: Measure phase availability and UI responsiveness
+        run: |
+          baseline=()
+          if [ -d baseline ]; then baseline=(--baseline baseline/build/aegisub); fi
+          xvfb-run -a python tests/python/benchmark_automation_loading.py "${baseline[@]}" --candidate build/aegisub --bundled-dir "$RUNNER_TEMP/aegisub-benchmark/share/aegisub/automation/autoload" --output build/automation-benchmark
+      - name: Retain measurements and phase profiles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-loading-measurements
+          path: build/automation-benchmark

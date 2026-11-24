@@ -8,6 +8,7 @@
 
 #include "ass_dialogue.h"
 #include "mangetsu_distort.h"
+#include "mangetsu_perspective.h"
 #include "perspective_geometry.h"
 
 namespace {
@@ -25,6 +26,41 @@ void ExpectPoint(Vector2D actual, double x, double y) {
 std::vector<Vector2D> BaseQuad() {
 	return {Vector2D(100, 50), Vector2D(300, 50), Vector2D(300, 150), Vector2D(100, 150)};
 }
+}
+
+TEST(MangetsuPerspective, WritesRelativePinsAndKeepsLegacyDistortion) {
+	auto line = MakeLine("{\\distort(1,0,1,1,0,1)\\frx15}日本語");
+	MangetsuPerspectivePins pins{{{0.125f, 0}, {1, 0}, {0.75f, 1}, {0, 1}}};
+	ASSERT_TRUE(SetMangetsuPerspective(line, pins));
+	EXPECT_EQ("{\\mpersp(0.1250000,0.0000000,1.0000000,0.0000000,0.7500000,1.0000000,0.0000000,1.0000000)}"
+	          "{\\distort(1,0,1,1,0,1)\\frx15}日本語", line.Text.get());
+
+	pins[0] = Vector2D(0.25f, 0);
+	ASSERT_TRUE(SetMangetsuPerspective(line, pins));
+	EXPECT_EQ("{\\mpersp(0.2500000,0.0000000,1.0000000,0.0000000,0.7500000,1.0000000,0.0000000,1.0000000)}"
+	          "{\\distort(1,0,1,1,0,1)\\frx15}日本語", line.Text.get());
+}
+
+TEST(MangetsuPerspective, EditsEffectiveInlineTagAndPreservesOtherText) {
+	auto line = MakeLine("{\\mpersp()}A{\\fs55\\mpersp(0,0,1,0,1,1,0,1)\\bord3}B");
+	MangetsuPerspectivePins pins{{{0, 0}, {1, 0}, {0.75f, 1}, {0, 1}}};
+	ASSERT_TRUE(SetMangetsuPerspective(line, pins));
+	EXPECT_EQ("{\\mpersp()}A{\\fs55\\mpersp(0.0000000,0.0000000,1.0000000,0.0000000,0.7500000,1.0000000,0.0000000,1.0000000)\\bord3}B",
+	          line.Text.get());
+}
+
+TEST(MangetsuPerspective, RejectsInvalidDragsAndKeepsAnimatedTags) {
+	auto animated = MakeLine("{\\t(0,1000,\\mpersp(0,0,1,0,0.75,1,0,1))}Text");
+	auto original = animated.Text.get();
+	MangetsuPerspectivePins pins{{{0, 0}, {1, 0}, {0.75f, 1}, {0, 1}}};
+	EXPECT_TRUE(HasAnimatedMangetsuPerspective(animated));
+	EXPECT_FALSE(SetMangetsuPerspective(animated, pins));
+	EXPECT_EQ(original, animated.Text.get());
+
+	auto line = MakeLine("Text");
+	pins[2] = Vector2D(-0.5f, -0.5f);
+	EXPECT_FALSE(SetMangetsuPerspective(line, pins));
+	EXPECT_EQ("Text", line.Text.get());
 }
 
 TEST(MangetsuDistort, IdentityProducesUndistortedRectangle) {

@@ -142,7 +142,18 @@ namespace {
 					wxITEM_NORMAL;
 
 				wxBitmap const& bitmap = command->Icon(icon_size, retina_helper.GetScaleFactor(), GetLayoutDirection());
-				AddTool(TOOL_ID_BASE + commands.size(), command->StrDisplay(context), bitmap, command->GetTooltip(ht_context), kind);
+				wxString label = command->StrDisplay(context);
+				// Compact labels are optional; retain the existing dynamic label
+				// for catalogs which do not provide a toolbar-specific translation.
+				if (command_name == "edit/undo") {
+					auto compact = _("Undo (toolbar label)");
+					if (compact != "Undo (toolbar label)") label = compact;
+				}
+				else if (command_name == "edit/redo") {
+					auto compact = _("Redo (toolbar label)");
+					if (compact != "Redo (toolbar label)") label = compact;
+				}
+				AddTool(TOOL_ID_BASE + commands.size(), label, bitmap, command->GetTooltip(ht_context), kind);
 
 				commands.push_back(command);
 				needs_onidle = needs_onidle || flags != cmd::COMMAND_NORMAL;

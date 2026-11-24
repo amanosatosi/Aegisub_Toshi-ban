@@ -207,13 +207,22 @@ if (!(Test-Path VSFilter)) {
 ### VapourSynth plugins
 
 # L-SMASH-Works
-if (!(Test-Path L-SMASH-Works)) {
-	New-Item -ItemType Directory L-SMASH-Works
-	$lsmasReleases = Invoke-WebRequest "https://api.github.com/repos/AkarinVS/L-SMASH-Works/releases/latest" -Headers $GitHeaders -UseBasicParsing | ConvertFrom-Json
-	$lsmasUrl = "https://github.com/AkarinVS/L-SMASH-Works/releases/download/" + $lsmasReleases.tag_name + "/release-x86_64-cachedir-cwd.zip"
-	Invoke-WebRequestWithRetry -Uri $lsmasUrl -OutFile release-x86_64-cachedir-cwd.zip
-	Expand-Archive -LiteralPath release-x86_64-cachedir-cwd.zip -DestinationPath L-SMASH-Works
-	Remove-Item release-x86_64-cachedir-cwd.zip
+$lsmashDir = Join-Path $DepsDir "L-SMASH-Works"
+$lsmashDll = Join-Path $lsmashDir "libvslsmashsource.dll"
+if (!(Test-Path -LiteralPath $lsmashDll -PathType Leaf)) {
+	$lsmashArchiveName = "release-x86_64-cachedir-cwd.zip"
+	$lsmashArchive = Join-Path $DepsDir $lsmashArchiveName
+	$lsmashRelease = Invoke-WebRequest "https://api.github.com/repos/AkarinVS/L-SMASH-Works/releases/latest" -Headers $GitHeaders -UseBasicParsing -ErrorAction Stop | ConvertFrom-Json
+	$lsmashAsset = $lsmashRelease.assets | Where-Object { $_.name -eq $lsmashArchiveName } | Select-Object -First 1
+	if (!$lsmashAsset) {
+		throw "L-SMASH-Works $($lsmashRelease.tag_name) has no $lsmashArchiveName asset."
+	}
+	Invoke-WebRequestWithRetry -Uri $lsmashAsset.browser_download_url -OutFile $lsmashArchive
+	7z x $lsmashArchive "-o$lsmashDir" -y
+	if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $lsmashDll -PathType Leaf)) {
+		throw "Could not stage libvslsmashsource.dll from $lsmashArchiveName."
+	}
+	Remove-Item -LiteralPath $lsmashArchive
 }
 
 # BestSource
@@ -267,11 +276,34 @@ if (!(Test-Path VC_redist)) {
 }
 
 # XAudio2 redistributable
-if (!(Test-Path XAudio2_redist)) {
-	New-Item -ItemType Directory XAudio2_redist
-	Invoke-WebRequestWithRetry -Uri "https://www.nuget.org/api/v2/package/Microsoft.XAudio2.Redist/1.2.11" -OutFile XAudio2Redist.zip
-	Expand-Archive -LiteralPath XAudio2Redist.zip -DestinationPath XAudio2_redist
-	Remove-Item XAudio2Redist.zip
+$XAudioRoot = Join-Path $ResolvedDepsDir "XAudio2_redist"
+$XAudioDll = Join-Path $XAudioRoot "build\native\release\bin\x64\xaudio2_9redist.dll"
+$XAudioArchive = Join-Path $ResolvedDepsDir "XAudio2Redist.zip"
+if (!(Test-Path -LiteralPath $XAudioDll -PathType Leaf)) {
+	# A previous, incomplete extraction may have created the directory.
+	if (Test-Path -LiteralPath $XAudioRoot) {
+		$ExistingRoot = Get-Item -LiteralPath $XAudioRoot -Force -ErrorAction Stop
+		if ($ExistingRoot.FullName -ne $XAudioRoot -or ($ExistingRoot.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+			throw "Unexpected XAudio2 staging path: $XAudioRoot"
+		}
+		Remove-Item -LiteralPath $XAudioRoot -Recurse -Force
+	}
+	New-Item -ItemType Directory -Path $XAudioRoot -Force | Out-Null
+	try {
+		Invoke-WebRequestWithRetry -Uri "https://www.nuget.org/api/v2/package/Microsoft.XAudio2.Redist/1.2.11" -OutFile $XAudioArchive
+		& 7z x $XAudioArchive "-o$XAudioRoot" -y | Out-Null
+		if ($LASTEXITCODE -ne 0) {
+			throw "XAudio2 extraction failed with exit code $LASTEXITCODE"
+		}
+		if (!(Test-Path -LiteralPath $XAudioDll -PathType Leaf)) {
+			$Found = @(Get-ChildItem -LiteralPath $XAudioRoot -Recurse -File -Filter "xaudio2_9redist.dll" |
+				Select-Object -ExpandProperty FullName)
+			throw "XAudio2 package extraction did not produce $XAudioDll. Other matching files: $($Found -join ', ')"
+		}
+	}
+	finally {
+		Remove-Item -LiteralPath $XAudioArchive -Force -ErrorAction SilentlyContinue
+	}
 }
 
 # dictionaries

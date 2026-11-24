@@ -1,0 +1,102 @@
+# Editing Mangetsu style defaults
+
+Choose **Mangetsu** under Preferences → Advanced → Video → Subtitles provider.
+The View menu then offers **Show Mangetsu Metadata**, independent of tag display
+mode. It is off by default. Only recognized comments in the initial, contiguous
+metadata block are hidden. Actor Colorcoding declarations, ordinary comments,
+and late comments remain visible. Changing this preference changes the grid and
+selection, never the ASS document.
+Hidden declarations are excluded from ordinary Find/Replace and adjoining timing
+operations. Sorting keeps the initial metadata header in its authored order.
+
+The Style Editor groups **Furigana**, **Vertical**, **Multi-border**,
+**Text alignment**, **Extended boxes**, and **Gradient defaults** below Margins
+and Alignment. **Wrap Mode** sits beneath the buttons at the left of the
+bottom row, opposite OK, Cancel, Apply, and Help. On
+Windows, yellow identifies an extension button. The standard Style Editor
+actions use the system palette. Windows contrast themes and other platforms
+use system controls. Extensions can be authored with any renderer. Select
+Mangetsu to see the extended output in the preview.
+
+The text alignment picker uses the ASS numpad arrangement and can inherit
+the ordinary style alignment. The box editor supports asymmetric padding,
+and the gradient editor edits attached color and alpha gradients for the
+selected style.
+The property dialogs are independently resizable. Edit the displayed
+values directly to set them for this style. **Reset** restores the inherited
+value. With linked reading scales or border sizes, editing or resetting X
+applies to both axes. Native
+border layers 1–10 are independent; a color alone never enables a layer.
+
+Child OK only updates the parent's pending state. Parent Apply/OK commits
+ordinary style fields and metadata together, in one undo step. Parent Cancel
+discards unapplied changes, including accepted child edits. Wrap Mode affects
+the selected style's initial event layout; it never changes Script Info WrapStyle
+or inline dialogue overrides. The preview renders pending metadata, without the
+ordinary preview's forced q2 override. A missing/outdated renderer displays an
+error instead of presenting fallback output as a Mangetsu preview.
+
+On load and after edits, the initial metadata block is stably ordered with
+Mangetsu Style declarations first, followed by Actor Colorcoding declarations.
+Their order within each type remains intact, and Actor Colorcoding retains its
+renderer priority regardless of physical order. Importing styles from another
+ASS file copies declarations for the selected styles when present, and imports
+all Actor Colorcoding declarations, including its applied-styles whitelist.
+Comments and dialogue containing a standalone `{uketsugu}` marker in Effect
+are inherited in source order after the metadata and before ordinary events.
+Their referenced source styles go through the same style conflict prompts.
+The import preserves repeated events, and importing again adds another batch.
+External Style Manager catalogs store ordinary ASS fields only.
+
+Metadata declarations retain source order within each type. Supported scalar assignments are
+edited structurally; axis aliases are split only when one axis changes. Unknown
+and malformed text, transforms, image tags, and manual gradients are retained.
+Gradient first-valid-source precedence is not rewritten. Actor Colorcoding
+declarations remain independent. An initial metadata comment can have braced
+annotations before or after its bare Effect identifier, for example
+`{uketsugu}mangetsu-style{note}`. Saving keeps the full Effect. Preview and
+playback pass the bare identifier to Mangetsu, whose parser expects it.
+The built-in Fix Styles and Transform Framerate export filters leave this
+initial header intact; subtitle preparation only reads attachments. ASS saving
+and exporting serialize a style-first view of the initial metadata block.
+
+**Subtitle → Mangetsu Extensions** also opens the dialogue alignment, gradient,
+and chat editors. Dialogue alignment edits the logical line at the caret or the
+start of the selection. The gradient editor's initial slide width writes
+the event's global \grds setting. Per-target widths and the contents of existing
+transforms stay intact.
+
+Current-script New, Copy, Rename and Delete manage associated style declarations.
+External Style Manager catalogs store ordinary ASS fields only: extended editors
+are disabled there, with an explanation. Copying an extended style into a catalog
+asks before copying its ordinary fields. Catalog/clipboard Style records cannot
+transport these event comments; use the ASS document to retain extended data.
+There is no gradient/image GUI. Manual gradient sources can take precedence over
+the solid color fallback edited by Multi-border.
+
+The definitions follow Mangetsu revision
+[`014ed134c36b45f5ce2d4173964f02a221f0ad3b`](https://github.com/amanosatosi/libassmod/commit/014ed134c36b45f5ce2d4173964f02a221f0ad3b).
+Native blur is capped at 100 and edge blur rounds/clamps to 0–127. Existing relative
+operands are resolved for display and retained verbatim unless that field changes.
+
+## Verification
+
+Native tests cover target resolution, initial-block boundaries, all ten border
+layers, effective defaults, numeric validation, relative operands, property
+resets, copy/rename/delete, malformed/unknown text and ASS round trips. Existing
+real-backend tests compare inherited furigana, borders and vertical output with
+inline equivalents in RGBA and legacy image paths.
+
+Packaged Windows CI exercises the real wxWidgets UI through public Win32 controls
+and an ordinary Automation macro. It checks metadata selection safety, the single
+button row, child and parent Cancel, Apply, undo/redo, style operations, saving,
+and switching to libass. Dialog PNGs and the result marker are uploaded alongside
+startup diagnostics. Stable wx uses light mode; wx master uses dark mode.
+
+Manual follow-up: inspect both screenshot sets, exercise keyboard/tab navigation,
+and test 125–200% Windows display scaling, nested folds around initial metadata,
+very long localized labels, malformed hand-authored declarations and Burmese/
+Japanese font fallback with representative installed fonts. These checks are
+not substitutes for native and GUI test results.
+Also export ASS with Transform Framerate enabled and confirm the initial
+metadata comments remain byte-identical while ordinary event timings change.

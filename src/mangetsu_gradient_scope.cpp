@@ -1,4 +1,5 @@
 #include "mangetsu_gradient_scope.h"
+#include "ass_tag_edit.h"
 
 #include <algorithm>
 #include <cctype>
@@ -155,6 +156,142 @@ std::vector<int> FindOutlineLayers(std::string const& text) {
 		if (numbered_border(tag.name, layer)) layers.insert(layer);
 	}
 	return {layers.begin(), layers.end()};
+}
+
+bool IsStyleGradientTag(std::string const& name, GradientTarget target) {
+	if (target.kind == GradientTargetKind::Primary && !target.alpha && name == "\\grd") return true;
+	return name != "\\pgrd" && name != "\\1pgrd" && gradient_name(name, target);
+}
+
+std::string GradientSlideWidth(std::string const& text) {
+	std::string value;
+	size_t end = 0;
+	for (auto block : blocks(text)) {
+		if (block.open != end) break;
+		end = block.close + 1;
+	}
+	for (auto const& tag : tags(text.substr(0, end))) {
+		if (tag.name == "\\grds") value = tag.value;
+		if (tag.name == "\\grdsoff" && tag.value.empty()) value = "off";
+	}
+	return value;
+}
+
+std::string SetGradientSlideWidth(std::string text, std::string const& value, GradientScope *scope) {
+	size_t end = 0;
+	for (auto block : blocks(text)) {
+		if (block.open != end) break;
+		end = block.close + 1;
+	}
+	auto edit = [&](size_t first, size_t last, std::string const& replacement) {
+		text.replace(first, last - first, replacement);
+		if (!scope) return;
+		auto map = [&](size_t pos) {
+			return agi::ass::MoveTextPositionAfterEdit(static_cast<int>(pos), static_cast<int>(first),
+				static_cast<int>(last), static_cast<int>(replacement.size()));
+		};
+		scope->start = map(scope->start);
+		scope->end = map(scope->end);
+	};
+	auto all = tags(text.substr(0, end));
+	for (auto it = all.rbegin(); it != all.rend(); ++it) {
+		if (it->name == "\\grds" || (it->name == "\\grdsoff" && it->value.empty()))
+			edit(it->start, it->end, "");
+	}
+	if (value.empty()) return text;
+	auto tag = "\\grds" + value;
+	if (end) edit(1, 1, tag);
+	else edit(0, 0, "{" + tag + "}");
+	return text;
+}
+
+namespace {
+Block LogicalLine(std::string const& text, size_t caret) {
+	Block line{0, text.size()};
+	auto overrides = blocks(text);
+	auto block = overrides.begin();
+	for (size_t pos = 0; pos + 1 < text.size(); ++pos) {
+		if (block != overrides.end() && pos == block->open) {
+			pos = block->close;
+			++block;
+			continue;
+		}
+		if (text.compare(pos, 2, "\\N") != 0) continue;
+		if (caret < pos + 2) { line.close = pos; break; }
+		line.open = ++pos + 1;
+	}
+	return line;
+}
+
+int TagAlignment(GradientTag const& tag) {
+	if (tag.name != "\\ta") return 0;
+	auto start = tag.value.find_first_not_of(" \t");
+	if (start == std::string::npos || tag.value.find_last_not_of(" \t") != start) return 0;
+	char value = tag.value[start];
+	return value >= '1' && value <= '9' ? value - '0' : 0;
+}
+}
+
+int InlineAlignment(std::string const& text, size_t caret) {
+	auto line = LogicalLine(text, caret);
+	for (auto const& tag : tags(text))
+		if (tag.start >= line.open && tag.start < line.close)
+			if (int value = TagAlignment(tag)) return value;
+	return 0;
+}
+
+int InheritedInlineAlignment(std::string const& text, size_t caret, int fallback) {
+	auto line = LogicalLine(text, caret);
+	for (auto const& tag : tags(text)) {
+		if (tag.start >= line.open) break;
+		if (int value = TagAlignment(tag)) fallback = value;
+	}
+	return fallback;
+}
+
+std::string SetInlineAlignment(std::string const& text, size_t caret, int value, int& selection_start, int& selection_end) {
+	if (value < 0 || value > 9 || InlineAlignment(text, caret) == value) return text;
+	auto line = LogicalLine(text, caret);
+	std::vector<GradientTag> existing;
+	for (auto const& tag : tags(text))
+		if (tag.start >= line.open && tag.start < line.close && TagAlignment(tag)) existing.push_back(tag);
+	std::string result = text;
+	auto edit = [&](size_t start, size_t end, std::string const& replacement) {
+		result.replace(start, end - start, replacement);
+		selection_start = agi::ass::MoveTextPositionAfterEdit(selection_start,
+			static_cast<int>(start), static_cast<int>(end), static_cast<int>(replacement.size()));
+		selection_end = agi::ass::MoveTextPositionAfterEdit(selection_end,
+			static_cast<int>(start), static_cast<int>(end), static_cast<int>(replacement.size()));
+	};
+	if (!existing.empty()) {
+		// A later tag can supply the next logical line's inherited alignment.
+		// Replace only the first on set. Inherit clears all explicit tags on
+		// the chosen logical line, leaving the earlier inherited value active.
+		if (value) edit(existing.front().start, existing.front().end, "\\ta" + std::to_string(value));
+		else for (auto it = existing.rbegin(); it != existing.rend(); ++it) {
+			size_t first = it->start, last = it->end;
+			if (first > 0 && result[first - 1] == '{' && last < result.size() && result[last] == '}') {
+				--first;
+				++last;
+			}
+			edit(first, last, "");
+		}
+	} else if (value) {
+		auto tag = "\\ta" + std::to_string(value);
+		if (line.open < result.size() && result[line.open] == '{' &&
+			result.find('}', line.open + 1) != std::string::npos)
+			edit(line.open + 1, line.open + 1, tag);
+		else edit(line.open, line.open, "{" + tag + "}");
+	}
+	return result;
+}
+
+std::vector<GradientTag> FindStyleGradients(std::string const& text, GradientTarget target) {
+	std::vector<GradientTag> matches;
+	for (auto& tag : tags(text))
+		if (IsStyleGradientTag(tag.name, target) && tag.value.size() > 2 && tag.value.front() == '(' && tag.value.back() == ')')
+			matches.push_back(std::move(tag));
+	return matches;
 }
 
 GradientTag FindEffectiveGradient(std::string const& text, GradientScope scope, GradientTarget target) {
