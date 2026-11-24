@@ -210,6 +210,12 @@ aegisub.register_macro 'Smoke Moon', '', ->
             (autoload / "c.lua").write_text("aegisub.register_macro('Must not publish', '', function() end); error('expected invalid script')", encoding="utf-8")
             (autoload / "ignored.txt").write_text("error('unsupported extension')", encoding="utf-8")
         elif scenario == "cancel":
+            (autoload / "000-parked.lua").write_text("""
+local f = assert(io.open(os.getenv('AEGISUB_STARTUP_SMOKE_DIR') .. '/waiting-for-dependency', 'w'))
+f:close()
+package.preload['l0.DependencyControl'] = function() error('cancel fixture reached DependencyControl') end
+require('l0.DependencyControl')
+""", encoding="utf-8")
             for index in range(4):
                 (autoload / f"infinite-{index}.lua").write_text("while true do end", encoding="utf-8")
         elif scenario == "conflicts":
@@ -328,7 +334,8 @@ aegisub.register_filter('Duplicate filter', 'staged export filter', 100, functio
                 invoke(frame, "Duplicate")
                 wait(lambda: (profile / "winner").read_text() == "newest", "newest generation replaces old macros")
             elif scenario == "cancel":
-                wait(lambda: progress_control(frame), "four infinite initializers started")
+                wait(lambda: progress_control(frame) and (profile / "waiting-for-dependency").exists(),
+                     "independent initialization and a deferred DependencyControl import")
                 send(frame, 0)
             else:
                 wait(lambda: re.search(r'"section"\s*:\s*"startup/automation"', logs()), "autoload completion after initialization")

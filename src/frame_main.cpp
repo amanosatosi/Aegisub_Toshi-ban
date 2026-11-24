@@ -506,14 +506,14 @@ void FrameMain::UpdateAutomationProgress(Automation4::AutoloadProgress const& pr
 	}
 	auto title = progress.failed ? _("Automation (!)") : _("Automation");
 	auto completed = progress.completed, total = progress.total;
-	if (progress.loading && progress.phase != Automation4::AutoloadPhase::None) {
+	if (progress.loading && progress.phase != Automation4::AutoloadPhase::NoPhase) {
 		using Phase = Automation4::AutoloadPhase;
 		switch (progress.phase) {
 			case Phase::Bundled: title = _("Loading bundled scripts"); break;
 			case Phase::External: title = _("Loading external scripts"); break;
 			case Phase::DependencyControl: title = _("Loading DependencyControl scripts"); break;
 			case Phase::SingleScript: title = _("Loading Automation script"); break;
-			case Phase::None: break;
+			case Phase::NoPhase: break;
 		}
 		completed = progress.phase_completed;
 		total = progress.phase_total;

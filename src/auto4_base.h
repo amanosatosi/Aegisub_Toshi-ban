@@ -251,12 +251,12 @@ namespace Automation4 {
 	};
 
 	/// Manager for scripts in the autoload directory
-	enum class AutoloadPhase { None, Bundled, External, DependencyControl, SingleScript };
+	enum class AutoloadPhase { NoPhase, Bundled, External, DependencyControl, SingleScript };
 	struct AutoloadProgress {
 		size_t completed = 0;
 		size_t total = 0;
 		size_t failed = 0;
-		AutoloadPhase phase = AutoloadPhase::None;
+		AutoloadPhase phase = AutoloadPhase::NoPhase;
 		size_t phase_completed = 0;
 		size_t phase_total = 0;
 		std::string filename;
