@@ -28,5 +28,8 @@ namespace agi { namespace lua {
 	bool LoadFile(lua_State *L, agi::fs::path const& filename);
 	/// Install our module loader and add include_path to the module search
 	/// path of the given lua state
-	bool Install(lua_State *L, std::vector<fs::path> const& include_path);
+	/// An optional wrapper for the first searcher receives the previous
+	/// searcher as its first upvalue, keeping standard loader indices intact.
+	bool Install(lua_State *L, std::vector<fs::path> const& include_path,
+		int (*first_searcher)(lua_State *) = nullptr);
 } }

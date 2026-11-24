@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       baseline:
-        description: Baseline commit (omit to measure the checked-out build only)
+        description: Baseline commit (defaults to the instrumented pre-batch loader)
         type: string
   push:
     branches: [codex/compact-automation-loading]
@@ -41,9 +41,8 @@ jobs:
           fetch-depth: 0
           submodules: recursive
       - uses: actions/checkout@v4
-        if: inputs.baseline != ''
         with:
-          ref: ${{ inputs.baseline }}
+          ref: ${{ inputs.baseline || '275d645fbad541584caf3588292dd8e872eb3ad1' }}
           fetch-depth: 0
           path: baseline
           submodules: recursive

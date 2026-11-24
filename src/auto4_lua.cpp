@@ -82,6 +82,23 @@ using namespace agi::lua;
 using namespace Automation4;
 
 namespace {
+	bool IsDependencyControl(std::string name) {
+		boost::to_lower(name);
+		std::replace(name.begin(), name.end(), '/', '.');
+		std::replace(name.begin(), name.end(), '\\', '.');
+		return ('.' + name + '.').find(".dependencycontrol.") != std::string::npos;
+	}
+
+	int GuardDependencyControl(lua_State *L) {
+		if (GetScriptLoadContext() && IsDependencyControl(luaL_checkstring(L, 1))
+			&& !WaitForDependencyControl())
+			return luaL_error(L, "Automation loading cancelled");
+		lua_pushvalue(L, lua_upvalueindex(1));
+		lua_insert(L, 1);
+		lua_call(L, 1, 1); // Preserve the original preload searcher.
+		return 1;
+	}
+
 	struct LuaLoadProfile {
 		agi::lua::LoadTimings files;
 		double state = 0, bootstrap = 0, execution = 0, modules = 0, includes = 0;
@@ -687,7 +704,7 @@ namespace {
 		// one and set the module search path
 		profile.state += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - state_start).count();
 		if (context && context->profile) BeginRequireProfiling(L, &profile);
-		if (!timed(profile.bootstrap, [&] { return Install(L, include_path); })) {
+		if (!timed(profile.bootstrap, [&] { return Install(L, include_path, context ? GuardDependencyControl : nullptr); })) {
 			description = get_string_or_default(L, 1);
 			lua_pop(L, 1);
 			return;
@@ -876,6 +893,9 @@ namespace {
 
 		if (!agi::fs::FileExists(filepath))
 			return error(L, "Lua include not found: %s", filename.c_str());
+
+		if (GetScriptLoadContext() && IsDependencyControl(filepath.string()) && !WaitForDependencyControl())
+			return error(L, "Automation loading cancelled");
 
 		if (!LoadFile(L, filepath))
 			return error(L, "Error loading Lua include \"%s\":\n%s", filename.c_str(), check_string(L, 1).c_str());

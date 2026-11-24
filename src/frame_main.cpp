@@ -504,13 +504,28 @@ void FrameMain::UpdateAutomationProgress(Automation4::AutoloadProgress const& pr
 		PositionAutomationProgress();
 		return;
 	}
-	automation_title->SetLabelText(progress.failed ? _("Automation (!)") : _("Automation"));
-	automation_count->SetLabelText(wxString::Format("%zu / %zu", progress.completed, progress.total));
-	auto range = static_cast<int>(std::max<size_t>(1, progress.total));
-	auto value = static_cast<int>(progress.completed);
+	auto title = progress.failed ? _("Automation (!)") : _("Automation");
+	auto completed = progress.completed, total = progress.total;
+	if (progress.loading && progress.phase != Automation4::AutoloadPhase::None) {
+		using Phase = Automation4::AutoloadPhase;
+		switch (progress.phase) {
+			case Phase::Bundled: title = _("Loading bundled scripts"); break;
+			case Phase::External: title = _("Loading external scripts"); break;
+			case Phase::DependencyControl: title = _("Loading DependencyControl scripts"); break;
+			case Phase::SingleScript: title = _("Loading Automation script"); break;
+			case Phase::None: break;
+		}
+		completed = progress.phase_completed;
+		total = progress.phase_total;
+	}
+	auto count = wxString::Format("%zu / %zu", completed, total);
+	if (automation_title->GetLabelText() != title) automation_title->SetLabelText(title);
+	if (automation_count->GetLabelText() != count) automation_count->SetLabelText(count);
+	auto range = static_cast<int>(std::max<size_t>(1, total));
+	auto value = static_cast<int>(completed);
 	if (automation_gauge->GetRange() != range) automation_gauge->SetRange(range);
 	if (automation_gauge->GetValue() != value) automation_gauge->SetValue(value);
-	automation_gauge->Show(progress.total != 0);
+	automation_gauge->Show(total != 0);
 	wxString details = wxString::Format(_("Automation: %zu / %zu completed, %zu failed"), progress.completed, progress.total, progress.failed);
 	if (!progress.filename.empty()) details += "\n" + to_wx(progress.filename);
 	if (!progress.loading && progress.failed)

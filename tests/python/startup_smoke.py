@@ -157,7 +157,30 @@ def run(portable, output, mangetsu_ui_dark=False):
         if scenario in ("success", "scripts"):
             (autoload / "000-fast.lua").write_text("aegisub.register_macro('Smoke First', '', function() end)", encoding="utf-8")
         if scenario == "success":
-            (autoload / "slow.lua").write_text("local deadline=os.clock()+2; while os.clock()<deadline do end; aegisub.register_macro('Smoke Slow', '', function() end)", encoding="utf-8")
+            bundled = profile / "automation/autoload"
+            bundled.mkdir(exist_ok=True)
+            (bundled / "strip-tags.lua").write_text("aegisub.register_macro('Smoke Bundled', '', function() end)", encoding="utf-8")
+            (bundled / "external-addon.lua").write_text("aegisub.register_macro('Smoke Local Addon', '', function() end)", encoding="utf-8")
+            config["Path"]["Automation"]["Autoload"] += "|" + str(bundled)
+            (profile / "config.json").write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+            include = profile / "automation/include"
+            (include / "l0").mkdir(exist_ok=True)
+            (include / "l0/DependencyControl.lua").write_text(
+                "local deadline=os.clock()+0.65; while os.clock()<deadline do end; return {}",
+                encoding="utf-8")
+            (include / "via-include.lua").write_text(
+                "local imported = require; return imported(table.concat({'l0','DependencyControl'}, '.'))",
+                encoding="utf-8")
+            for i in range(5):
+                load = "require('l0.DependencyControl')" if i % 2 == 0 else "include('via-include.lua')"
+                (autoload / f"001-dependency-{i}.lua").write_text(f"""
+local f = assert(io.open(os.getenv('AEGISUB_STARTUP_SMOKE_DIR') .. '/dep-{i}-prefix', 'a'))
+f:write('once'); f:close()
+{load}
+local f = assert(io.open(os.getenv('AEGISUB_STARTUP_SMOKE_DIR') .. '/dep-{i}-ready', 'w'))
+f:write('ready'); f:close()
+aegisub.register_macro('Smoke Dependency {i}', '', function() end)
+""", encoding="utf-8")
         elif scenario == "scripts":
             (autoload / "a.lua").write_text("""
 local deadline = os.clock() + 2
@@ -224,14 +247,26 @@ aegisub.register_filter('Duplicate filter', 'staged export filter', 100, functio
                 assert "statusbar" in text(status, True).lower(), "Progress must belong to the status bar"
                 assert rect(gauge)[1] >= rect(status)[1] and rect(gauge)[3] <= rect(status)[3]
                 assert rect(gauge)[3] - rect(gauge)[1] < rect(status)[3] - rect(status)[1], "Thin single-row gauge"
-                assert send(gauge, 0x407) == (2 if scenario == "success" else 4)  # PBM_GETRANGE, upper bound
-                wait(lambda: any(name == "Smoke First" for name, _ in entries(user.GetMenu(frame))), "first macro before slow initialization completes")
-                assert not re.search(r'"section"\s*:\s*"startup/automation"', logs()), "First macro must be usable before the batch completes"
+                if scenario == "scripts":
+                    assert send(gauge, 0x407) == 4  # PBM_GETRANGE, upper bound
             if scenario == "success":
                 excluded = set(windows(process.pid, status)) | {status}
                 geometry = {h: rect(h) for h in windows(process.pid, frame) if h not in excluded and user.IsWindowVisible(h)}
-                wait(lambda: "2 / 2" in logs(), "successful completion")
-                wait(lambda: send(gauge, 0x408) == 2, "native gauge reaches 2 / 2, including all completions")
+                wait(lambda: {"Smoke Bundled", "Smoke First", "Smoke Local Addon"}.issubset(
+                    name for name, _ in entries(user.GetMenu(frame))), "bundled and independent macro batches")
+                wait(lambda: any(text(h) == "Loading DependencyControl scripts" and user.IsWindowVisible(h)
+                                 for h in windows(process.pid, status)), "DependencyControl phase progress")
+                assert send(gauge, 0x407) == 5
+                assert not any(name.startswith("Smoke Dependency ") for name, _ in entries(user.GetMenu(frame)))
+                invoke(frame, "Smoke First")
+                send(frame, 0)
+                wait(lambda: "8 / 8" in logs(), "all three phases completed")
+                wait(lambda: send(gauge, 0x408) == 8, "native gauge reaches 8 / 8, including all completions")
+                assert re.findall(r'"message"\s*:\s*"(bundled|external|dependency_control); scripts=(\d+);', logs()) == [
+                    ("bundled", "1"), ("external", "2"), ("dependency_control", "5")]
+                assert sum(name.startswith("Smoke Dependency ") for name, _ in entries(user.GetMenu(frame))) == 5
+                assert all((profile / f"dep-{i}-prefix").read_text() == "once" for i in range(5))
+                assert all((profile / f"dep-{i}-ready").exists() for i in range(5))
                 wait(lambda: not progress_control(frame), "successful progress automatically collapses", seconds=8)
                 assert geometry == {h: rect(h) for h in geometry}, "Progress must not resize the grid or editor"
             elif scenario == "scripts":

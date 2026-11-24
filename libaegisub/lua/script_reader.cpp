@@ -133,7 +133,8 @@ namespace agi { namespace lua {
 		return lua_gettop(L) - pretop;
 	}
 
-	bool Install(lua_State *L, std::vector<fs::path> const& include_path) {
+	bool Install(lua_State *L, std::vector<fs::path> const& include_path,
+		int (*first_searcher)(lua_State *)) {
 		// set the module load path to include_path
 		lua_getglobal(L, "package");
 		push_value(L, "path");
@@ -158,6 +159,11 @@ namespace agi { namespace lua {
 		lua_getfield(L, -1, "loaders");
 		push_value(L, exception_wrapper<module_loader>);
 		lua_rawseti(L, -2, 2);
+		if (first_searcher) {
+			lua_rawgeti(L, -1, 1);
+			lua_pushcclosure(L, first_searcher, 1);
+			lua_rawseti(L, -2, 1);
+		}
 		lua_pop(L, 2); // loaders, package
 
 #ifdef _WIN32

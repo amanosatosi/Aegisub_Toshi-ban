@@ -142,6 +142,21 @@ def _sample_once(executable, collection, bundled, includes, folder, workers, pro
                 name = entry["message"].split(";", 1)[0]
                 phases[name] = round(stamp(entry), 3)
             publication = sections("publication")
+            if not phases:
+                # The old loader logs individual files before each publication.
+                # Attribute their visibility to the ensuing batch notification.
+                bundled_names = {p.name for p in bundled.iterdir()}
+                pending = []
+                for entry in log:
+                    message = entry["message"]
+                    if entry["section"] == "startup/automation/script" and "; publication_wait_ms=" in message:
+                        name = Path(message.split("; publication_wait_ms=", 1)[0]).name
+                        pending.append("bundled" if name in bundled_names else
+                                       "dependency_control" if name.startswith("dependency-") else "external")
+                    elif entry["section"] == "startup/automation/publication":
+                        for name in pending:
+                            phases[name] = round(stamp(entry), 3)
+                        pending.clear()
             blocking = sum(float(value) for r in publication
                            for value in re.findall(r"(?:registration|notifications)_ms=([\d.eE+-]+)", r["message"]))
             blocking += sum(float(r["message"]) for r in sections("ui_request"))
@@ -207,6 +222,11 @@ def main(args):
                 name = f"{scenario}-{version}-{workers}-{repeat}"
                 result = sample(executable, output / "fixtures" / scenario, bundled, includes,
                                 output / name, workers)
+                if args.baseline and version == "candidate":
+                    phase_order = ["bundled"] if scenario == "bundled" else ["bundled", "external", "dependency_control"]
+                    assert list(result["phases_ms"]) == phase_order, result
+                    assert result["publication_batches"] == len(phase_order), result
+                    assert [result["phases_ms"][p] for p in phase_order] == sorted(result["phases_ms"].values()), result
                 observations.append(dict(scenario=scenario, version=version, workers=workers, repeat=repeat, **result))
                 print("AUTOMATION_SAMPLE " + json.dumps({k: v for k, v in observations[-1].items() if k not in ("diagnostics", "menu")}), flush=True)
                 (output / "samples.json").write_text(json.dumps(observations, indent=2))
@@ -224,7 +244,11 @@ def main(args):
             values += [median([r[key] for r in group]) for key in
                        ("all_ms", "blocking_ms", "longest_ui_gap_ms", "publication_batches", "menu_rebuilds")]
             lines.append(f"|{scenario}|{version}|" + "|".join(values) + "|")
-    report = "\n".join(lines) + "\n"
+    report = "\n".join(lines) + "\n\n"
+    report += ("Phase availability is measured from process launch at the last publication for that group. "
+               "Main-thread work sums registration, observer notifications and worker-requested UI calls. "
+               "The longest gap is measured by a 10 ms timer while loading and includes scheduler delay. "
+               "DependencyControl fixtures exercise a controlled, CPU-heavy module with direct and indirect imports.\n")
     print(report, flush=True)
     (output / "summary.md").write_text(report)
     if os.getenv("GITHUB_STEP_SUMMARY"):
